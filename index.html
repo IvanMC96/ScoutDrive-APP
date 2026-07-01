@@ -1470,7 +1470,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 </div>
 
 <!-- ══ PANEL ADMINISTRACIÓN DE USUARIOS (solo admins) ══════════ -->
-<div class="vista db-page cfg-page" id="v-admin" style="display:none">
+<div class="vista db-page cfg-page" id="v-admin">
   <div class="db-hdr">
     <div>
       <div class="db-title">🛡️ Administración de usuarios</div>
@@ -3501,7 +3501,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbz0kWHmmYyx21BkGphjAO6QIx5AaykJnSboGoA-mnhw3Tf7yp5xsQ7dYO1R7eUCrlC8/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycby3bbPEXzcoTh3Ynqtq4WqBdmg2JoWH-4pnQveJEmReheXzcD-cIoGF8sjdP2IOkdL-/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -3867,7 +3867,7 @@ document.addEventListener('keydown', e=>{
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbz0kWHmmYyx21BkGphjAO6QIx5AaykJnSboGoA-mnhw3Tf7yp5xsQ7dYO1R7eUCrlC8/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycby3bbPEXzcoTh3Ynqtq4WqBdmg2JoWH-4pnQveJEmReheXzcD-cIoGF8sjdP2IOkdL-/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
