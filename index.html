@@ -1125,6 +1125,13 @@ input[type=range]{flex:1;accent-color:var(--azul);}
       </div>
     </div>
     <div class="psec">
+      <div class="phdr" onclick="tog(this)">🔴 Clips Goles en Contra <span class="arr">▾</span></div>
+      <div class="pbody hide" id="equipo-clips-gc-wrap">
+        <p style="font-size:10px;color:var(--gris);padding:6px 0 10px">Clips de goles encajados — análisis defensivo.</p>
+        <div id="eclips-gc-list"></div>
+        <button class="badd" onclick="addEClipGC()" style="border-color:var(--rojo-cl);color:var(--rojo-cl)">+ Añadir clip gol en contra</button>
+      </div>
+
       <div class="phdr" onclick="tog(this)">📝 Nota Técnica <span class="arr">▾</span></div>
       <div class="pbody">
         <textarea id="jnota" rows="3" placeholder="Valoración del cuerpo técnico..." oninput="renderJ()"></textarea>
@@ -1620,6 +1627,7 @@ function volverDB(){
 }
 
 function nuevoItem(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden crear registros',true); return; }
   if(currentSection==='jugadores-db'||currentSection==='jugador-ed') nuevoJ();
   else nuevoE();
 }
@@ -1997,9 +2005,9 @@ function renderEDB(){
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.gf||0}</div><div class="ckl">GF</div></div>
       <div class="ck"><div class="ckv" style="color:var(--rojo-cl)">${s.gc||0}</div><div class="ckl">GC</div></div>
     </div><div class="card-act">
-      <button class="btn b-azul b-sm" onclick="editE('${eq.id}')">✏️ Editar</button>
+      ${esAdminActual()?`<button class="btn b-azul b-sm" onclick="editE('${eq.id}')">✏️ Editar</button>`:`<button class="btn b-ghost b-sm" onclick="editE('${eq.id}')">👁 Ver</button>`}
       <button class="btn b-ghost b-sm" onclick="xEExcel('${eq.id}')">📊</button>
-      <button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" onclick="borrarEquipo(this)">🗑</button>
+      ${esAdminActual()?`<button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" onclick="borrarEquipo(this)">🗑</button>`:''}
     </div></div>`;
   }).join('');
 }
@@ -2012,8 +2020,8 @@ function nuevoE(){
     const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}
   });
   document.getElementById('eliga').value='2ª RFEF Grupo IV';
-  imgStore.eesc=null;ePartidos=[];eGC=[];eClips=[];ePartCnt=0;eClipCnt=0;
-  uzZone('eesc',null);buildEPartidos();buildEGC();buildEClips();
+  imgStore.eesc=null;ePartidos=[];eGC=[];eClips=[];eClipsGC=[];ePartCnt=0;eClipCnt=0;eClipGCCnt=0;
+  uzZone('eesc',null);buildEPartidos();buildEGC();buildEClips();buildEClipsGC();buildEClipsGC();
   navTo('equipo-ed');renderE();
 }
 
@@ -2030,6 +2038,7 @@ function editE(id){
   ePartidos=[...(eq.partidos||[])];eGC=[...(eq.gcGoles||[])];ePartCnt=ePartidos.length;
   uzZone('eesc',imgStore.eesc);
   eClips=(eq.clips||[]).map(c=>({...c,blobURL:null})); eClipCnt=eClips.length;
+  eClipsGC=(eq.clipsGC||[]).map(c=>({...c,blobURL:null})); eClipGCCnt=eClipsGC.length;
   buildEPartidos();buildEGC();buildEClips();
   navTo('equipo-ed');renderE();
 }
@@ -2060,7 +2069,14 @@ function guardarE(){
     src:c.srcType==='blob'?'':c.src,
     portada:c.portada||null
   }));
+  const clipsGCGuardar=eClipsGC.map(c=>({
+    id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
+    srcType:c.srcType==='blob'?'blob_local':c.srcType,
+    src:c.srcType==='blob'?'':c.src,
+    portada:c.portada||null
+  }));
   eq.clips=clipsGuardar;
+  eq.clipsGC=clipsGCGuardar;
   const idx2=eDB.findIndex(x=>x.id===id);
   if(idx2>=0)eDB[idx2]=eq;else eDB.unshift(eq);
   saveEDB();toast(`✅ ${nom} guardado`);
@@ -2442,7 +2458,7 @@ function renderE(){
       </div>
       ${eclipsH}
     </div>
-
+    ${renderEClipsGC()}
     <!-- ── NOTA TÁCTICA ── -->
     <div class="feq-nota-v2">
       <strong>Notas tácticas:</strong> ${eH(G('enota'))||'—'}
@@ -2926,6 +2942,7 @@ document.addEventListener('keydown', (e) => {
 
 // ── Guardar con feedback visual (FIX: apunta al botón de la sección activa) ──
 function guardarJConFeedback(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden guardar cambios',true); return; }
   guardarJ();
   const bar=document.querySelector('#v-jugador-ed .btn-guardar-float');
   if(!bar)return;
@@ -2935,6 +2952,7 @@ function guardarJConFeedback(){
   setTimeout(()=>{bar.innerHTML=orig;bar.style.background='';},2500);
 }
 function guardarEConFeedback(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden guardar cambios',true); return; }
   guardarE();
   const bar=document.querySelector('#v-equipo-ed .btn-guardar-float');
   if(!bar)return;
@@ -3478,6 +3496,7 @@ function guardarEConFeedback(){
 
   // Sesión activa en memoria (se limpia al cerrar la pestaña)
   window._scoutSession = null;
+  window._esAdmin = false;
 
   // ── Sincronizar logo y nombre del login con la config ────────
   function loginSyncBrand() {
@@ -3864,6 +3883,73 @@ document.addEventListener('keydown', e=>{
   }
 });
 
+
+// ════════════════════════════════════════════════════════════════
+//  CLIPS DE GOLES EN CONTRA DEL EQUIPO
+// ════════════════════════════════════════════════════════════════
+let eClipsGC = [], eClipGCCnt = 0;
+
+function addEClipGC(){
+  eClipsGC.push({id:eClipGCCnt++,titulo:'',rival:'',tipo:'Ataque Organizado',
+    srcType:'direct',src:'',portada:null,blobURL:null});
+  buildEClipsGC(); renderE();
+}
+
+function buildEClipsGC(){
+  const wrap = document.getElementById('eclips-gc-list');
+  if(!wrap) return;
+  if(!eClipsGC.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = eClipsGC.map((cl,i)=>`
+    <div class="clip-card" style="border-color:var(--rojo-cl)">
+      <div class="clip-card-hdr">
+        <span style="color:var(--rojo-cl);font-size:10px;font-weight:700">GC ${i+1}</span>
+        <button class="brm" onclick="eClipsGC.splice(${i},1);buildEClipsGC();renderE()">✕</button>
+      </div>
+      <input class="clip-input" placeholder="Título del clip (ej: Gol m.23)" value="${eH(cl.titulo||'')}"
+        oninput="eClipsGC[${i}].titulo=this.value">
+      <input class="clip-input" placeholder="Rival / partido" value="${eH(cl.rival||'')}"
+        oninput="eClipsGC[${i}].rival=this.value">
+      <select class="clip-input" onchange="eClipsGC[${i}].tipo=this.value">
+        ${ORIGENES.map(o=>`<option${cl.tipo===o?' selected':''}>${o}</option>`).join('')}
+      </select>
+      <div class="clip-portada-zona ${cl.portada?'has-portada':''}" id="gcpz-${i}"
+        onclick="document.getElementById('gcpf-${i}').click()">
+        ${cl.portada?`<img src="${cl.portada}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`
+          :`<div style="text-align:center;color:var(--gris);font-size:10px">📸 Portada<br>(clic)</div>`}
+      </div>
+      <input type="file" id="gcpf-${i}" accept="image/*" style="display:none"
+        onchange="loadGCPortada(event,${i})">
+      <div class="clip-url-row">
+        <input placeholder="URL vídeo (Drive/YouTube)" value="${eH(cl.src||'')}"
+          oninput="eClipsGC[${i}].src=this.value;eClipsGC[${i}].srcType=detectSrcType(this.value)">
+        <button onclick="cargarGCVideoFile(${i})">📁</button>
+      </div>
+      <input type="file" id="gcvf-${i}" accept="video/mp4,video/mov,video/webm" style="display:none"
+        onchange="loadGCVideoFile(event,${i})">
+    </div>`).join('');
+}
+
+function loadGCPortada(e,i){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    eClipsGC[i].portada=ev.target.result;
+    document.getElementById('gcpz-'+i).innerHTML=
+      `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`;
+    document.getElementById('gcpz-'+i).classList.add('has-portada');
+    renderE();
+  };
+  r.readAsDataURL(f);
+}
+function cargarGCVideoFile(i){ document.getElementById('gcvf-'+i)?.click(); }
+function loadGCVideoFile(e,i){
+  const f=e.target.files[0]; if(!f) return;
+  const url=URL.createObjectURL(f);
+  eClipsGC[i].blobURL=url; eClipsGC[i].srcType='blob';
+  eClipsGC[i].src=f.name;
+  renderE();
+}
+
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
@@ -3885,13 +3971,31 @@ async function _apiAdmin(accion, datos) {
   }
 }
 
-/** Muestra/oculta la pestaña Admin según el rol del usuario logueado */
+/** Muestra/oculta pestañas y botones según el rol del usuario logueado */
 function actualizarPanelAdmin() {
   const sesion = window._scoutSession;
-  const tabAdmin = document.getElementById('tab-admin');
-  if (!tabAdmin) return;
-  const esAdmin = sesion && sesion.rol === 'admin';
-  tabAdmin.style.display = esAdmin ? '' : 'none';
+  if (!sesion) return;
+  const esAdmin = sesion.rol === 'admin';
+
+  // Pestañas solo para admin
+  const tabAdmin  = document.getElementById('tab-admin');
+  const tabConfig = document.getElementById('tab-config');
+  if (tabAdmin)  tabAdmin.style.display  = esAdmin ? '' : 'none';
+  if (tabConfig) tabConfig.style.display = esAdmin ? '' : 'none';
+
+  // Guardar referencia global del rol para usarla en renders
+  window._esAdmin = esAdmin;
+
+  // Si está en config y no es admin, redirigir a jugadores
+  if (!esAdmin && (typeof currentSection !== 'undefined') &&
+      (currentSection === 'config' || currentSection === 'admin')) {
+    navTo('jugadores-db');
+  }
+}
+
+/** Devuelve true si el usuario actual es admin */
+function esAdminActual() {
+  return window._esAdmin === true;
 }
 
 async function cargarUsuariosAdmin() {
@@ -4065,6 +4169,46 @@ async function eliminarUsuarioAdmin(id, email) {
 })();
 
 // ── Borrado limpio — no depende de strings interpolados en onclick ──
+
+function gcClipAbrirModal(i){
+  const cl = eClipsGC[i];
+  if(!cl) return;
+  abrirVideoModal(cl);
+}
+
+function renderEClipsGC(){
+  if(!eClipsGC||!eClipsGC.length) return '';
+  const cards = eClipsGC.map((cl,i)=>{
+    const hasV = (cl.blobURL&&cl.srcType==='blob')||(cl.src&&
+      (cl.srcType==='youtube'||cl.srcType==='gdrive'||cl.srcType==='direct'));
+    let mH = '';
+    if(cl.portada){
+      mH = '<div class="eclip-portada-wrap" onclick="gcClipAbrirModal('+i+')">'
+        +'<img src="'+cl.portada+'" alt="Portada">'
+        +'<div class="eclip-play-overlay"><div class="eclip-play-btn" style="background:rgba(185,28,28,.9)">▶</div></div>'
+        +'</div>';
+    } else if(hasV){
+      mH = '<div class="eclip-portada-wrap eclip-sin-portada" style="background:linear-gradient(135deg,#2d0a0a,#1a0505)" onclick="gcClipAbrirModal('+i+')">'
+        +'<div class="eclip-play-overlay" style="opacity:1"><div class="eclip-play-btn" style="background:rgba(185,28,28,.9)">▶</div></div>'
+        +'</div>';
+    } else {
+      mH = '<div class="eclip-media"><div class="em-empty"><span>🔴</span><p>Sin vídeo</p></div></div>';
+    }
+    return '<div class="eclip-card-v2" style="border-color:rgba(185,28,28,.3)">'
+      +mH
+      +'<div class="eclip-info">'
+      +'<div class="eclip-titulo">'+(i+1)+'. '+(eH(cl.titulo)||'Sin título')+'</div>'
+      +'<div class="eclip-sub"><span class="eclip-tipo-dot" style="background:#f85149"></span>'
+      +eH(cl.tipo||'')+(cl.rival?' · vs '+eH(cl.rival):'')+'</div>'
+      +'</div></div>';
+  }).join('');
+  return '<div class="eclips-section" style="border-top:2px solid rgba(185,28,28,.3)">'
+    +'<div class="eclips-title" style="color:var(--rojo-cl)">🔴 CLIPS GOLES EN CONTRA '
+    +'<span style="background:rgba(185,28,28,.2);color:var(--rojo-cl);font-size:9px;padding:2px 8px;border-radius:8px">'
+    +eClipsGC.length+' clip'+(eClipsGC.length!==1?'s':'')+'</span></div>'
+    +'<div class="eclips-grid-v2">'+cards+'</div></div>';
+}
+
 function borrarEquipo(btn){
   const id = btn.getAttribute('data-del-equipo');
   if (!id) return;
