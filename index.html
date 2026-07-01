@@ -914,6 +914,17 @@ body.solo-lectura .add-partido-btn {
   display: none !important;
 }
 body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
+/* Bloqueo real de edición para cuentas de solo lectura: se oculta la
+   pestaña "Editar datos" y, por si se llegara a activar por cualquier
+   vía, se deshabilita toda interacción con los campos del formulario. */
+body.solo-lectura #jtab-editar,
+body.solo-lectura #etab-editar {
+  display: none !important;
+}
+body.solo-lectura .ed-panel-form {
+  pointer-events: none !important;
+  opacity: .6;
+}
 
 </style>
 </head>
@@ -1714,12 +1725,15 @@ const jRadarEjes=['Goles','Asistencias','Eficiencia','ABP','Área chica','Equili
 
 // ── DB ────────────────────────────────────────────────────────────
 function renderJDB(){
+  let _huboReparoJ=false;
+  jDB.forEach(j=>{ if(!j.id){ j.id='j_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparoJ=true; } });
+  if(_huboReparoJ) saveJDB();
   document.getElementById('jst-n').textContent=jDB.length;
   document.getElementById('jst-g').textContent=jDB.reduce((s,j)=>s+(j.stats?.g||0),0);
   const q=(G('jdb-q')||'').toLowerCase();
   const lst=q?jDB.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q)):jDB;
   const grid=document.getElementById('j-grid');
-  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDB.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDB.length?'Prueba otro término':'Pulsa "+ Nuevo jugador"'}</div>${!jDB.length?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
+  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDB.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDB.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDB.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
     const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%">${eH(ini(j.nom,j.ape)||'?')}</div>`;
@@ -2002,6 +2016,13 @@ function renderJ(){
 let eId=null,ePartidos=[],eGC=[],ePartCnt=0;
 
 function renderEDB(){
+  // Autorreparación: cualquier equipo sin id (puede pasar si llegó de una
+  // sincronización antigua o incompleta) se queda "huérfano" y su botón
+  // de borrar no hace nada porque no hay id al que apuntar. Le asignamos
+  // uno aquí para que siempre se pueda editar/borrar.
+  let _huboReparo=false;
+  eDB.forEach(eq=>{ if(!eq.id){ eq.id='e_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparo=true; } });
+  if(_huboReparo) saveEDB();
   document.getElementById('est-n').textContent=eDB.length;
   document.getElementById('est-gf').textContent=eDB.reduce((s,e)=>s+(e.stats?.gf||0),0);
   document.getElementById('est-gc').textContent=eDB.reduce((s,e)=>s+(e.stats?.gc||0),0);
@@ -4286,6 +4307,13 @@ function borrarJugador(btn){
 
 function edTabSwitch(tipo, tab) {
   const prefix = tipo === 'j' ? 'j' : 'e';
+
+  // Refuerzo: un usuario de solo lectura nunca debe poder entrar en la
+  // pestaña "Editar datos", aunque se llame a esta función por código.
+  if (tab === 'editar' && !esAdminActual()) {
+    toast('Solo los administradores pueden editar', true);
+    tab = 'ficha';
+  }
 
   // Tabs
   document.getElementById(`${prefix}tab-ficha`).className  = 'ed-tab' + (tab==='ficha'  ? ' activa' : '');
