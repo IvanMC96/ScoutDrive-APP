@@ -243,21 +243,34 @@ async function scoutSincronizarAlAbrir() {
   let huboNovedades = false;
 
   if (respuesta.jugadores && respuesta.jugadores.length) {
-    respuesta.jugadores.forEach(remoto => {
+    respuesta.jugadores.forEach(r => {
+      const remoto = _normalizarRegistro(r);
       const idx = jDB.findIndex(x => x.id === remoto.id);
       const fechaLocal = idx >= 0 ? new Date(jDB[idx].fecha || 0).getTime() : 0;
       const fechaRemota = new Date(remoto.fechaActualizacion || 0).getTime();
-      if (idx < 0) { jDB.unshift(remoto); huboNovedades = true; }
-      else if (fechaRemota > fechaLocal) { jDB[idx] = remoto; huboNovedades = true; }
+      if (idx < 0) {
+        // Registro nuevo que no existía en local: solo lo añadimos si trae
+        // al menos un nombre; si no, es basura del Sheet y la ignoramos.
+        if ((remoto.nom || remoto.ape)) { jDB.unshift(remoto); huboNovedades = true; }
+      } else if (fechaRemota > fechaLocal) {
+        // Nunca dejamos que un remoto sin nombre/apellidos borre uno local
+        // que sí los tiene — evita que un jugador "se quede sin nombre"
+        // por una fila incompleta o mal mapeada en el Sheet.
+        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'])) huboNovedades = true;
+      }
     });
   }
   if (respuesta.equipos && respuesta.equipos.length) {
-    respuesta.equipos.forEach(remoto => {
+    respuesta.equipos.forEach(r => {
+      const remoto = _normalizarRegistro(r);
       const idx = eDB.findIndex(x => x.id === remoto.id);
       const fechaLocal = idx >= 0 ? new Date(eDB[idx].fecha || 0).getTime() : 0;
       const fechaRemota = new Date(remoto.fechaActualizacion || 0).getTime();
-      if (idx < 0) { eDB.unshift(remoto); huboNovedades = true; }
-      else if (fechaRemota > fechaLocal) { eDB[idx] = remoto; huboNovedades = true; }
+      if (idx < 0) {
+        if (remoto.nom) { eDB.unshift(remoto); huboNovedades = true; }
+      } else if (fechaRemota > fechaLocal) {
+        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'])) huboNovedades = true;
+      }
     });
   }
 
@@ -272,6 +285,26 @@ async function scoutSincronizarAlAbrir() {
     }
     _scoutToast('☁️ Datos actualizados desde Google Sheets');
   }
+}
+
+/** Sustituye arr[idx] por "remoto", pero si remoto no trae ninguno de los
+ *  "camposClave" (p.ej. nom/ape) mientras el local sí los tenía, conserva
+ *  esos campos del local en vez de dejar el registro sin nombre.
+ *  Esto es lo que impedía que un equipo/jugador "perdiera" su nombre al
+ *  reabrir la app tras sincronizar con una fila incompleta del Sheet. */
+function _scoutFusionarSeguro(arr, idx, remoto, camposClave) {
+  const local = arr[idx];
+  const remotoTieneAlgunCampo = camposClave.some(c => remoto[c]);
+  const localTieneAlgunCampo = camposClave.some(c => local[c]);
+  if (!remotoTieneAlgunCampo && localTieneAlgunCampo) {
+    const fusionado = { ...remoto };
+    camposClave.forEach(c => { fusionado[c] = local[c]; });
+    arr[idx] = fusionado;
+    console.warn('[Scoutdrive sync] Fila remota sin nombre; se conserva el nombre local para', local.id);
+  } else {
+    arr[idx] = remoto;
+  }
+  return true;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -347,8 +380,8 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { jDB[idx] = remoto; cambios++; }
-      else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape']); cambios++; }
+      else if (typeof jDB !== 'undefined' && (remoto.nom || remoto.ape)) { jDB.unshift(remoto); cambios++; }
     });
   }
 
@@ -357,8 +390,8 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { eDB[idx] = remoto; cambios++; }
-      else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom']); cambios++; }
+      else if (typeof eDB !== 'undefined' && remoto.nom) { eDB.unshift(remoto); cambios++; }
     });
   }
 
