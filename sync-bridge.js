@@ -171,9 +171,12 @@ setInterval(scoutProcesarCola, 60000);
   const _guardarE_original = guardarE;
   guardarE = function () {
     _guardarE_original();
-    const eq = (typeof eDB !== 'undefined' && typeof eId !== 'undefined')
-      ? eDB.find(x => x.id === eId) : null;
+    // Buscar el equipo recién guardado — puede estar en eDB o ser el actual eId
+    const id = typeof eId !== 'undefined' ? eId : null;
+    if (!id) return;
+    const eq = (typeof eDB !== 'undefined') ? eDB.find(x => String(x.id) === String(id)) : null;
     if (eq) scoutSincronizarEquipo(eq);
+    else console.warn('[Scoutdrive sync] Equipo no encontrado en eDB tras guardar:', id);
   };
 
   console.log('[Scoutdrive sync] Conectado: guardarJ() y guardarE() ahora sincronizan con Google Sheets.');
