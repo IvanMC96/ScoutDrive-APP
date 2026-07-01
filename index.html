@@ -2102,7 +2102,9 @@ function guardarCfg(){
   cfg.nombre=G('cfg-nombre')||'Scoutdrive';
   cfg.sub=G('cfg-sub')||'Plataforma de análisis táctico';
   cfg.footer=G('cfg-footer')||'Uso interno · Cuerpo técnico';
-  saveCfg();applyCfg();toast('✅ Configuración guardada');
+  // cfg.logo ya está en el objeto (se asigna en loadImgCfg/loadLogoURL)
+  // saveCfg() lo guarda todo junto incluyendo el logo
+  saveCfg();applyCfg();loginSyncBrand();toast('✅ Configuración guardada');
 }
 function resetCfg(){
   cfg={nombre:'Scoutdrive',sub:'Plataforma de análisis táctico',logo:null,footer:'Scoutdrive · Uso interno · Cuerpo técnico'};
@@ -2888,7 +2890,8 @@ function guardarEConFeedback(){
   // Lo hacemos con un pequeño delay para dar tiempo a que la app
   // inicialice su configuración desde localStorage.
   window.addEventListener('DOMContentLoaded', () => {
-    setTimeout(loginSyncBrand, 100);
+    // Sin delay — localStorage es síncrono, la config está disponible al instante
+    loginSyncBrand();
 
     // Enfocar el campo email automáticamente al abrir
     document.getElementById('login-email').focus();
