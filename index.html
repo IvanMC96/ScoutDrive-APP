@@ -984,7 +984,7 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
   <div class="db-bar">
     <input type="text" id="jdb-q" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
     <button class="btn b-ghost b-sm" onclick="xBDJExcel()">📊 Exportar BD</button>
-    ${esAdminActual()?"<button class=\"btn b-rojo b-sm\" onclick=\"askDelAll('j')\">🗑 Borrar todo</button>":""}
+    <button class="btn b-rojo b-sm" onclick="askDelAll('j')">🗑 Borrar todo</button>
   </div>
   <div class="cards-grid" id="j-grid"></div>
 </div>
@@ -1183,7 +1183,7 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
       <option value="rival">Solo rivales</option>
     </select>
     <button class="btn b-ghost b-sm" onclick="xBDEExcel()">📊 Exportar BD</button>
-    ${esAdminActual()?"<button class=\"btn b-rojo b-sm\" onclick=\"askDelAll('e')\">🗑 Borrar todo</button>":""}
+    <button class="btn b-rojo b-sm" onclick="askDelAll('e')">🗑 Borrar todo</button>
   </div>
   <div class="cards-grid" id="e-grid"></div>
 </div>
@@ -1365,7 +1365,7 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
       <select id="p-fil-comp" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todas las comp.</option>
       </select>
-      ${esAdminActual()?"<button class=\"btn-add-partido\" onclick=\"abrirAddPartido()\">+ Añadir partido</button>":""}
+      <button class="btn-add-partido" onclick="abrirAddPartido()">+ Añadir partido</button>
     </div>
 
     <!-- Grid de partidos -->
@@ -4277,10 +4277,15 @@ function edTabSwitch(tipo, tab) {
   document.getElementById(`${prefix}panel-ficha`).classList.toggle('show',  tab==='ficha');
   document.getElementById(`${prefix}panel-editar`).classList.toggle('show', tab==='editar');
 
-  // Al cambiar a Ficha, actualizar el contenedor full
+  // Al cambiar a Ficha: primero forzar un render fresco y luego sincronizar
   if (tab === 'ficha') {
-    if (tipo === 'j') sincronizarFichaJFull();
-    else               sincronizarFichaEFull();
+    if (tipo === 'j') {
+      if (typeof renderJ === 'function') renderJ();
+      setTimeout(sincronizarFichaJFull, 80);
+    } else {
+      if (typeof renderE === 'function') renderE();
+      setTimeout(sincronizarFichaEFull, 80);
+    }
   }
 }
 
@@ -4302,16 +4307,52 @@ function sincronizarFichaJFull() {
 }
 
 function sincronizarFichaEFull() {
-  const src = document.getElementById('e-ficha-container');
   const dst = document.getElementById('e-ficha-container-full');
-  if (!src || !dst) return;
-  dst.innerHTML = src.innerHTML;
+  if (!dst) return;
+
+  // Generar HTML fresco directamente en el contenedor full
+  // usando el mismo render que el panel pequeño pero volcando al full
+  const src = document.getElementById('e-ficha-container');
+  if (src && src.innerHTML.trim()) {
+    dst.innerHTML = src.innerHTML;
+  } else {
+    // Si la vista previa pequeña está vacía, forzar un render completo
+    if (typeof renderE === 'function') {
+      renderE();
+      // Después del render, volver a copiar
+      setTimeout(() => {
+        const src2 = document.getElementById('e-ficha-container');
+        if (src2 && dst) dst.innerHTML = src2.innerHTML;
+      }, 50);
+    }
+  }
 
   const nom = document.getElementById('enom')?.value || '';
   const titulo = document.getElementById('e-ficha-titulo-bar');
   if (titulo) titulo.textContent = nom || 'Ficha del Equipo';
+}
 
-  _reasignarEventosClips(dst, 'e');
+function sincronizarFichaJFull() {
+  const dst = document.getElementById('j-ficha-container-full');
+  if (!dst) return;
+
+  const src = document.getElementById('j-ficha-container');
+  if (src && src.innerHTML.trim()) {
+    dst.innerHTML = src.innerHTML;
+  } else {
+    if (typeof renderJ === 'function') {
+      renderJ();
+      setTimeout(() => {
+        const src2 = document.getElementById('j-ficha-container');
+        if (src2 && dst) dst.innerHTML = src2.innerHTML;
+      }, 50);
+    }
+  }
+
+  const nom = ((document.getElementById('jnom')?.value || '') + ' ' +
+               (document.getElementById('jape')?.value || '')).trim();
+  const titulo = document.getElementById('j-ficha-titulo-bar');
+  if (titulo) titulo.textContent = nom || 'Ficha del Jugador';
 }
 
 /** Los onclick de clips usan índices numéricos — al copiar innerHTML
