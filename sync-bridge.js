@@ -378,6 +378,15 @@ function _normalizarRegistro(r) {
   if (r.jsonCompleto) {
     try {
       const obj = JSON.parse(r.jsonCompleto);
+      // IMPORTANTE: aunque jsonCompleto traiga imgJug/imgEsc, preferimos
+      // siempre la URL de Drive de las columnas planas (fotoURL/escudoURL)
+      // si existe. Las celdas de Google Sheets tienen un límite de 50.000
+      // caracteres; si la foto era grande en base64, jsonCompleto pudo
+      // guardarse truncado/corrupto y dejar la imagen rota, aunque el
+      // resto de la ficha esté perfectamente bien. La URL de Drive no
+      // tiene ese problema porque es un texto corto.
+      if (r.fotoURL)   obj.imgJug = r.fotoURL;
+      if (r.escudoURL) obj.imgEsc = r.escudoURL;
       // El jsonCompleto ya tiene la estructura correcta (nom, ape, etc.)
       return { ...obj, _sincronizado: true };
     } catch(e) {}
