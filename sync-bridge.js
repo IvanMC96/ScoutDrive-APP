@@ -245,17 +245,21 @@ async function scoutSincronizarAlAbrir() {
   if (respuesta.jugadores && respuesta.jugadores.length) {
     respuesta.jugadores.forEach(r => {
       const remoto = _normalizarRegistro(r);
+      if (!remoto.id) return;
       const idx = jDB.findIndex(x => x.id === remoto.id);
       const fechaLocal = idx >= 0 ? new Date(jDB[idx].fecha || 0).getTime() : 0;
       const fechaRemota = new Date(remoto.fechaActualizacion || 0).getTime();
       if (idx < 0) {
-        // Registro nuevo que no existía en local: solo lo añadimos si trae
-        // al menos un nombre; si no, es basura del Sheet y la ignoramos.
-        if ((remoto.nom || remoto.ape)) { jDB.unshift(remoto); huboNovedades = true; }
+        // Registro que no existe en local todavía (p.ej. dispositivo nuevo):
+        // lo añadimos siempre. No exigimos nombre aquí — si lo exigiéramos,
+        // un fallo de mapeo de columnas en el Sheet dejaría el dispositivo
+        // sin datos en vez de con datos "sin nombre" (que sí se pueden ver
+        // y arreglar desde la app).
+        jDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
-        // Nunca dejamos que un remoto sin nombre/apellidos borre uno local
-        // que sí los tiene — evita que un jugador "se quede sin nombre"
-        // por una fila incompleta o mal mapeada en el Sheet.
+        // Aquí sí protegemos: nunca dejamos que un remoto sin nombre/apellidos
+        // borre uno local que sí los tiene — evita que un jugador "se quede
+        // sin nombre" por una fila incompleta o mal mapeada en el Sheet.
         if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'])) huboNovedades = true;
       }
     });
@@ -263,11 +267,12 @@ async function scoutSincronizarAlAbrir() {
   if (respuesta.equipos && respuesta.equipos.length) {
     respuesta.equipos.forEach(r => {
       const remoto = _normalizarRegistro(r);
+      if (!remoto.id) return;
       const idx = eDB.findIndex(x => x.id === remoto.id);
       const fechaLocal = idx >= 0 ? new Date(eDB[idx].fecha || 0).getTime() : 0;
       const fechaRemota = new Date(remoto.fechaActualizacion || 0).getTime();
       if (idx < 0) {
-        if (remoto.nom) { eDB.unshift(remoto); huboNovedades = true; }
+        eDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
         if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'])) huboNovedades = true;
       }
@@ -381,7 +386,7 @@ async function scoutSyncCompleto(silencioso) {
       if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
       if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape']); cambios++; }
-      else if (typeof jDB !== 'undefined' && (remoto.nom || remoto.ape)) { jDB.unshift(remoto); cambios++; }
+      else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
   }
 
@@ -391,7 +396,7 @@ async function scoutSyncCompleto(silencioso) {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
       if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom']); cambios++; }
-      else if (typeof eDB !== 'undefined' && remoto.nom) { eDB.unshift(remoto); cambios++; }
+      else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
 
