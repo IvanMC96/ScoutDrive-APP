@@ -1502,6 +1502,19 @@ body.solo-lectura .ed-panel-form {
     <button class="btn b-verde" onclick="guardarCfg()">💾 Guardar configuración</button>
     <button class="btn b-ghost" onclick="resetCfg()">↺ Restablecer por defecto</button>
   </div>
+
+  <div class="psec" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
+    <div class="cfg-title" style="padding:14px 16px 0">☁️ Sincronización con Google Sheets</div>
+    <div class="pbody">
+      <p style="font-size:11px;color:var(--gris);line-height:1.5">
+        Usa esto <strong>una sola vez</strong> después de cambiar la URL del backend
+        (por ejemplo tras una nueva implementación en Apps Script) para subir todo
+        lo que ya tienes guardado en este dispositivo y que aún no llegó a la nube.
+        Puede tardar según cuántos jugadores/equipos tengas.
+      </p>
+      <button class="btn b-azul" id="btn-resubida-total" onclick="scoutForzarResubidaTotal()">☁️ Forzar resubida de todo lo local</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ PANEL ADMINISTRACIÓN DE USUARIOS (solo admins) ══════════ -->
@@ -3651,7 +3664,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycby3bbPEXzcoTh3Ynqtq4WqBdmg2JoWH-4pnQveJEmReheXzcD-cIoGF8sjdP2IOkdL-/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -4088,7 +4101,7 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycby3bbPEXzcoTh3Ynqtq4WqBdmg2JoWH-4pnQveJEmReheXzcD-cIoGF8sjdP2IOkdL-/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
