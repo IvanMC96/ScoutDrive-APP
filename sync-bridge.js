@@ -272,6 +272,53 @@ async function scoutSincronizarAlAbrir() {
 }
 
 // ════════════════════════════════════════════════════════════════
+//  NORMALIZACIÓN — convierte columnas del Sheet al formato de la app
+// ════════════════════════════════════════════════════════════════
+function _normalizarRegistro(r) {
+  // Si tiene jsonCompleto, esa es la fuente de verdad — contiene el
+  // objeto exacto tal como lo generó guardarJ()/guardarE()
+  if (r.jsonCompleto) {
+    try {
+      const obj = JSON.parse(r.jsonCompleto);
+      // El jsonCompleto ya tiene la estructura correcta (nom, ape, etc.)
+      return { ...obj, _sincronizado: true };
+    } catch(e) {}
+  }
+
+  // Si no hay jsonCompleto (objeto incompleto del Sheet), hacemos el
+  // mapeo manual de columnas planas → campos que usa la app
+  const normalizado = { ...r, _sincronizado: true };
+
+  // Jugador: columnas del Sheet → campos de la app
+  if (r.nombre !== undefined && r.nom === undefined) normalizado.nom = r.nombre;
+  if (r.apellidos !== undefined && r.ape === undefined) normalizado.ape = r.apellidos;
+  if (r.posicion !== undefined && r.pos === undefined) normalizado.pos = r.posicion;
+  if (r.temporada !== undefined && r.temp === undefined) normalizado.temp = r.temporada;
+  if (r.nacionalidad !== undefined && r.nac === undefined) normalizado.nac = r.nacionalidad;
+  if (r.notaTecnica !== undefined && r.nota === undefined) normalizado.nota = r.notaTecnica;
+  if (r.fotoURL !== undefined && !normalizado.imgJug) normalizado.imgJug = r.fotoURL;
+  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = r.escudoURL;
+
+  // Equipo: columnas del Sheet → campos de la app
+  if (r.nombre !== undefined && r.nom === undefined) normalizado.nom = r.nombre;
+  if (r.temporada !== undefined && r.temp === undefined) normalizado.temp = r.temporada;
+  if (r.entrenador !== undefined && r.ent === undefined) normalizado.ent = r.entrenador;
+  if (r.sistema !== undefined && r.sist === undefined) normalizado.sist = r.sistema;
+  if (r.notaTactica !== undefined && r.nota === undefined) normalizado.nota = r.notaTactica;
+  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = r.escudoURL;
+
+  // Stats del equipo
+  if (!normalizado.stats && (r.pj !== undefined)) {
+    normalizado.stats = {
+      pj: +r.pj||0, v: +r.victorias||0, e: +r.empates||0,
+      d: +r.derrotas||0, gf: +r.golesFavor||0, gc: +r.golesContra||0
+    };
+  }
+
+  return normalizado;
+}
+
+// ════════════════════════════════════════════════════════════════
 //  SINCRONIZACIÓN COMPLETA — trae TODO del Sheet
 //  (útil al abrir desde un dispositivo nuevo)
 // ════════════════════════════════════════════════════════════════
@@ -292,39 +339,23 @@ async function scoutSyncCompleto(silencioso) {
   let cambios = 0;
 
   if (respuesta.jugadores && respuesta.jugadores.length) {
-    // Reconstruir desde jsonCompleto si existe
-    const jugadoresReconstruidos = respuesta.jugadores.map(r => {
-      if (r.jsonCompleto) {
-        try { return { ...JSON.parse(r.jsonCompleto), _sincronizado: true }; }
-        catch(e) {}
-      }
-      return r;
-    });
-
-    // Fusionar: si hay datos locales más nuevos, los conservamos
-    jugadoresReconstruidos.forEach(remoto => {
+    const reconstruidos = respuesta.jugadores.map(_normalizarRegistro);
+    // Reemplazar o añadir — el Sheet es la fuente de verdad en sync completo
+    reconstruidos.forEach(remoto => {
+      if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx < 0) {
-        if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
-      }
-      // Si ya existe, el local tiene prioridad (puede tener cambios sin subir aún)
+      if (idx >= 0) { jDB[idx] = remoto; cambios++; }
+      else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
   }
 
   if (respuesta.equipos && respuesta.equipos.length) {
-    const equiposReconstruidos = respuesta.equipos.map(r => {
-      if (r.jsonCompleto) {
-        try { return { ...JSON.parse(r.jsonCompleto), _sincronizado: true }; }
-        catch(e) {}
-      }
-      return r;
-    });
-
-    equiposReconstruidos.forEach(remoto => {
+    const reconstruidos = respuesta.equipos.map(_normalizarRegistro);
+    reconstruidos.forEach(remoto => {
+      if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx < 0) {
-        if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
-      }
+      if (idx >= 0) { eDB[idx] = remoto; cambios++; }
+      else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
 
@@ -335,13 +366,14 @@ async function scoutSyncCompleto(silencioso) {
     if (typeof saveEDB === 'function') saveEDB();
     if (typeof renderJDB === 'function') renderJDB();
     if (typeof renderEDB === 'function') renderEDB();
-    _scoutToast(`☁️ ${cambios} elemento${cambios !== 1 ? 's' : ''} descargado${cambios !== 1 ? 's' : ''} del servidor`);
+    _scoutToast(`☁️ ${cambios} elemento${cambios !== 1 ? 's' : ''} sincronizado${cambios !== 1 ? 's' : ''}`);
   } else {
     if (!silencioso) _scoutToast('✅ Todo actualizado');
   }
 
   if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
 }
+
 
 
 document.addEventListener('DOMContentLoaded', () => {
