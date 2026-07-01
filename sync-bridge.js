@@ -29,7 +29,7 @@
 // ════════════════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
+const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbxGc0rO2lfxgWlFqaoGft-CfRDfdqGLaQhRANSwL7-zujLB2mB-MnA4rM5lL-gHEYL6/exec';
 
 // Pon esto en false desde la consola si alguna vez quieres trabajar
 // offline puro sin que intente conectar (vuelve a true al recargar).
