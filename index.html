@@ -921,6 +921,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
     <button class="nav-tab" id="tab-equipos" onclick="navTo('equipos-db')">🏟️ Equipos</button>
     <button class="nav-tab" id="tab-partidos" onclick="navTo('partidos')">🎬 Partidos</button>
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
+    <button class="nav-tab" id="tab-admin" onclick="navTo('admin')" style="display:none;color:var(--naranja-cl)">🛡️ Admin</button>
   </div>
   <div class="top-right" id="top-right-db">
     <button class="btn b-ghost b-sm" id="btn-sync-manual" onclick="scoutSyncCompleto()" title="Traer todos los datos del servidor">🔄</button>
@@ -1468,6 +1469,65 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   </div>
 </div>
 
+<!-- ══ PANEL ADMINISTRACIÓN DE USUARIOS (solo admins) ══════════ -->
+<div class="vista db-page cfg-page" id="v-admin" style="display:none">
+  <div class="db-hdr">
+    <div>
+      <div class="db-title">🛡️ Administración de usuarios</div>
+      <div class="db-sub">Solo visible para administradores · Los cambios se aplican en tiempo real</div>
+    </div>
+    <button class="btn b-verde" onclick="abrirModalNuevoUsuario()">+ Nuevo usuario</button>
+  </div>
+
+  <!-- Lista de usuarios -->
+  <div id="admin-usuarios-wrap">
+    <div style="color:var(--gris);font-size:12px;padding:20px">Cargando usuarios...</div>
+  </div>
+</div>
+
+<!-- ══ MODAL NUEVO / EDITAR USUARIO ══════════════════════════ -->
+<div class="add-partido-modal" id="modal-usuario" onclick="if(event.target===this)cerrarModalUsuario()">
+  <div class="add-partido-box" style="max-width:440px">
+    <div class="add-partido-hdr">
+      <span id="modal-usuario-titulo">➕ Nuevo usuario</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarModalUsuario()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <div class="apf">
+        <label>Email (usuario de acceso)</label>
+        <input id="mu-email" type="email" placeholder="correo@ejemplo.com">
+      </div>
+      <div class="apf">
+        <label>Nombre completo</label>
+        <input id="mu-nombre" placeholder="Nombre y apellidos">
+      </div>
+      <div class="apf">
+        <label>Contraseña <span id="mu-pass-hint" style="color:var(--gris);font-weight:400">(dejar vacío para no cambiar)</span></label>
+        <input id="mu-pass" type="password" placeholder="Nueva contraseña">
+      </div>
+      <div class="apf">
+        <label>Rol</label>
+        <select id="mu-rol">
+          <option value="usuario">👤 Usuario — solo puede ver y editar datos</option>
+          <option value="admin">🛡️ Administrador — puede gestionar usuarios</option>
+        </select>
+      </div>
+      <div class="apf" id="mu-activo-wrap">
+        <label>Estado</label>
+        <select id="mu-activo">
+          <option value="true">✅ Activo</option>
+          <option value="false">🚫 Desactivado</option>
+        </select>
+      </div>
+      <input type="hidden" id="mu-edit-id">
+    </div>
+    <div class="add-partido-footer">
+      <button class="btn-cancel-partido" onclick="cerrarModalUsuario()">Cancelar</button>
+      <button class="btn-guardar-partido" onclick="guardarUsuario()">💾 Guardar usuario</button>
+    </div>
+  </div>
+</div>
+
 <script>
 
 // ══════════════════════════════════════════════════════════════════
@@ -1524,7 +1584,7 @@ function toast(msg,err=false){
 // NAVEGACIÓN
 // ══════════════════════════════════════════════════════════════════
 let currentSection='jugadores-db';
-const VISTAS=['jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config'];
+const VISTAS=['jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config','admin'];
 
 function navTo(sec){
   VISTAS.forEach(v=>{
@@ -1535,6 +1595,7 @@ function navTo(sec){
   document.getElementById('tab-equipos').classList.toggle('on',sec.startsWith('equipo'));
   document.getElementById('tab-config').classList.toggle('on',sec==='config');
   document.getElementById('tab-partidos').classList.toggle('on',sec==='partidos');
+  document.getElementById('tab-admin').classList.toggle('on',sec==='admin');
   const isEd=sec.endsWith('-ed');
   document.getElementById('top-right-db').style.display=isEd?'none':'';
   document.getElementById('top-right-ed').style.display=isEd?'':'none';
@@ -1549,6 +1610,7 @@ function navTo(sec){
   if(sec==='equipos-db') renderEDB();
   if(sec==='config') initCfgForm();
   if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
+  if(sec==='admin') cargarUsuariosAdmin();
   currentSection=sec;
 }
 
@@ -3405,60 +3467,50 @@ function guardarEConFeedback(){
   //  implementa autenticación en el servidor.
   // ============================================================
 
-  const USUARIOS = {
-    // ── EDITA AQUÍ TUS USUARIOS ─────────────────────────────
-    "entrenador@donbenito.es" : "clave_entrenador",
-    "analista@donbenito.es"   : "clave_analista",
-    // ── FIN DE LA LISTA ─────────────────────────────────────
-    //  (añade más líneas encima de esta línea si necesitas)
-  };
-
-
-  // ── Sincronizar título y subtítulo del login con la config ──
-  // Se ejecuta cuando la app ya ha cargado su configuración.
-  // Si no usas la config dinámica, puedes editar el texto
-  // directamente en el HTML del login más arriba.
-  function loginSyncBrand() {
-    try {
-      // Leer config guardada en localStorage (guardada por la app)
-      const cfg = JSON.parse(localStorage.getItem('scout_cfg_v1') || '{}');
-
-      if (cfg.nombre) {
-        document.getElementById('login-titulo').textContent    = cfg.nombre;
-        document.title = cfg.nombre;
-      }
-      if (cfg.sub) {
-        document.getElementById('login-subtitulo').textContent = cfg.sub;
-      }
-      if (cfg.logo) {
-        const img = document.getElementById('login-logo');
-        img.src = cfg.logo;
-        document.getElementById('login-logo-emoji').style.display = 'none';
-      }
-    } catch(e) { /* Config no disponible aún — se usa el texto por defecto */ }
+  // ── SHA-256 en el navegador (Web Crypto API) ────────────────
+  async function sha256Browser(texto) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(texto);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  // Sesión activa en memoria (se limpia al cerrar la pestaña)
+  window._scoutSession = null;
 
-  // ── Mostrar / ocultar contraseña ────────────────────────────
+  // ── Sincronizar logo y nombre del login con la config ────────
+  function loginSyncBrand() {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('scout_cfg_v1') || '{}');
+      if (cfg.nombre) { document.getElementById('login-titulo').textContent = cfg.nombre; document.title = cfg.nombre; }
+      if (cfg.sub)    document.getElementById('login-subtitulo').textContent = cfg.sub;
+      if (cfg.logo) {
+        document.getElementById('login-logo').src = cfg.logo;
+        document.getElementById('login-logo-emoji').style.display = 'none';
+      }
+    } catch(e) {}
+  }
+
+  // ── Mostrar / ocultar contraseña ─────────────────────────────
   function loginTogglePass() {
     const input = document.getElementById('login-pass');
     const boton = document.getElementById('login-ojo');
-    if (input.type === 'password') {
-      input.type = 'text';
-      boton.textContent = '🙈';
-      boton.title = 'Ocultar contraseña';
-    } else {
-      input.type = 'password';
-      boton.textContent = '👁';
-      boton.title = 'Mostrar contraseña';
-    }
+    if (input.type === 'password') { input.type = 'text'; boton.textContent = '🙈'; }
+    else { input.type = 'password'; boton.textContent = '👁'; }
   }
 
+  // ── Login via Apps Script con SHA-256 ────────────────────────
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbz0kWHmmYyx21BkGphjAO6QIx5AaykJnSboGoA-mnhw3Tf7yp5xsQ7dYO1R7eUCrlC8/exec';
 
-  // ── Lógica principal de validación ──────────────────────────
-  function loginValidar(event) {
-    event.preventDefault();   // evitar recarga de página
+  // Credenciales locales de emergencia (por si la API no responde)
+  const FALLBACK_USERS = {
+    'entrenador@donbenito.es': { pass: 'clave_entrenador', rol: 'admin',   nombre: 'Iván MC' },
+    'analista@donbenito.es':   { pass: 'clave_analista',   rol: 'usuario', nombre: 'Analista' }
+  };
 
+  async function loginValidar(event) {
+    event.preventDefault();
     const emailInput = document.getElementById('login-email');
     const passInput  = document.getElementById('login-pass');
     const errorDiv   = document.getElementById('login-error');
@@ -3466,65 +3518,64 @@ function guardarEConFeedback(){
 
     const email = emailInput.value.trim().toLowerCase();
     const pass  = passInput.value;
+    if (!email || !pass) return;
 
-    // Feedback visual mientras valida
     boton.classList.add('cargando');
     boton.textContent = 'Comprobando…';
     errorDiv.style.display = 'none';
 
-    // Pequeño delay artificial para que no parezca instantáneo
-    setTimeout(() => {
+    const _abrirApp = (sesion) => {
+      window._scoutSession = sesion;
+      const overlay = document.getElementById('login-overlay');
+      overlay.style.transition = 'opacity .3s ease';
+      overlay.style.opacity = '0';
+      setTimeout(() => {
+        overlay.style.display = 'none';
+        loginSyncBrand();
+        if (typeof actualizarPanelAdmin === 'function') actualizarPanelAdmin();
+      }, 300);
+    };
 
-      // ── COMPROBACIÓN ────────────────────────────────────────
-      if (USUARIOS[email] !== undefined && USUARIOS[email] === pass) {
+    const _mostrarError = (msg) => {
+      errorDiv.textContent = msg || 'Usuario o contraseña incorrectos.';
+      errorDiv.style.display = 'block';
+      passInput.value = ''; passInput.focus();
+      boton.classList.remove('cargando'); boton.textContent = 'Entrar →';
+    };
 
-        // ✅ ACCESO CORRECTO
-        // Animamos la salida del overlay y lo eliminamos
-        const overlay = document.getElementById('login-overlay');
-        overlay.style.transition = 'opacity .3s ease';
-        overlay.style.opacity    = '0';
-
-        setTimeout(() => {
-          overlay.style.display = 'none';
-          // Sincronizar nombre/logo de la app con el login
-          // (por si la config está cargada en este punto)
-          loginSyncBrand();
-        }, 300);
-
+    try {
+      const hashPass = await sha256Browser(pass);
+      const res = await fetch(SCOUT_API_LOGIN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ accion: 'login', email, hashPass })
+      });
+      const data = await res.json();
+      if (data.ok && data.resultado && data.resultado.ok) {
+        _abrirApp(data.resultado.usuario);
       } else {
-
-        // ❌ ACCESO DENEGADO
-        errorDiv.style.display = 'block';
-
-        // Reiniciar animación de shake (truco: quitar y volver a poner la clase)
-        errorDiv.style.animation = 'none';
-        requestAnimationFrame(() => {
-          errorDiv.style.animation = '';
-        });
-
-        // Limpiar campo de contraseña y devolver foco
-        passInput.value = '';
-        passInput.focus();
-
-        // Restaurar botón
-        boton.classList.remove('cargando');
-        boton.textContent = 'Entrar →';
+        const motivo = (data.resultado && data.resultado.motivo) || '';
+        _mostrarError(motivo === 'cuenta_desactivada'
+          ? 'Esta cuenta está desactivada. Contacta con el administrador.'
+          : 'Usuario o contraseña incorrectos.');
       }
-
-    }, 400); // ms de delay visual
+    } catch(err) {
+      // Sin conexión — fallback local
+      console.warn('[Scoutdrive] API no disponible, usando fallback:', err.message);
+      const u = FALLBACK_USERS[email];
+      if (u && u.pass === pass) {
+        _abrirApp({ email, rol: u.rol, nombre: u.nombre, _fallback: true });
+      } else {
+        _mostrarError('Sin conexión con el servidor. Verifica tu internet e inténtalo de nuevo.');
+      }
+    }
   }
 
-
-  // ── Sincronizar marca al cargar la página ───────────────────
-  // Lo hacemos con un pequeño delay para dar tiempo a que la app
-  // inicialice su configuración desde localStorage.
   window.addEventListener('DOMContentLoaded', () => {
-    // Sin delay — localStorage es síncrono, la config está disponible al instante
     loginSyncBrand();
-
-    // Enfocar el campo email automáticamente al abrir
     document.getElementById('login-email').focus();
   });
+
 
 
 
@@ -3812,6 +3863,206 @@ document.addEventListener('keydown', e=>{
     if(m&&m.classList.contains('open')) cerrarAddPartido();
   }
 });
+
+// ════════════════════════════════════════════════════════════════
+//  PANEL DE ADMINISTRACIÓN DE USUARIOS
+// ════════════════════════════════════════════════════════════════
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbz0kWHmmYyx21BkGphjAO6QIx5AaykJnSboGoA-mnhw3Tf7yp5xsQ7dYO1R7eUCrlC8/exec';
+
+async function _apiAdmin(accion, datos) {
+  const sesion = window._scoutSession;
+  if (!sesion) return { ok: false, motivo: 'sin_sesion' };
+  try {
+    const res = await fetch(SCOUT_API_ADMIN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ accion, solicitanteEmail: sesion.email, ...datos })
+    });
+    const data = await res.json();
+    return data.resultado || data;
+  } catch(e) {
+    return { ok: false, motivo: 'sin_conexion' };
+  }
+}
+
+/** Muestra/oculta la pestaña Admin según el rol del usuario logueado */
+function actualizarPanelAdmin() {
+  const sesion = window._scoutSession;
+  const tabAdmin = document.getElementById('tab-admin');
+  if (!tabAdmin) return;
+  const esAdmin = sesion && sesion.rol === 'admin';
+  tabAdmin.style.display = esAdmin ? '' : 'none';
+}
+
+async function cargarUsuariosAdmin() {
+  const wrap = document.getElementById('admin-usuarios-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="color:var(--gris);font-size:12px;padding:20px">⏳ Cargando usuarios...</div>';
+
+  const resultado = await _apiAdmin('listarUsuarios', {});
+
+  if (!resultado.ok) {
+    wrap.innerHTML = `<div style="color:var(--rojo-cl);font-size:12px;padding:20px">
+      Error al cargar usuarios: ${resultado.motivo || 'desconocido'}
+    </div>`;
+    return;
+  }
+
+  const usuarios = resultado.usuarios || [];
+  if (!usuarios.length) {
+    wrap.innerHTML = '<div style="color:var(--gris);font-size:12px;padding:20px">No hay usuarios registrados.</div>';
+    return;
+  }
+
+  const sesion = window._scoutSession;
+  wrap.innerHTML = `
+  <table class="admin-tabla">
+    <thead>
+      <tr>
+        <th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th>
+        <th>Último acceso</th><th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${usuarios.map(u => {
+        const esMiCuenta = sesion && sesion.email === u.email;
+        const fechaAcceso = u.fechaUltimoAcceso
+          ? new Date(u.fechaUltimoAcceso).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})
+          : '—';
+        return `<tr class="${u.activo?'':'admin-fila-inactiva'}">
+          <td><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}</td>
+          <td>${u.nombre||'—'}</td>
+          <td><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
+          <td><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
+          <td style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
+          <td>
+            <button class="btn b-ghost b-sm" onclick="editarUsuarioAdmin('${u.id}')">✏️</button>
+            ${!esMiCuenta ? `<button class="btn b-rojo b-sm" onclick="eliminarUsuarioAdmin('${u.id}','${u.email}')">🗑</button>` : ''}
+          </td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+// ── Modal nuevo/editar usuario ───────────────────────────────────
+function abrirModalNuevoUsuario() {
+  document.getElementById('mu-email').value = '';
+  document.getElementById('mu-email').disabled = false;
+  document.getElementById('mu-nombre').value = '';
+  document.getElementById('mu-pass').value = '';
+  document.getElementById('mu-rol').value = 'usuario';
+  document.getElementById('mu-activo').value = 'true';
+  document.getElementById('mu-edit-id').value = '';
+  document.getElementById('mu-activo-wrap').style.display = 'none';
+  document.getElementById('mu-pass-hint').textContent = '';
+  document.getElementById('modal-usuario-titulo').textContent = '➕ Nuevo usuario';
+  document.getElementById('modal-usuario').classList.add('open');
+}
+
+async function editarUsuarioAdmin(id) {
+  // Cargar datos del usuario desde la lista ya cargada
+  const filas = document.querySelectorAll('.admin-tabla tbody tr');
+  // Re-fetch para tener datos frescos
+  const resultado = await _apiAdmin('listarUsuarios', {});
+  if (!resultado.ok) return;
+  const u = resultado.usuarios.find(x => x.id === id);
+  if (!u) return;
+
+  document.getElementById('mu-email').value = u.email;
+  document.getElementById('mu-email').disabled = true; // no se puede cambiar el email
+  document.getElementById('mu-nombre').value = u.nombre || '';
+  document.getElementById('mu-pass').value = '';
+  document.getElementById('mu-rol').value = u.rol || 'usuario';
+  document.getElementById('mu-activo').value = String(u.activo);
+  document.getElementById('mu-edit-id').value = u.id;
+  document.getElementById('mu-activo-wrap').style.display = '';
+  document.getElementById('mu-pass-hint').textContent = '(dejar vacío para no cambiar)';
+  document.getElementById('modal-usuario-titulo').textContent = '✏️ Editar usuario';
+  document.getElementById('modal-usuario').classList.add('open');
+}
+
+function cerrarModalUsuario() {
+  document.getElementById('modal-usuario').classList.remove('open');
+}
+
+async function guardarUsuario() {
+  const editId  = document.getElementById('mu-edit-id').value;
+  const email   = document.getElementById('mu-email').value.trim().toLowerCase();
+  const nombre  = document.getElementById('mu-nombre').value.trim();
+  const pass    = document.getElementById('mu-pass').value;
+  const rol     = document.getElementById('mu-rol').value;
+  const activo  = document.getElementById('mu-activo').value === 'true';
+
+  if (!email) { toast('El email es obligatorio', true); return; }
+
+  let hashPass = null;
+  if (pass) {
+    // Hash SHA-256 de la contraseña — nunca se envía en claro
+    const encoder = new TextEncoder();
+    const data = encoder.encode(pass);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    hashPass = Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  let resultado;
+  if (editId) {
+    // Editar usuario existente
+    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo } });
+    // Cambiar contraseña si se proporcionó
+    if (resultado.ok && hashPass) {
+      await _apiAdmin('cambiarPassword', { id: editId, hashPassNuevo: hashPass });
+    }
+  } else {
+    // Crear nuevo usuario
+    if (!pass) { toast('La contraseña es obligatoria para nuevos usuarios', true); return; }
+    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol } });
+  }
+
+  if (resultado && resultado.ok) {
+    cerrarModalUsuario();
+    toast('✅ Usuario guardado');
+    cargarUsuariosAdmin();
+  } else {
+    const motivo = resultado?.motivo || 'error desconocido';
+    toast(`Error: ${motivo === 'email_ya_existe' ? 'Ese email ya está registrado' : motivo}`, true);
+  }
+}
+
+async function eliminarUsuarioAdmin(id, email) {
+  askDel(`¿Eliminar el usuario "${email}"? Esta acción no se puede deshacer.`, async () => {
+    const resultado = await _apiAdmin('eliminarUsuario', { id });
+    if (resultado && resultado.ok) {
+      toast('🗑 Usuario eliminado');
+      cargarUsuariosAdmin();
+    } else {
+      toast('Error al eliminar usuario', true);
+    }
+  });
+}
+
+// ── CSS del panel admin (inyectado dinámicamente) ────────────────
+(function injectAdminCSS() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .admin-tabla{width:100%;border-collapse:collapse;font-size:12px;}
+    .admin-tabla th{padding:8px 12px;text-align:left;font-size:10px;font-weight:700;
+      text-transform:uppercase;letter-spacing:.7px;color:var(--gris);
+      border-bottom:2px solid var(--border);background:var(--bg2);}
+    .admin-tabla td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle;}
+    .admin-tabla tr:hover td{background:rgba(255,255,255,.02);}
+    .admin-fila-inactiva td{opacity:.5;}
+    .admin-yo-badge{background:var(--azul-dk);color:var(--azul-cl);font-size:9px;
+      font-weight:700;padding:2px 6px;border-radius:10px;margin-left:4px;}
+    .admin-rol-badge{font-size:10px;font-weight:700;padding:3px 9px;border-radius:12px;}
+    .admin-rol-admin{background:rgba(210,153,34,.15);color:var(--naranja-cl);}
+    .admin-rol-usuario{background:rgba(47,129,247,.12);color:var(--azul-cl);}
+    .admin-estado-badge{font-size:10px;font-weight:600;}
+    .admin-estado-badge.activo{color:var(--verde-cl);}
+    .admin-estado-badge.inactivo{color:var(--gris2);}
+  `;
+  document.head.appendChild(style);
+})();
 
 // ── Borrado limpio — no depende de strings interpolados en onclick ──
 function borrarEquipo(btn){
