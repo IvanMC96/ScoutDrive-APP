@@ -743,6 +743,158 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   .ed-form{width:340px;}
 }
 
+
+/* ══ SECCIÓN PARTIDOS ══════════════════════════════════════════ */
+.partidos-wrap{padding:20px;max-width:1100px;margin:0 auto;}
+.partidos-header{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+.partidos-header h2{font-size:18px;font-weight:800;color:var(--blanco);}
+.partidos-stats{display:flex;gap:12px;}
+.pstat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:6px 14px;text-align:center;}
+.pstat-v{font-size:16px;font-weight:800;color:var(--azul-cl);}
+.pstat-l{font-size:9px;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;}
+
+/* Filtros */
+.partidos-filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+.partidos-filters input,.partidos-filters select{
+  background:var(--bg2);border:1px solid var(--border);border-radius:7px;
+  color:var(--blanco);padding:7px 12px;font-size:12px;min-width:140px;}
+.partidos-filters input:focus,.partidos-filters select:focus{
+  outline:none;border-color:var(--azul);}
+.btn-add-partido{background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
+  padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.btn-add-partido:hover{background:var(--verde);}
+
+/* Separadores de jornada */
+.jornada-sep{
+  display:flex;align-items:center;gap:10px;
+  margin:22px 0 10px;
+}
+.jornada-sep-lbl{
+  font-size:10px;font-weight:800;text-transform:uppercase;
+  letter-spacing:1px;color:var(--gris);white-space:nowrap;
+}
+.jornada-sep-line{flex:1;height:1px;background:var(--border);}
+
+/* Grid de tarjetas de partido */
+.partidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+.partido-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;
+  display:flex;flex-direction:column;
+}
+.partido-card:hover{border-color:var(--azul);transform:translateY(-2px);}
+
+/* Thumbnail del partido */
+.partido-thumb{
+  position:relative;aspect-ratio:16/9;background:linear-gradient(135deg,#0d1b2b,#1c2333);
+  overflow:hidden;contain:strict;
+}
+.partido-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.partido-thumb-default{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;
+}
+.partido-thumb-default span{font-size:28px;}
+.partido-play-overlay{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .2s;
+}
+.partido-card:hover .partido-play-overlay{opacity:1;}
+.partido-play-btn{
+  width:52px;height:52px;border-radius:50%;
+  background:rgba(47,129,247,.9);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;color:#fff;
+}
+.partido-thumb-badge{
+  position:absolute;top:8px;left:8px;
+  background:rgba(0,0,0,.7);color:#fff;
+  font-size:9px;font-weight:700;padding:3px 8px;border-radius:12px;
+  letter-spacing:.5px;
+}
+
+/* Info del partido */
+.partido-info{padding:10px 12px 12px;}
+.partido-marcador{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-bottom:6px;
+}
+.partido-equipo{font-size:12px;font-weight:700;color:var(--blanco);text-align:center;flex:1;}
+.partido-resultado{
+  font-size:18px;font-weight:900;color:var(--azul-cl);
+  background:var(--bg3);padding:3px 10px;border-radius:7px;
+  white-space:nowrap;
+}
+.partido-meta{
+  display:flex;justify-content:center;gap:8px;flex-wrap:wrap;
+  font-size:9px;color:var(--gris);margin-top:4px;
+}
+.partido-meta span{
+  background:var(--bg3);padding:2px 7px;border-radius:10px;
+}
+.partido-card-actions{
+  display:flex;gap:6px;padding:0 10px 10px;margin-top:auto;
+}
+.partido-card-actions button{
+  flex:1;font-size:10px;padding:5px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg3);
+  color:var(--gris);cursor:pointer;transition:all .15s;
+}
+.partido-card-actions button:hover{background:var(--bg2);color:var(--blanco);}
+.partido-card-actions .btn-del-p{border-color:#7d1717;color:var(--rojo-cl);}
+.partido-card-actions .btn-del-p:hover{background:#7d1717;color:#fff;}
+
+/* Vacío */
+.partidos-empty{
+  text-align:center;padding:60px 20px;color:var(--gris);
+}
+.partidos-empty span{font-size:40px;display:block;margin-bottom:10px;}
+.partidos-empty p{font-size:13px;}
+
+/* Modal añadir partido */
+.add-partido-modal{
+  position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.75);
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.add-partido-modal.open{display:flex;}
+.add-partido-box{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:100%;max-width:540px;max-height:90vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);
+}
+.add-partido-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  font-size:14px;font-weight:800;color:var(--blanco);position:sticky;top:0;
+  background:var(--bg2);z-index:1;
+}
+.add-partido-body{padding:18px;}
+.apf{margin-bottom:12px;}
+.apf label{display:block;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.7px;color:var(--gris);margin-bottom:4px;}
+.apf input,.apf select,.apf textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--border);
+  border-radius:7px;color:var(--blanco);padding:8px 10px;
+  font-size:12px;box-sizing:border-box;font-family:inherit;}
+.apf input:focus,.apf select:focus,.apf textarea:focus{
+  outline:none;border-color:var(--azul);}
+.apf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.apf-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+.add-partido-footer{
+  display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);
+  background:var(--bg2);position:sticky;bottom:0;
+}
+.btn-guardar-partido{
+  flex:1;background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
+  padding:10px;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-guardar-partido:hover{background:var(--verde);}
+.btn-cancel-partido{
+  background:var(--bg3);color:var(--gris);border:1px solid var(--border);
+  border-radius:7px;padding:10px 18px;font-size:12px;cursor:pointer;}
+
 </style>
 </head>
 <body>
@@ -763,6 +915,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   <div class="nav-tabs">
     <button class="nav-tab on" id="tab-jugadores" onclick="navTo('jugadores-db')">👤 Jugadores</button>
     <button class="nav-tab" id="tab-equipos" onclick="navTo('equipos-db')">🏟️ Equipos</button>
+    <button class="nav-tab" id="tab-partidos" onclick="navTo('partidos')">🎬 Partidos</button>
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
   </div>
   <div class="top-right" id="top-right-db">
@@ -1154,6 +1307,93 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   </div><!-- /epanel-editar -->
 </div><!-- /v-equipo-ed -->
 
+
+<!-- ══ SECCIÓN PARTIDOS ════════════════════════════════════════ -->
+<div class="vista" id="v-partidos" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px)">
+  <div class="partidos-wrap">
+
+    <!-- Header -->
+    <div class="partidos-header">
+      <div>
+        <h2>🎬 Partidos</h2>
+        <p style="font-size:11px;color:var(--gris);margin-top:2px">Videoteca táctica — todos los partidos registrados</p>
+      </div>
+      <div class="partidos-stats">
+        <div class="pstat"><div class="pstat-v" id="pstat-total">0</div><div class="pstat-l">Partidos</div></div>
+        <div class="pstat"><div class="pstat-v" id="pstat-jornadas" style="color:var(--naranja-cl)">0</div><div class="pstat-l">Jornadas</div></div>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="partidos-filters">
+      <input id="p-buscar" placeholder="🔍 Buscar equipo, competición..." oninput="renderPartidos()">
+      <select id="p-fil-jornada" onchange="renderPartidos()">
+        <option value="">Todas las jornadas</option>
+      </select>
+      <select id="p-fil-equipo" onchange="renderPartidos()">
+        <option value="">Todos los equipos</option>
+      </select>
+      <select id="p-fil-comp" onchange="renderPartidos()">
+        <option value="">Todas las competiciones</option>
+      </select>
+      <button class="btn-add-partido" onclick="abrirAddPartido()">+ Añadir partido</button>
+    </div>
+
+    <!-- Grid de partidos -->
+    <div id="partidos-grid-wrap"></div>
+  </div>
+</div>
+
+<!-- ══ MODAL AÑADIR / EDITAR PARTIDO ══════════════════════════ -->
+<div class="add-partido-modal" id="add-partido-modal" onclick="if(event.target===this)cerrarAddPartido()">
+  <div class="add-partido-box">
+    <div class="add-partido-hdr">
+      <span id="add-partido-titulo">➕ Añadir partido</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarAddPartido()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <div class="apf-row">
+        <div class="apf"><label>Equipo local</label><input id="ap-local" placeholder="C.D. Don Benito"></div>
+        <div class="apf"><label>Equipo visitante</label><input id="ap-visitante" placeholder="Rival"></div>
+      </div>
+      <div class="apf-row3">
+        <div class="apf"><label>Jornada</label><input id="ap-jornada" placeholder="J1" type="text"></div>
+        <div class="apf"><label>Goles local</label><input id="ap-gf" type="number" min="0" value="0"></div>
+        <div class="apf"><label>Goles visit.</label><input id="ap-gc" type="number" min="0" value="0"></div>
+      </div>
+      <div class="apf-row">
+        <div class="apf"><label>Fecha</label><input id="ap-fecha" type="date"></div>
+        <div class="apf"><label>Competición</label>
+          <select id="ap-comp">
+            <option>3ª RFEF</option><option>2ª RFEF</option><option>1ª RFEF</option>
+            <option>Copa del Rey</option><option>Amistoso</option><option>Otra</option>
+          </select>
+        </div>
+      </div>
+      <div class="apf">
+        <label>🎬 Enlace vídeo (Google Drive, YouTube...)</label>
+        <input id="ap-url" placeholder="https://drive.google.com/file/d/... o https://youtu.be/...">
+        <p style="font-size:9px;color:var(--gris);margin-top:4px">
+          Drive: abre el vídeo → clic derecho → Copiar enlace. YouTube: copia la URL del vídeo.
+        </p>
+      </div>
+      <div class="apf">
+        <label>🖼️ Miniatura (URL de imagen, opcional)</label>
+        <input id="ap-thumb" placeholder="https://... (captura del partido)">
+      </div>
+      <div class="apf">
+        <label>📝 Notas tácticas</label>
+        <textarea id="ap-notas" rows="2" placeholder="Observaciones del partido..."></textarea>
+      </div>
+      <input type="hidden" id="ap-edit-id">
+    </div>
+    <div class="add-partido-footer">
+      <button class="btn-cancel-partido" onclick="cerrarAddPartido()">Cancelar</button>
+      <button class="btn-guardar-partido" onclick="guardarPartido()">💾 Guardar partido</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ CONFIGURACIÓN ═════════════════════════════════════════════ -->
 <div class="vista db-page cfg-page" id="v-config">
   <div class="db-tit">⚙️ Configuración de la Plataforma</div>
@@ -1267,7 +1507,7 @@ function toast(msg,err=false){
 // NAVEGACIÓN
 // ══════════════════════════════════════════════════════════════════
 let currentSection='jugadores-db';
-const VISTAS=['jugadores-db','jugador-ed','equipos-db','equipo-ed','config'];
+const VISTAS=['jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config'];
 
 function navTo(sec){
   VISTAS.forEach(v=>{
@@ -1277,6 +1517,7 @@ function navTo(sec){
   document.getElementById('tab-jugadores').classList.toggle('on',sec.startsWith('jugador'));
   document.getElementById('tab-equipos').classList.toggle('on',sec.startsWith('equipo'));
   document.getElementById('tab-config').classList.toggle('on',sec==='config');
+  document.getElementById('tab-partidos').classList.toggle('on',sec==='partidos');
   const isEd=sec.endsWith('-ed');
   document.getElementById('top-right-db').style.display=isEd?'none':'';
   document.getElementById('top-right-ed').style.display=isEd?'':'none';
@@ -1386,7 +1627,7 @@ function renderJDB(){
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editJ('${j.id}')">✏️ Editar</button>
       <button class="btn b-ghost b-sm" onclick="xJExcel('${j.id}')">📊</button>
-      <button class="btn b-rojo b-sm" onclick="askDel('¿Borrar a &quot;${eH((j.nom+' '+j.ape).trim())}&quot;?',()=>{jDB=jDB.filter(x=>x.id!==\'${j.id}\');saveJDB();renderJDB();toast(\'🗑 Eliminado\');})">🗑</button>
+      <button class="btn b-rojo b-sm" data-del-jugador="${eH(j.id)}" onclick="borrarJugador(this)">🗑</button>
     </div></div>`;
   }).join('');
 }
@@ -1678,7 +1919,7 @@ function renderEDB(){
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editE('${eq.id}')">✏️ Editar</button>
       <button class="btn b-ghost b-sm" onclick="xEExcel('${eq.id}')">📊</button>
-      <button class="btn b-rojo b-sm" onclick="askDel('¿Borrar equipo &quot;${eH(eq.nom)}&quot;?',()=>{eDB=eDB.filter(x=>x.id!==\'${eq.id}\');saveEDB();renderEDB();toast(\'🗑 Eliminado\');})">🗑</button>
+      <button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" onclick="borrarEquipo(this)">🗑</button>
     </div></div>`;
   }).join('');
 }
@@ -2971,6 +3212,158 @@ function guardarEConFeedback(){
   .ed-form{width:340px;}
 }
 
+
+/* ══ SECCIÓN PARTIDOS ══════════════════════════════════════════ */
+.partidos-wrap{padding:20px;max-width:1100px;margin:0 auto;}
+.partidos-header{display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+.partidos-header h2{font-size:18px;font-weight:800;color:var(--blanco);}
+.partidos-stats{display:flex;gap:12px;}
+.pstat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+  padding:6px 14px;text-align:center;}
+.pstat-v{font-size:16px;font-weight:800;color:var(--azul-cl);}
+.pstat-l{font-size:9px;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;}
+
+/* Filtros */
+.partidos-filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+.partidos-filters input,.partidos-filters select{
+  background:var(--bg2);border:1px solid var(--border);border-radius:7px;
+  color:var(--blanco);padding:7px 12px;font-size:12px;min-width:140px;}
+.partidos-filters input:focus,.partidos-filters select:focus{
+  outline:none;border-color:var(--azul);}
+.btn-add-partido{background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
+  padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.btn-add-partido:hover{background:var(--verde);}
+
+/* Separadores de jornada */
+.jornada-sep{
+  display:flex;align-items:center;gap:10px;
+  margin:22px 0 10px;
+}
+.jornada-sep-lbl{
+  font-size:10px;font-weight:800;text-transform:uppercase;
+  letter-spacing:1px;color:var(--gris);white-space:nowrap;
+}
+.jornada-sep-line{flex:1;height:1px;background:var(--border);}
+
+/* Grid de tarjetas de partido */
+.partidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;}
+.partido-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;cursor:pointer;transition:border-color .2s,transform .15s;
+  display:flex;flex-direction:column;
+}
+.partido-card:hover{border-color:var(--azul);transform:translateY(-2px);}
+
+/* Thumbnail del partido */
+.partido-thumb{
+  position:relative;aspect-ratio:16/9;background:linear-gradient(135deg,#0d1b2b,#1c2333);
+  overflow:hidden;contain:strict;
+}
+.partido-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.partido-thumb-default{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:6px;
+}
+.partido-thumb-default span{font-size:28px;}
+.partido-play-overlay{
+  position:absolute;inset:0;background:rgba(0,0,0,.45);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .2s;
+}
+.partido-card:hover .partido-play-overlay{opacity:1;}
+.partido-play-btn{
+  width:52px;height:52px;border-radius:50%;
+  background:rgba(47,129,247,.9);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;color:#fff;
+}
+.partido-thumb-badge{
+  position:absolute;top:8px;left:8px;
+  background:rgba(0,0,0,.7);color:#fff;
+  font-size:9px;font-weight:700;padding:3px 8px;border-radius:12px;
+  letter-spacing:.5px;
+}
+
+/* Info del partido */
+.partido-info{padding:10px 12px 12px;}
+.partido-marcador{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-bottom:6px;
+}
+.partido-equipo{font-size:12px;font-weight:700;color:var(--blanco);text-align:center;flex:1;}
+.partido-resultado{
+  font-size:18px;font-weight:900;color:var(--azul-cl);
+  background:var(--bg3);padding:3px 10px;border-radius:7px;
+  white-space:nowrap;
+}
+.partido-meta{
+  display:flex;justify-content:center;gap:8px;flex-wrap:wrap;
+  font-size:9px;color:var(--gris);margin-top:4px;
+}
+.partido-meta span{
+  background:var(--bg3);padding:2px 7px;border-radius:10px;
+}
+.partido-card-actions{
+  display:flex;gap:6px;padding:0 10px 10px;margin-top:auto;
+}
+.partido-card-actions button{
+  flex:1;font-size:10px;padding:5px;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg3);
+  color:var(--gris);cursor:pointer;transition:all .15s;
+}
+.partido-card-actions button:hover{background:var(--bg2);color:var(--blanco);}
+.partido-card-actions .btn-del-p{border-color:#7d1717;color:var(--rojo-cl);}
+.partido-card-actions .btn-del-p:hover{background:#7d1717;color:#fff;}
+
+/* Vacío */
+.partidos-empty{
+  text-align:center;padding:60px 20px;color:var(--gris);
+}
+.partidos-empty span{font-size:40px;display:block;margin-bottom:10px;}
+.partidos-empty p{font-size:13px;}
+
+/* Modal añadir partido */
+.add-partido-modal{
+  position:fixed;inset:0;z-index:800;background:rgba(0,0,0,.75);
+  display:none;align-items:center;justify-content:center;padding:20px;
+}
+.add-partido-modal.open{display:flex;}
+.add-partido-box{
+  background:var(--bg2);border:1px solid var(--border);border-radius:12px;
+  width:100%;max-width:540px;max-height:90vh;overflow-y:auto;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);
+}
+.add-partido-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 18px;border-bottom:1px solid var(--border);
+  font-size:14px;font-weight:800;color:var(--blanco);position:sticky;top:0;
+  background:var(--bg2);z-index:1;
+}
+.add-partido-body{padding:18px;}
+.apf{margin-bottom:12px;}
+.apf label{display:block;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.7px;color:var(--gris);margin-bottom:4px;}
+.apf input,.apf select,.apf textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--border);
+  border-radius:7px;color:var(--blanco);padding:8px 10px;
+  font-size:12px;box-sizing:border-box;font-family:inherit;}
+.apf input:focus,.apf select:focus,.apf textarea:focus{
+  outline:none;border-color:var(--azul);}
+.apf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.apf-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+.add-partido-footer{
+  display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);
+  background:var(--bg2);position:sticky;bottom:0;
+}
+.btn-guardar-partido{
+  flex:1;background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
+  padding:10px;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-guardar-partido:hover{background:var(--verde);}
+.btn-cancel-partido{
+  background:var(--bg3);color:var(--gris);border:1px solid var(--border);
+  border-radius:7px;padding:10px 18px;font-size:12px;cursor:pointer;}
+
 </style>
 
 
@@ -3116,7 +3509,270 @@ function guardarEConFeedback(){
   });
 
 
-// ── Sistema de pestañas Ficha / Editar ───────────────────────────
+
+// ════════════════════════════════════════════════════════════════
+//  PARTIDOS — VIDEOTECA TÁCTICA
+// ════════════════════════════════════════════════════════════════
+const PDB_KEY = 'scout_partidos_v1';
+let pDB = [];
+
+function loadPDB(){ try{ pDB=JSON.parse(localStorage.getItem(PDB_KEY)||'[]'); }catch(e){ pDB=[]; } }
+function savePDB(){ try{ localStorage.setItem(PDB_KEY,JSON.stringify(pDB)); }catch(e){} }
+
+loadPDB();
+
+function _normalizarURLPartido(url){
+  if(!url) return '';
+  url = url.trim();
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+  if(ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0`;
+  const drMatch = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  if(drMatch) return `https://drive.google.com/file/d/${drMatch[1]}/preview`;
+  if(url.includes('drive.google.com') && url.includes('preview')) return url;
+  return url;
+}
+
+function _tipoVideo(url){
+  if(!url) return 'none';
+  if(url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
+  if(url.includes('drive.google.com')) return 'drive';
+  return 'otro';
+}
+
+function renderPartidos(){
+  const buscar = (document.getElementById('p-buscar')?.value||'').toLowerCase();
+  const filJornada = document.getElementById('p-fil-jornada')?.value||'';
+  const filEquipo  = document.getElementById('p-fil-equipo')?.value||'';
+  const filComp    = document.getElementById('p-fil-comp')?.value||'';
+
+  _actualizarFiltrosPartidos();
+
+  let lista = pDB.filter(p => {
+    const txt = `${p.local} ${p.visitante} ${p.comp} ${p.notas}`.toLowerCase();
+    if(buscar && !txt.includes(buscar)) return false;
+    if(filJornada && p.jornada !== filJornada) return false;
+    if(filEquipo  && p.local !== filEquipo && p.visitante !== filEquipo) return false;
+    if(filComp    && p.comp !== filComp) return false;
+    return true;
+  });
+
+  lista.sort((a,b) => {
+    const na = parseInt(a.jornada)||999, nb = parseInt(b.jornada)||999;
+    if(na !== nb) return na - nb;
+    return (a.jornada||'').localeCompare(b.jornada||'');
+  });
+
+  document.getElementById('pstat-total').textContent = pDB.length;
+  const jornadas = [...new Set(pDB.map(p=>p.jornada).filter(Boolean))];
+  document.getElementById('pstat-jornadas').textContent = jornadas.length;
+
+  const wrap = document.getElementById('partidos-grid-wrap');
+  if(!wrap) return;
+
+  if(!lista.length){
+    wrap.innerHTML = `<div class="partidos-empty">
+      <span>🎬</span>
+      <p>${pDB.length===0 ? 'Aún no hay partidos registrados.<br>Pulsa "+ Añadir partido" para empezar.' : 'No hay partidos que coincidan con los filtros.'}</p>
+    </div>`;
+    return;
+  }
+
+  const grupos = {};
+  lista.forEach(p => {
+    const k = p.jornada || 'Sin jornada';
+    if(!grupos[k]) grupos[k] = [];
+    grupos[k].push(p);
+  });
+
+  let html = '';
+  Object.keys(grupos).sort((a,b)=>{
+    const na=parseInt(a)||999, nb=parseInt(b)||999;
+    if(na!==nb) return na-nb;
+    return a.localeCompare(b);
+  }).forEach(jornada => {
+    const jornadaLabel = /^\d+$/.test(jornada) ? `Jornada ${jornada}` : jornada;
+    html += `<div class="jornada-sep">
+      <div class="jornada-sep-lbl">📅 ${jornadaLabel}</div>
+      <div class="jornada-sep-line"></div>
+      <div class="jornada-sep-lbl" style="color:var(--gris2)">${grupos[jornada].length} partido${grupos[jornada].length!==1?'s':''}</div>
+    </div><div class="partidos-grid">`;
+    grupos[jornada].forEach(p => { html += _cardPartido(p); });
+    html += '</div>';
+  });
+  wrap.innerHTML = html;
+}
+
+function _cardPartido(p){
+  const gf = p.gf ?? '', gc = p.gc ?? '';
+  const resultado = (gf!==''&&gc!=='') ? `${gf} - ${gc}` : 'vs';
+  const tieneVideo = !!p.urlNorm;
+  const fecha = p.fecha ? new Date(p.fecha).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '';
+  const thumbH = p.thumb
+    ? `<img src="${p.thumb}" onerror="this.style.display='none'">`
+    : `<div class="partido-thumb-default"><span>⚽</span></div>`;
+
+  return `<div class="partido-card" onclick="verPartido('${p.id}')">
+    <div class="partido-thumb">
+      ${thumbH}
+      ${p.jornada ? `<div class="partido-thumb-badge">${/^\d+$/.test(p.jornada)?'J'+p.jornada:p.jornada}</div>` : ''}
+      ${tieneVideo ? `<div class="partido-play-overlay"><div class="partido-play-btn">▶</div></div>` : ''}
+    </div>
+    <div class="partido-info">
+      <div class="partido-marcador">
+        <div class="partido-equipo">${p.local||'—'}</div>
+        <div class="partido-resultado">${resultado}</div>
+        <div class="partido-equipo">${p.visitante||'—'}</div>
+      </div>
+      <div class="partido-meta">
+        ${p.comp?`<span>${p.comp}</span>`:''}
+        ${fecha?`<span>${fecha}</span>`:''}
+        ${!tieneVideo?`<span style="color:var(--gris2)">Sin vídeo</span>`:'<span style="color:var(--verde-cl)">🎬 Vídeo</span>'}
+      </div>
+    </div>
+    <div class="partido-card-actions" onclick="event.stopPropagation()">
+      <button onclick="editarPartido('${p.id}')">✏️ Editar</button>
+      <button class="btn-del-p" onclick="borrarPartido('${p.id}')">🗑</button>
+    </div>
+  </div>`;
+}
+
+function _actualizarFiltrosPartidos(){
+  const selJ=document.getElementById('p-fil-jornada');
+  const selE=document.getElementById('p-fil-equipo');
+  const selC=document.getElementById('p-fil-comp');
+  if(!selJ) return;
+  const curJ=selJ.value, curE=selE.value, curC=selC.value;
+  const jornadas=[...new Set(pDB.map(p=>p.jornada).filter(Boolean))].sort((a,b)=>{
+    const na=parseInt(a)||999,nb=parseInt(b)||999;
+    return na!==nb?na-nb:a.localeCompare(b);
+  });
+  const equipos=[...new Set([...pDB.map(p=>p.local),...pDB.map(p=>p.visitante)].filter(Boolean))].sort();
+  const comps=[...new Set(pDB.map(p=>p.comp).filter(Boolean))].sort();
+  selJ.innerHTML='<option value="">Todas las jornadas</option>'+jornadas.map(j=>`<option value="${j}" ${j===curJ?'selected':''}>${/^\d+$/.test(j)?'Jornada '+j:j}</option>`).join('');
+  selE.innerHTML='<option value="">Todos los equipos</option>'+equipos.map(e=>`<option value="${e}" ${e===curE?'selected':''}>${e}</option>`).join('');
+  selC.innerHTML='<option value="">Todas las competiciones</option>'+comps.map(c=>`<option value="${c}" ${c===curC?'selected':''}>${c}</option>`).join('');
+}
+
+function verPartido(id){
+  const p = pDB.find(x=>x.id===id);
+  if(!p) return;
+  if(!p.urlNorm){ editarPartido(id); return; }
+  const tipo = _tipoVideo(p.urlNorm);
+  let playerH = '';
+  if(tipo==='youtube'||tipo==='drive'){
+    playerH=`<iframe src="${p.urlNorm}" allowfullscreen allow="autoplay;encrypted-media" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
+  } else {
+    playerH=`<video controls autoplay preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
+  }
+  const titulo=`${p.local||'—'} ${p.gf!=null&&p.gc!=null?p.gf+'-'+p.gc:'vs'} ${p.visitante||'—'}${p.jornada?' · J'+p.jornada:''}${p.comp?' · '+p.comp:''}`;
+  const player=document.getElementById('video-modal-player');
+  const tituloEl=document.getElementById('video-modal-titulo');
+  if(!player||!tituloEl) return;
+  tituloEl.textContent=titulo;
+  player.innerHTML=playerH;
+  document.getElementById('video-modal').classList.add('open');
+}
+
+function abrirAddPartido(){
+  ['ap-local','ap-visitante','ap-jornada','ap-url','ap-thumb','ap-notas'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  document.getElementById('ap-gf').value='0';
+  document.getElementById('ap-gc').value='0';
+  document.getElementById('ap-edit-id').value='';
+  document.getElementById('ap-comp').value='3ª RFEF';
+  document.getElementById('ap-fecha').value=new Date().toISOString().slice(0,10);
+  document.getElementById('add-partido-titulo').textContent='➕ Añadir partido';
+  document.getElementById('add-partido-modal').classList.add('open');
+}
+
+function editarPartido(id){
+  const p=pDB.find(x=>x.id===id); if(!p) return;
+  document.getElementById('ap-local').value=p.local||'';
+  document.getElementById('ap-visitante').value=p.visitante||'';
+  document.getElementById('ap-jornada').value=p.jornada||'';
+  document.getElementById('ap-gf').value=p.gf??'';
+  document.getElementById('ap-gc').value=p.gc??'';
+  document.getElementById('ap-fecha').value=p.fecha||'';
+  document.getElementById('ap-comp').value=p.comp||'3ª RFEF';
+  document.getElementById('ap-url').value=p.urlOrig||'';
+  document.getElementById('ap-thumb').value=p.thumb||'';
+  document.getElementById('ap-notas').value=p.notas||'';
+  document.getElementById('ap-edit-id').value=p.id;
+  document.getElementById('add-partido-titulo').textContent='✏️ Editar partido';
+  document.getElementById('add-partido-modal').classList.add('open');
+}
+
+function cerrarAddPartido(){
+  document.getElementById('add-partido-modal').classList.remove('open');
+}
+
+function guardarPartido(){
+  const editId=document.getElementById('ap-edit-id').value;
+  const urlOrig=document.getElementById('ap-url').value.trim();
+  const partido={
+    id: editId||('p_'+Date.now()),
+    local: document.getElementById('ap-local').value.trim(),
+    visitante: document.getElementById('ap-visitante').value.trim(),
+    jornada: document.getElementById('ap-jornada').value.trim(),
+    gf: document.getElementById('ap-gf').value!==''?+document.getElementById('ap-gf').value:null,
+    gc: document.getElementById('ap-gc').value!==''?+document.getElementById('ap-gc').value:null,
+    fecha: document.getElementById('ap-fecha').value,
+    comp: document.getElementById('ap-comp').value,
+    urlOrig,
+    urlNorm: _normalizarURLPartido(urlOrig),
+    thumb: document.getElementById('ap-thumb').value.trim(),
+    notas: document.getElementById('ap-notas').value.trim(),
+    fechaReg: new Date().toISOString()
+  };
+  if(editId){ const idx=pDB.findIndex(x=>x.id===editId); if(idx>=0) pDB[idx]=partido; }
+  else { pDB.unshift(partido); }
+  savePDB(); cerrarAddPartido(); renderPartidos();
+  if(typeof toast==='function') toast('✅ Partido guardado');
+}
+
+function borrarPartido(id){
+  const p=pDB.find(x=>x.id===id);
+  const nom=p?`${p.local||'?'} vs ${p.visitante||'?'}`:'este partido';
+  if(typeof askDel==='function'){
+    askDel(`¿Borrar "${nom}"?`,()=>{
+      pDB=pDB.filter(x=>x.id!==id);
+      savePDB(); renderPartidos();
+      if(typeof toast==='function') toast('🗑 Partido eliminado');
+    });
+  }
+}
+
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    const m=document.getElementById('add-partido-modal');
+    if(m&&m.classList.contains('open')) cerrarAddPartido();
+  }
+});
+
+// ── Borrado limpio — no depende de strings interpolados en onclick ──
+function borrarEquipo(btn){
+  const id = btn.getAttribute('data-del-equipo');
+  if (!id) return;
+  const eq = eDB.find(x => String(x.id) === String(id));
+  const nom = (eq && eq.nom) ? eq.nom : 'este equipo';
+  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+    eDB = eDB.filter(x => String(x.id) !== String(id));
+    saveEDB(); renderEDB(); toast('🗑 Eliminado');
+  });
+}
+function borrarJugador(btn){
+  const id = btn.getAttribute('data-del-jugador');
+  if (!id) return;
+  const j = jDB.find(x => String(x.id) === String(id));
+  const nom = j ? ((j.nom||'') + ' ' + (j.ape||'')).trim() || 'este jugador' : 'este jugador';
+  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+    jDB = jDB.filter(x => String(x.id) !== String(id));
+    saveJDB(); renderJDB(); toast('🗑 Eliminado');
+  });
+}
+
+
 function edTabSwitch(tipo, tab) {
   const prefix = tipo === 'j' ? 'j' : 'e';
 
