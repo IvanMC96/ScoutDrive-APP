@@ -899,6 +899,22 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   background:var(--bg3);color:var(--gris);border:1px solid var(--border);
   border-radius:7px;padding:10px 18px;font-size:12px;cursor:pointer;}
 
+
+/* Permisos de rol — se activa/desactiva via JS */
+body.solo-lectura .badd,
+body.solo-lectura .btn-add-partido,
+body.solo-lectura .btn-del-p,
+body.solo-lectura [data-del-jugador],
+body.solo-lectura [data-del-equipo],
+body.solo-lectura .partido-card-actions,
+body.solo-lectura #btn-nuevo-top,
+body.solo-lectura .btn-guardar-float,
+body.solo-lectura .btn-guardar-bar,
+body.solo-lectura .add-partido-btn {
+  display: none !important;
+}
+body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
+
 </style>
 </head>
 <body>
@@ -968,7 +984,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   <div class="db-bar">
     <input type="text" id="jdb-q" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
     <button class="btn b-ghost b-sm" onclick="xBDJExcel()">📊 Exportar BD</button>
-    <button class="btn b-rojo b-sm" onclick="askDelAll('j')">🗑 Borrar todo</button>
+    ${esAdminActual()?"<button class=\"btn b-rojo b-sm\" onclick=\"askDelAll('j')\">🗑 Borrar todo</button>":""}
   </div>
   <div class="cards-grid" id="j-grid"></div>
 </div>
@@ -1167,7 +1183,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
       <option value="rival">Solo rivales</option>
     </select>
     <button class="btn b-ghost b-sm" onclick="xBDEExcel()">📊 Exportar BD</button>
-    <button class="btn b-rojo b-sm" onclick="askDelAll('e')">🗑 Borrar todo</button>
+    ${esAdminActual()?"<button class=\"btn b-rojo b-sm\" onclick=\"askDelAll('e')\">🗑 Borrar todo</button>":""}
   </div>
   <div class="cards-grid" id="e-grid"></div>
 </div>
@@ -1349,7 +1365,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
       <select id="p-fil-comp" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todas las comp.</option>
       </select>
-      <button class="btn-add-partido" onclick="abrirAddPartido()">+ Añadir partido</button>
+      ${esAdminActual()?"<button class=\"btn-add-partido\" onclick=\"abrirAddPartido()\">+ Añadir partido</button>":""}
     </div>
 
     <!-- Grid de partidos -->
@@ -1644,6 +1660,7 @@ function askDel(msg,cb){
   document.getElementById('modal').classList.add('open');
 }
 function askDelAll(t){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   askDel(t==='j'?'¿Borrar TODOS los jugadores? No se puede deshacer.':'¿Borrar TODOS los equipos? No se puede deshacer.',
     ()=>{if(t==='j'){jDB=[];saveJDB();renderJDB();}else{eDB=[];saveEDB();renderEDB();}toast('🗑 Eliminado');});
 }
@@ -1715,7 +1732,7 @@ function renderJDB(){
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editJ('${j.id}')">✏️ Editar</button>
       <button class="btn b-ghost b-sm" onclick="xJExcel('${j.id}')">📊</button>
-      <button class="btn b-rojo b-sm" data-del-jugador="${eH(j.id)}" onclick="borrarJugador(this)">🗑</button>
+      ${esAdminActual()?'<button class="btn b-rojo b-sm" data-del-jugador="'+eH(j.id)+'" onclick="borrarJugador(this)">🗑</button>':''}
     </div></div>`;
   }).join('');
 }
@@ -2164,7 +2181,7 @@ function buildEGC(){
     cont.appendChild(d);
   });
 }
-function addGC(){eGC.push({min:0,rival:'',origen:'Ataque Organizado',subtipo:'',fase:'',zona:'Área Grande',desc:''});buildEGC();renderE();}
+function addGC(){if(!esAdminActual()){toast('Solo los administradores pueden añadir',true);return;} eGC.push({min:0,rival:'',origen:'Ataque Organizado',subtipo:'',fase:'',zona:'Área Grande',desc:''});buildEGC();renderE();}
 
 // ── RENDER FICHA EQUIPO ───────────────────────────────────────────
 function renderE(){
@@ -2590,11 +2607,21 @@ function resetCfg(){
 // ══════════════════════════════════════════════════════════════════
 async function xPDF(){
   const isJug=currentSection==='jugador-ed';
-  const elId=isJug?'j-ficha-pdf':'e-ficha-pdf';
   const btn=document.getElementById('btn-pdf-ed');
+
+  // Con el nuevo layout de pestañas, la ficha completa está en el panel Ficha
+  // Si estamos en la pestaña Editar, cambiamos a Ficha primero para capturarla
+  const panelFichaId = isJug ? 'jpanel-ficha' : 'epanel-ficha';
+  const fichaId      = isJug ? 'j-ficha-container-full' : 'e-ficha-container-full';
+
+  // Asegurar que la pestaña Ficha está activa y sincronizada
+  edTabSwitch(isJug?'j':'e','ficha');
+  await new Promise(r=>setTimeout(r,200)); // esperar render
+
   if(btn){const orig=btn.textContent;btn.textContent='⏳ PDF...';btn.disabled=true;
     try{
-      const el=document.getElementById(elId);if(!el){toast('Vista previa vacía',true);return;}
+      const el=document.getElementById(fichaId);
+      if(!el||!el.innerHTML.trim()){toast('Abre primero la pestaña Ficha para generar el PDF',true);btn.textContent=orig;btn.disabled=false;return;}
       const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false});
       const{jsPDF}=window.jspdf;
       const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
@@ -3717,10 +3744,10 @@ function _cardPartido(p){
         ${!tieneVideo?`<span style="color:var(--gris2)">Sin vídeo</span>`:'<span style="color:var(--verde-cl)">🎬 Vídeo</span>'}
       </div>
     </div>
-    <div class="partido-card-actions" onclick="event.stopPropagation()">
+    ${esAdminActual()?`<div class="partido-card-actions" onclick="event.stopPropagation()">
       <button onclick="editarPartido('${p.id}')">✏️ Editar</button>
       <button class="btn-del-p" onclick="borrarPartido('${p.id}')">🗑</button>
-    </div>
+    </div>`:''}
   </div>`;
 }
 
@@ -3762,6 +3789,7 @@ function verPartido(id){
 }
 
 function abrirAddPartido(){
+  if(!esAdminActual()){toast('Solo los administradores pueden añadir partidos',true);return;}
   ['ap-local','ap-visitante','ap-jornada','ap-url','ap-thumb','ap-notas'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
@@ -3841,6 +3869,7 @@ function actualizarThumbPreview(){
 }
 
 function guardarPartido(){
+  if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
   const urlOrig=document.getElementById('ap-url').value.trim();
   const partido={
@@ -3865,6 +3894,7 @@ function guardarPartido(){
 }
 
 function borrarPartido(id){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   const p=pDB.find(x=>x.id===id);
   const nom=p?`${p.local||'?'} vs ${p.visitante||'?'}`:'este partido';
   if(typeof askDel==='function'){
@@ -3890,6 +3920,7 @@ document.addEventListener('keydown', e=>{
 let eClipsGC = [], eClipGCCnt = 0;
 
 function addEClipGC(){
+  if(!esAdminActual()){toast('Solo los administradores pueden añadir',true);return;}
   eClipsGC.push({id:eClipGCCnt++,titulo:'',rival:'',tipo:'Ataque Organizado',
     srcType:'direct',src:'',portada:null,blobURL:null});
   buildEClipsGC(); renderE();
@@ -3985,6 +4016,10 @@ function actualizarPanelAdmin() {
 
   // Guardar referencia global del rol para usarla en renders
   window._esAdmin = esAdmin;
+
+  // Aplicar clase solo-lectura al body para ocultar botones de edición
+  // via CSS sin necesidad de tocar cada render individualmente
+  document.body.classList.toggle('solo-lectura', !esAdmin);
 
   // Si está en config y no es admin, redirigir a jugadores
   if (!esAdmin && (typeof currentSection !== 'undefined') &&
