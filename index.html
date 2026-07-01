@@ -668,7 +668,9 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 <div class="topbar">
   <div class="brand" onclick="navTo('jugadores-db')">
     <div class="brand-logo" id="brand-logo-wrap">
-      <div id="brand-logo-default">⚽</div>
+      <img src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png" 
+           style="width:36px;height:36px;border-radius:7px;object-fit:contain"
+           onerror="this.outerHTML='<div id=&quot;brand-logo-default&quot;>⚽</div>'">
     </div>
     <div class="brand-txt">
       <h1 id="brand-nombre">Scoutdrive</h1>
@@ -681,6 +683,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
   </div>
   <div class="top-right" id="top-right-db">
+    <button class="btn b-ghost b-sm" id="btn-sync-manual" onclick="scoutSyncCompleto()" title="Traer todos los datos del servidor">🔄</button>
     <button class="btn b-verde" id="btn-nuevo-top" onclick="nuevoItem()">+ Nuevo</button>
   </div>
   <div class="top-right" id="top-right-ed" style="display:none">
@@ -2501,21 +2504,19 @@ function guardarEConFeedback(){
 
   <div id="login-card">
 
-    <!-- LOGO: cambia el atributo src por la URL o ruta de tu logo.
-         Si no tienes logo todavía, borra el <img> y deja solo el <h1>. -->
+    <!-- LOGO fijo desde GitHub Pages — funciona en todos los dispositivos -->
     <div id="login-logo-wrap">
       <img
         id="login-logo"
-        src=""
+        src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png"
         alt="Scoutdrive logo"
         onerror="this.style.display='none'"
       >
-      <!-- Emoji de respaldo que se oculta automáticamente cuando hay logo -->
-      <span id="login-logo-emoji">⚽</span>
+      <span id="login-logo-emoji" style="display:none">⚽</span>
     </div>
 
     <h1 id="login-titulo">Scoutdrive</h1>
-    <p id="login-subtitulo">Plataforma de análisis táctico</p>
+    <p id="login-subtitulo">Plataforma base de datos y análisis</p>
 
     <!-- FORMULARIO DE ACCESO -->
     <form id="login-form" onsubmit="loginValidar(event)">
