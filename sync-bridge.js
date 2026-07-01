@@ -272,12 +272,93 @@ async function scoutSincronizarAlAbrir() {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  ARRANQUE
+//  SINCRONIZACIÓN COMPLETA — trae TODO del Sheet
+//  (útil al abrir desde un dispositivo nuevo)
 // ════════════════════════════════════════════════════════════════
+async function scoutSyncCompleto(silencioso) {
+  if (!SCOUT_SYNC_ENABLED) return;
+
+  const btn = document.getElementById('btn-sync-manual');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  const respuesta = await scoutApiGet({ accion: 'sync' });
+
+  if (!respuesta.ok) {
+    if (!silencioso) _scoutToast('Sin conexión con Google Sheets', true);
+    if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+    return;
+  }
+
+  let cambios = 0;
+
+  if (respuesta.jugadores && respuesta.jugadores.length) {
+    // Reconstruir desde jsonCompleto si existe
+    const jugadoresReconstruidos = respuesta.jugadores.map(r => {
+      if (r.jsonCompleto) {
+        try { return { ...JSON.parse(r.jsonCompleto), _sincronizado: true }; }
+        catch(e) {}
+      }
+      return r;
+    });
+
+    // Fusionar: si hay datos locales más nuevos, los conservamos
+    jugadoresReconstruidos.forEach(remoto => {
+      const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
+      if (idx < 0) {
+        if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
+      }
+      // Si ya existe, el local tiene prioridad (puede tener cambios sin subir aún)
+    });
+  }
+
+  if (respuesta.equipos && respuesta.equipos.length) {
+    const equiposReconstruidos = respuesta.equipos.map(r => {
+      if (r.jsonCompleto) {
+        try { return { ...JSON.parse(r.jsonCompleto), _sincronizado: true }; }
+        catch(e) {}
+      }
+      return r;
+    });
+
+    equiposReconstruidos.forEach(remoto => {
+      const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
+      if (idx < 0) {
+        if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
+      }
+    });
+  }
+
+  localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
+
+  if (cambios > 0) {
+    if (typeof saveJDB === 'function') saveJDB();
+    if (typeof saveEDB === 'function') saveEDB();
+    if (typeof renderJDB === 'function') renderJDB();
+    if (typeof renderEDB === 'function') renderEDB();
+    _scoutToast(`☁️ ${cambios} elemento${cambios !== 1 ? 's' : ''} descargado${cambios !== 1 ? 's' : ''} del servidor`);
+  } else {
+    if (!silencioso) _scoutToast('✅ Todo actualizado');
+  }
+
+  if (btn) { btn.textContent = '🔄'; btn.disabled = false; }
+}
+
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Delay para no competir con el render inicial de tu app
   setTimeout(async () => {
-    await scoutSincronizarAlAbrir();
+    // Si el localStorage está vacío (dispositivo nuevo), traer todo del Sheet
+    const tieneJugadores = localStorage.getItem('scout_j_v1');
+    const tieneEquipos   = localStorage.getItem('scout_e_v1');
+    const estaVacio = (!tieneJugadores || tieneJugadores === '[]') &&
+                      (!tieneEquipos   || tieneEquipos   === '[]');
+
+    if (estaVacio) {
+      // Dispositivo nuevo: sync completo automático
+      await scoutSyncCompleto(false);
+    } else {
+      // Dispositivo conocido: solo cambios recientes
+      await scoutSincronizarAlAbrir();
+    }
     await scoutProcesarCola();
-  }, 1000);
+  }, 1200);
 });
