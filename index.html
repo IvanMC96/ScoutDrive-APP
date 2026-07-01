@@ -1002,7 +1002,7 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
     </button>
     <div class="ed-tabs-right">
       <button class="btn b-ghost b-sm" onclick="xExcel()" title="Exportar Excel">📊 Excel</button>
-      <button class="btn b-ghost b-sm" onclick="xPDF()" title="Exportar PDF">📄 PDF</button>
+      <button class="btn b-ghost b-sm" id="btn-pdf-ed-j" onclick="xPDF()" title="Exportar PDF">📄 PDF</button>
       <button class="btn b-verde b-sm" onclick="guardarJConFeedback()">💾 Guardar</button>
     </div>
   </div>
@@ -1201,7 +1201,7 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
     </button>
     <div class="ed-tabs-right">
       <button class="btn b-ghost b-sm" onclick="xExcel()" title="Exportar Excel">📊 Excel</button>
-      <button class="btn b-ghost b-sm" onclick="xPDF()" title="Exportar PDF">📄 PDF</button>
+      <button class="btn b-ghost b-sm" id="btn-pdf-ed-e" onclick="xPDF()" title="Exportar PDF">📄 PDF</button>
       <button class="btn b-verde b-sm" onclick="guardarEConFeedback()">💾 Guardar</button>
     </div>
   </div>
@@ -1324,8 +1324,9 @@ body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
       </div>
     </div>
   </div><!-- /ed-form-scroll -->
-  <div class="btn-guardar-bar">
+  <div class="btn-guardar-bar" style="display:flex;gap:8px">
     <button class="btn-guardar-float" onclick="guardarEConFeedback()">💾 Guardar equipo</button>
+    <button class="btn-guardar-float" id="btn-borrar-e" style="background:#7d1717;box-shadow:0 4px 16px rgba(125,23,23,.35);flex:0 0 auto;width:auto;padding:12px 16px" onclick="borrarEquipoActual()" title="Borrar este equipo">🗑</button>
   </div>
   </div><!-- /ed-form -->
   <div class="ed-prev-small" id="e-prev">
@@ -2607,7 +2608,9 @@ function resetCfg(){
 // ══════════════════════════════════════════════════════════════════
 async function xPDF(){
   const isJug=currentSection==='jugador-ed';
-  const btn=document.getElementById('btn-pdf-ed');
+  // IDs distintos para el botón de jugador y el de equipo (antes apuntaban
+  // a un id inexistente 'btn-pdf-ed' y por eso el PDF nunca se generaba).
+  const btn=document.getElementById(isJug?'btn-pdf-ed-j':'btn-pdf-ed-e');
 
   // Con el nuevo layout de pestañas, la ficha completa está en el panel Ficha
   // Si estamos en la pestaña Editar, cambiamos a Ficha primero para capturarla
@@ -2618,10 +2621,10 @@ async function xPDF(){
   edTabSwitch(isJug?'j':'e','ficha');
   await new Promise(r=>setTimeout(r,200)); // esperar render
 
-  if(btn){const orig=btn.textContent;btn.textContent='⏳ PDF...';btn.disabled=true;
+  {const orig=btn?btn.textContent:'';if(btn){btn.textContent='⏳ PDF...';btn.disabled=true;}
     try{
       const el=document.getElementById(fichaId);
-      if(!el||!el.innerHTML.trim()){toast('Abre primero la pestaña Ficha para generar el PDF',true);btn.textContent=orig;btn.disabled=false;return;}
+      if(!el||!el.innerHTML.trim()){toast('Abre primero la pestaña Ficha para generar el PDF',true);if(btn){btn.textContent=orig;btn.disabled=false;}return;}
       const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false});
       const{jsPDF}=window.jspdf;
       const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
@@ -2695,7 +2698,7 @@ async function xPDF(){
       doc.save(`${cfg.nombre||'Scout'}_${isJug?'Jugador':'Equipo'}_${n||'Informe'}.pdf`);
       toast('📄 PDF exportado');
     }catch(e){toast('Error PDF: '+e.message,true);}
-    finally{btn.textContent='📄 PDF';btn.disabled=false;}
+    finally{if(btn){btn.textContent='📄 PDF';btn.disabled=false;}}
   }
 }
 
@@ -4252,6 +4255,21 @@ function borrarEquipo(btn){
   askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
     eDB = eDB.filter(x => String(x.id) !== String(id));
     saveEDB(); renderEDB(); toast('🗑 Eliminado');
+  });
+}
+// Borra el equipo que se está viendo/editando actualmente (útil para
+// quitar de dentro de la ficha un registro corrupto, p.ej. "Sin nombre").
+function borrarEquipoActual(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden borrar',true); return; }
+  if(!eId){ toast('Este equipo aún no se ha guardado, no hay nada que borrar',true); return; }
+  const eq = eDB.find(x => String(x.id) === String(eId));
+  const nom = (eq && eq.nom) ? eq.nom : 'este equipo';
+  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+    eDB = eDB.filter(x => String(x.id) !== String(eId));
+    saveEDB();
+    eId = null;
+    navTo('equipos-db');
+    toast('🗑 Equipo eliminado');
   });
 }
 function borrarJugador(btn){
