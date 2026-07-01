@@ -573,7 +573,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   color:var(--gris);border-bottom:2px solid transparent;transition:all .15s;}
 .gt-tab.on-gf{color:var(--verde);border-bottom-color:var(--verde);}
 .gt-tab.on-gc{color:var(--rojo-cl);border-bottom-color:var(--rojo-cl);}
-.gt-panel{padding:12px 16px;display:none;}
+.gt-panel{padding:12px 16px;display:none;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .gt-panel.show{display:block;}
 
 /* Tabla goles mejorada */
@@ -1515,7 +1515,7 @@ body.solo-lectura .ed-panel-form {
   </div>
 
   <!-- Lista de usuarios -->
-  <div id="admin-usuarios-wrap">
+  <div id="admin-usuarios-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <div style="color:var(--gris);font-size:12px;padding:20px">Cargando usuarios...</div>
   </div>
 </div>
@@ -3359,6 +3359,86 @@ function guardarEConFeedback(){
   .ficha-full .eclips-grid-v2{grid-template-columns:repeat(2,1fr);}
   .ficha-full .clips-grid{grid-template-columns:repeat(2,1fr);}
   .ed-form{width:340px;}
+}
+
+/* ══════════════════════════════════════════════════════════════
+   RESPONSIVE GENERAL — tablet y móvil
+   La app se usa en ordenador, tablet y móvil, así que a partir de
+   aquí se adapta el layout: barra superior, editor de ficha
+   (columna doble → apilado) y las rejillas de tarjetas/tablas.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── TABLET (≤900px): editor de ficha pasa a una sola columna ── */
+@media(max-width:900px){
+  .ed-panel-form{ flex-direction:column; }
+  .ed-form{
+    width:100%; max-width:100%; flex-shrink:1;
+    border-right:none; border-bottom:1px solid var(--border);
+    height:auto; max-height:60vh;
+  }
+  .ed-prev-small{ height:auto; flex:1; }
+  .feq-kpis-v2{ grid-template-columns:repeat(4,1fr); }
+  .feq-kpis-v2 .fkpi-v2:nth-child(4n){ border-right:none; }
+  .feq-analisis{ grid-template-columns:1fr; }
+  .feq-analisis-blk{ border-right:none; border-bottom:1px solid var(--border); }
+  .feq-analisis-blk:last-child{ border-bottom:none; }
+}
+
+/* ── MÓVIL (≤680px) ── */
+@media(max-width:680px){
+  .topbar{
+    height:auto; flex-wrap:wrap; padding:8px 12px; gap:8px;
+    row-gap:6px;
+  }
+  .brand-txt p{ display:none; }
+  .brand-txt h1{ font-size:13px; }
+  .brand-logo{ width:30px; height:30px; }
+  .nav-tabs{
+    order:3; width:100%;
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+    justify-content:flex-start;
+  }
+  .nav-tab{ padding:6px 12px; font-size:11px; white-space:nowrap; flex-shrink:0; }
+  .top-right{ margin-left:auto; }
+  .top-right .btn{ padding:7px 10px; font-size:11px; }
+
+  .db-hdr{ flex-direction:column; align-items:stretch; }
+  .db-stats{ width:100%; }
+  .stat-box{ flex:1; }
+  .db-bar{ flex-direction:column; align-items:stretch; }
+  .db-bar input{ width:100%; }
+  .cards-grid{ grid-template-columns:1fr; }
+
+  .ed-tabs{ padding:0 8px; }
+  .ed-tab{ padding:0 12px; font-size:11px; }
+  .ed-tabs-right{ gap:4px; }
+  .ed-tabs-right .btn{ padding:6px 9px; font-size:11px; }
+
+  .fg2,.fg3{ grid-template-columns:1fr; }
+  .feq-kpis-v2{ grid-template-columns:repeat(3,1fr); }
+  .feq-kpis-v2 .fkpi-v2:nth-child(4n){ border-right:1px solid var(--border); }
+  .feq-kpis-v2 .fkpi-v2:nth-child(3n){ border-right:none; }
+  .fkv-v2{ font-size:19px; }
+
+  .ficha-header-bar{ flex-direction:column; align-items:flex-start; gap:8px; }
+  .ed-panel-ficha{ padding:14px 10px; }
+
+  .partidos-header{ flex-direction:column; align-items:stretch; }
+  .partidos-grid{ grid-template-columns:1fr; }
+  .partidos-filters{ flex-wrap:wrap; }
+
+  .modal{ width:92vw!important; max-width:92vw; margin:0 4vw; }
+
+  .feq-g2,.gr .g2{ grid-template-columns:1fr; }
+}
+
+/* ── MÓVIL PEQUEÑO (≤420px) ── */
+@media(max-width:420px){
+  .feq-kpis-v2{ grid-template-columns:repeat(2,1fr); }
+  .feq-kpis-v2 .fkpi-v2:nth-child(3n){ border-right:1px solid var(--border); }
+  .feq-kpis-v2 .fkpi-v2:nth-child(2n){ border-right:none; }
+  .brand-txt h1{ font-size:12px; }
+  .nav-tab{ padding:5px 10px; font-size:10px; }
 }
 
 
