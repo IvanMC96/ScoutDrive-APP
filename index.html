@@ -756,14 +756,18 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .pstat-l{font-size:9px;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;}
 
 /* Filtros */
-.partidos-filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+.partidos-filters{
+  display:flex;gap:8px;margin-bottom:18px;flex-wrap:nowrap;align-items:center;
+  background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;
+  overflow-x:auto;
+}
 .partidos-filters input,.partidos-filters select{
-  background:var(--bg2);border:1px solid var(--border);border-radius:7px;
-  color:var(--blanco);padding:7px 12px;font-size:12px;min-width:140px;}
+  background:var(--bg3);border:1px solid var(--border);border-radius:7px;
+  color:var(--blanco);padding:7px 10px;font-size:12px;white-space:nowrap;}
 .partidos-filters input:focus,.partidos-filters select:focus{
   outline:none;border-color:var(--azul);}
 .btn-add-partido{background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
-  padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0;}
 .btn-add-partido:hover{background:var(--verde);}
 
 /* Separadores de jornada */
@@ -1325,16 +1329,17 @@ input[type=range]{flex:1;accent-color:var(--azul);}
     </div>
 
     <!-- Filtros -->
+    <!-- Barra de filtros compacta en una sola línea -->
     <div class="partidos-filters">
-      <input id="p-buscar" placeholder="🔍 Buscar equipo, competición..." oninput="renderPartidos()">
-      <select id="p-fil-jornada" onchange="renderPartidos()">
+      <input id="p-buscar" placeholder="🔍 Buscar..." oninput="renderPartidos()" style="flex:1;min-width:140px">
+      <select id="p-fil-jornada" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todas las jornadas</option>
       </select>
-      <select id="p-fil-equipo" onchange="renderPartidos()">
+      <select id="p-fil-equipo" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todos los equipos</option>
       </select>
-      <select id="p-fil-comp" onchange="renderPartidos()">
-        <option value="">Todas las competiciones</option>
+      <select id="p-fil-comp" onchange="renderPartidos()" style="min-width:130px">
+        <option value="">Todas las comp.</option>
       </select>
       <button class="btn-add-partido" onclick="abrirAddPartido()">+ Añadir partido</button>
     </div>
@@ -1378,8 +1383,20 @@ input[type=range]{flex:1;accent-color:var(--azul);}
         </p>
       </div>
       <div class="apf">
-        <label>🖼️ Miniatura (URL de imagen, opcional)</label>
-        <input id="ap-thumb" placeholder="https://... (captura del partido)">
+        <label>🖼️ Miniatura del partido</label>
+        <!-- Subir archivo -->
+        <div style="border:1.5px dashed var(--border);border-radius:8px;padding:10px;margin-bottom:6px;cursor:pointer;text-align:center;background:var(--bg3)" onclick="document.getElementById('ap-thumb-file').click()">
+          <div id="ap-thumb-preview" style="display:none;margin-bottom:6px">
+            <img id="ap-thumb-img" style="max-height:80px;border-radius:6px;max-width:100%;object-fit:cover">
+          </div>
+          <div id="ap-thumb-placeholder" style="color:var(--gris);font-size:11px;padding:6px 0">
+            📸 Pulsa para subir una captura del partido
+          </div>
+          <input type="file" id="ap-thumb-file" accept="image/*" style="display:none" onchange="cargarThumbPartido(event)">
+        </div>
+        <!-- O URL -->
+        <p style="font-size:9px;color:var(--gris);text-align:center;margin:4px 0">— o pega una URL —</p>
+        <input id="ap-thumb" placeholder="https://drive.google.com/... o https://..." oninput="actualizarThumbPreview()">
       </div>
       <div class="apf">
         <label>📝 Notas tácticas</label>
@@ -1531,6 +1548,7 @@ function navTo(sec){
   if(sec==='jugadores-db') renderJDB();
   if(sec==='equipos-db') renderEDB();
   if(sec==='config') initCfgForm();
+  if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
   currentSection=sec;
 }
 
@@ -3225,10 +3243,10 @@ function guardarEConFeedback(){
 .pstat-l{font-size:9px;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;}
 
 /* Filtros */
-.partidos-filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;align-items:center;}
+.partidos-filters{display:flex;gap:8px;margin-bottom:18px;flex-wrap:nowrap;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;overflow-x:auto;}
 .partidos-filters input,.partidos-filters select{
-  background:var(--bg2);border:1px solid var(--border);border-radius:7px;
-  color:var(--blanco);padding:7px 12px;font-size:12px;min-width:140px;}
+  background:var(--bg3);border:1px solid var(--border);border-radius:7px;
+  color:var(--blanco);padding:7px 10px;font-size:12px;}
 .partidos-filters input:focus,.partidos-filters select:focus{
   outline:none;border-color:var(--azul);}
 .btn-add-partido{background:var(--verde-dk);color:#fff;border:none;border-radius:7px;
@@ -3683,6 +3701,7 @@ function abrirAddPartido(){
   document.getElementById('ap-comp').value='3ª RFEF';
   document.getElementById('ap-fecha').value=new Date().toISOString().slice(0,10);
   document.getElementById('add-partido-titulo').textContent='➕ Añadir partido';
+  _resetThumbPreview();
   document.getElementById('add-partido-modal').classList.add('open');
 }
 
@@ -3696,15 +3715,59 @@ function editarPartido(id){
   document.getElementById('ap-fecha').value=p.fecha||'';
   document.getElementById('ap-comp').value=p.comp||'3ª RFEF';
   document.getElementById('ap-url').value=p.urlOrig||'';
-  document.getElementById('ap-thumb').value=p.thumb||'';
   document.getElementById('ap-notas').value=p.notas||'';
   document.getElementById('ap-edit-id').value=p.id;
   document.getElementById('add-partido-titulo').textContent='✏️ Editar partido';
+  // Restaurar miniatura
+  _resetThumbPreview();
+  if(p.thumb){
+    document.getElementById('ap-thumb').value = p.thumb.startsWith('data:') ? '' : p.thumb;
+    document.getElementById('ap-thumb-img').src = p.thumb;
+    document.getElementById('ap-thumb-preview').style.display = 'block';
+    document.getElementById('ap-thumb-placeholder').style.display = 'none';
+    if(p.thumb.startsWith('data:')) window._thumbBase64 = p.thumb;
+  }
   document.getElementById('add-partido-modal').classList.add('open');
 }
 
 function cerrarAddPartido(){
   document.getElementById('add-partido-modal').classList.remove('open');
+  // Limpiar preview de thumb
+  _resetThumbPreview();
+}
+
+function _resetThumbPreview(){
+  document.getElementById('ap-thumb-preview').style.display = 'none';
+  document.getElementById('ap-thumb-placeholder').style.display = 'block';
+  document.getElementById('ap-thumb-img').src = '';
+  document.getElementById('ap-thumb-file').value = '';
+  window._thumbBase64 = null;
+}
+
+function cargarThumbPartido(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    window._thumbBase64 = ev.target.result;
+    document.getElementById('ap-thumb-img').src = ev.target.result;
+    document.getElementById('ap-thumb-preview').style.display = 'block';
+    document.getElementById('ap-thumb-placeholder').style.display = 'none';
+    document.getElementById('ap-thumb').value = ''; // limpiar URL si había
+  };
+  reader.readAsDataURL(file);
+}
+
+function actualizarThumbPreview(){
+  const url = document.getElementById('ap-thumb').value.trim();
+  if(url){
+    window._thumbBase64 = null;
+    document.getElementById('ap-thumb-img').src = url;
+    document.getElementById('ap-thumb-preview').style.display = 'block';
+    document.getElementById('ap-thumb-placeholder').style.display = 'none';
+  } else {
+    _resetThumbPreview();
+  }
 }
 
 function guardarPartido(){
@@ -3721,7 +3784,7 @@ function guardarPartido(){
     comp: document.getElementById('ap-comp').value,
     urlOrig,
     urlNorm: _normalizarURLPartido(urlOrig),
-    thumb: document.getElementById('ap-thumb').value.trim(),
+    thumb: window._thumbBase64 || document.getElementById('ap-thumb').value.trim(),
     notas: document.getElementById('ap-notas').value.trim(),
     fechaReg: new Date().toISOString()
   };
