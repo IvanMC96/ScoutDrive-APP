@@ -29,7 +29,7 @@
 // ════════════════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycby3bbPEXzcoTh3Ynqtq4WqBdmg2JoWH-4pnQveJEmReheXzcD-cIoGF8sjdP2IOkdL-/exec';
+const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
 
 // Pon esto en false desde la consola si alguna vez quieres trabajar
 // offline puro sin que intente conectar (vuelve a true al recargar).
@@ -203,6 +203,48 @@ async function scoutSincronizarEquipo(eq) {
     _scoutActualizarURLsImagen('eDB', eq.id, resultado.resultado);
   } else {
     console.warn('[Scoutdrive sync] Error al sincronizar equipo:', resultado.motivo);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  RESUBIDA MASIVA — útil una sola vez tras arreglar/cambiar el
+//  backend, para subir todo lo que ya tienes guardado en local
+//  (p.ej. en la tablet) y que quedó sin llegar nunca a la nube.
+//  Sube uno a uno (sin solaparse) para no saturar Apps Script.
+// ════════════════════════════════════════════════════════════════
+async function scoutForzarResubidaTotal() {
+  if (typeof jDB === 'undefined' || typeof eDB === 'undefined') return;
+  const total = jDB.length + eDB.length;
+  if (total === 0) { _scoutToast('No hay nada local que resubir', true); return; }
+
+  const btn = document.getElementById('btn-resubida-total');
+  if (btn) { btn.disabled = true; }
+
+  let hechos = 0, fallos = 0;
+
+  for (const j of jDB) {
+    if (btn) btn.textContent = `⏳ Subiendo jugadores... (${hechos + fallos + 1}/${total})`;
+    const resultado = await scoutApiPost('guardarJugador', j);
+    if (resultado.ok) { hechos++; _scoutActualizarURLsImagen('jDB', j.id, resultado.resultado); }
+    else { fallos++; console.warn('[Scoutdrive] Fallo al resubir jugador', j.id, resultado.motivo); }
+  }
+
+  for (const eq of eDB) {
+    if (btn) btn.textContent = `⏳ Subiendo equipos... (${hechos + fallos + 1}/${total})`;
+    const resultado = await scoutApiPost('guardarEquipo', eq);
+    if (resultado.ok) { hechos++; _scoutActualizarURLsImagen('eDB', eq.id, resultado.resultado); }
+    else { fallos++; console.warn('[Scoutdrive] Fallo al resubir equipo', eq.id, resultado.motivo); }
+  }
+
+  if (typeof saveJDB === 'function') saveJDB();
+  if (typeof saveEDB === 'function') saveEDB();
+
+  if (btn) { btn.disabled = false; btn.textContent = '☁️ Forzar resubida de todo lo local'; }
+
+  if (fallos === 0) {
+    _scoutToast(`✅ Resubida completa: ${hechos} elemento${hechos !== 1 ? 's' : ''} enviado${hechos !== 1 ? 's' : ''} al Sheet`);
+  } else {
+    _scoutToast(`⚠️ Resubida terminada: ${hechos} ok, ${fallos} con error (revisa la consola)`, true);
   }
 }
 
