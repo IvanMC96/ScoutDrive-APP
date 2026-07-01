@@ -993,7 +993,7 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
   <div class="db-bar">
-    <input type="text" id="jdb-q" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
+    <input type="search" id="jdb-q" name="jdb-buscar-jugador" autocomplete="off" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
     <button class="btn b-ghost b-sm" onclick="xBDJExcel()">📊 Exportar BD</button>
     <button class="btn b-rojo b-sm" onclick="askDelAll('j')">🗑 Borrar todo</button>
   </div>
@@ -1187,7 +1187,7 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
   <div class="db-bar">
-    <input type="text" id="edb-q" placeholder="🔍 Buscar equipo..." oninput="renderEDB()">
+    <input type="search" id="edb-q" name="edb-buscar-equipo" autocomplete="off" placeholder="🔍 Buscar equipo..." oninput="renderEDB()">
     <select id="edb-filtro" onchange="renderEDB()" style="width:150px;padding:7px 10px;font-size:12px">
       <option value="">Todos los equipos</option>
       <option value="propio">Solo propios</option>
@@ -1367,7 +1367,7 @@ body.solo-lectura .ed-panel-form {
     <!-- Filtros -->
     <!-- Barra de filtros compacta en una sola línea -->
     <div class="partidos-filters">
-      <input id="p-buscar" placeholder="🔍 Buscar..." oninput="renderPartidos()" style="flex:1;min-width:140px">
+      <input type="search" id="p-buscar" name="p-buscar-partido" autocomplete="off" placeholder="🔍 Buscar..." oninput="renderPartidos()" style="flex:1;min-width:140px">
       <select id="p-fil-jornada" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todas las jornadas</option>
       </select>
@@ -3664,7 +3664,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbxGc0rO2lfxgWlFqaoGft-CfRDfdqGLaQhRANSwL7-zujLB2mB-MnA4rM5lL-gHEYL6/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -4101,7 +4101,7 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbxF27yyaT1-VopaGX3PYvAQKPc5Ik2Siyel8J-SjF-ymnyTzQAoVJSLeIbKBCpe9V1w/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbxGc0rO2lfxgWlFqaoGft-CfRDfdqGLaQhRANSwL7-zujLB2mB-MnA4rM5lL-gHEYL6/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
