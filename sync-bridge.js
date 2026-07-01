@@ -190,7 +190,9 @@ async function scoutSincronizarJugador(j) {
     _scoutToast('☁️ Jugador sincronizado con Google Sheets');
     _scoutActualizarURLsImagen('jDB', j.id, resultado.resultado);
   } else {
-    console.warn('[Scoutdrive sync] Error al sincronizar jugador:', resultado.motivo);
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar jugador:', detalle);
+    _scoutToast('⚠️ No se pudo subir el jugador al Sheet: ' + detalle, true);
   }
 }
 
@@ -202,7 +204,9 @@ async function scoutSincronizarEquipo(eq) {
     _scoutToast('☁️ Equipo sincronizado con Google Sheets');
     _scoutActualizarURLsImagen('eDB', eq.id, resultado.resultado);
   } else {
-    console.warn('[Scoutdrive sync] Error al sincronizar equipo:', resultado.motivo);
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar equipo:', detalle);
+    _scoutToast('⚠️ No se pudo subir el equipo al Sheet: ' + detalle, true);
   }
 }
 
@@ -221,19 +225,30 @@ async function scoutForzarResubidaTotal() {
   if (btn) { btn.disabled = true; }
 
   let hechos = 0, fallos = 0;
+  let primerError = '';
 
   for (const j of jDB) {
     if (btn) btn.textContent = `⏳ Subiendo jugadores... (${hechos + fallos + 1}/${total})`;
     const resultado = await scoutApiPost('guardarJugador', j);
     if (resultado.ok) { hechos++; _scoutActualizarURLsImagen('jDB', j.id, resultado.resultado); }
-    else { fallos++; console.warn('[Scoutdrive] Fallo al resubir jugador', j.id, resultado.motivo); }
+    else {
+      fallos++;
+      const detalle = resultado.motivo || resultado.error || 'error desconocido';
+      if (!primerError) primerError = detalle;
+      console.warn('[Scoutdrive] Fallo al resubir jugador', j.id, detalle);
+    }
   }
 
   for (const eq of eDB) {
     if (btn) btn.textContent = `⏳ Subiendo equipos... (${hechos + fallos + 1}/${total})`;
     const resultado = await scoutApiPost('guardarEquipo', eq);
     if (resultado.ok) { hechos++; _scoutActualizarURLsImagen('eDB', eq.id, resultado.resultado); }
-    else { fallos++; console.warn('[Scoutdrive] Fallo al resubir equipo', eq.id, resultado.motivo); }
+    else {
+      fallos++;
+      const detalle = resultado.motivo || resultado.error || 'error desconocido';
+      if (!primerError) primerError = detalle;
+      console.warn('[Scoutdrive] Fallo al resubir equipo', eq.id, detalle);
+    }
   }
 
   if (typeof saveJDB === 'function') saveJDB();
@@ -244,7 +259,7 @@ async function scoutForzarResubidaTotal() {
   if (fallos === 0) {
     _scoutToast(`✅ Resubida completa: ${hechos} elemento${hechos !== 1 ? 's' : ''} enviado${hechos !== 1 ? 's' : ''} al Sheet`);
   } else {
-    _scoutToast(`⚠️ Resubida terminada: ${hechos} ok, ${fallos} con error (revisa la consola)`, true);
+    _scoutToast(`⚠️ ${hechos} ok, ${fallos} con error. Motivo: ${primerError}`, true);
   }
 }
 
