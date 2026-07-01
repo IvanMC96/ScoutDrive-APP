@@ -1625,7 +1625,7 @@ const sv=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
 function toast(msg,err=false){
   const t=document.getElementById('toast');
   t.textContent=msg;t.className='toast show'+(err?' err':'');
-  setTimeout(()=>t.className='toast',3000);
+  setTimeout(()=>t.className='toast', err?9000:3000);
 }
 
 // ══════════════════════════════════════════════════════════════════
