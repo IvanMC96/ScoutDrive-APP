@@ -214,6 +214,33 @@ setInterval(scoutProcesarCola, 60000);
   console.log('[Scoutdrive sync] Conectado: guardarPartido()/borrarPartido() ahora sincronizan con Google Sheets.');
 })();
 
+(function engancharAnuncios() {
+  if (typeof guardarAnuncio !== 'function' || typeof borrarAnuncio !== 'function') {
+    setTimeout(engancharAnuncios, 50);
+    return;
+  }
+
+  const _guardarAnuncio_original = guardarAnuncio;
+  guardarAnuncio = function () {
+    const editIdAntes = document.getElementById('an-edit-id') ? document.getElementById('an-edit-id').value : '';
+    _guardarAnuncio_original();
+    const id = editIdAntes || (typeof adsDB !== 'undefined' && adsDB.length ? adsDB[0].id : null);
+    const a = (typeof adsDB !== 'undefined') ? adsDB.find(x => String(x.id) === String(id)) : null;
+    if (a) scoutSincronizarAnuncio(a);
+  };
+
+  const _borrarAnuncio_original = borrarAnuncio;
+  borrarAnuncio = function (id) {
+    _borrarAnuncio_original(id);
+    setTimeout(() => {
+      const sigueExistiendo = (typeof adsDB !== 'undefined') && adsDB.some(x => String(x.id) === String(id));
+      if (!sigueExistiendo) scoutEliminarAnuncioRemoto(id);
+    }, 300);
+  };
+
+  console.log('[Scoutdrive sync] Conectado: guardarAnuncio()/borrarAnuncio() ahora sincronizan con Google Sheets.');
+})();
+
 async function scoutSincronizarJugador(j) {
   const resultado = await scoutApiPost('guardarJugador', j);
   if (!resultado.ok && resultado.offline) {
@@ -271,6 +298,32 @@ async function scoutEliminarPartidoVideoRemoto(id) {
   }
 }
 
+async function scoutSincronizarAnuncio(a) {
+  const resultado = await scoutApiPost('guardarAnuncio', a);
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('guardarAnuncio', a);
+  } else if (resultado.ok) {
+    _scoutToast('☁️ Anuncio sincronizado con Google Sheets');
+    if (resultado.resultado && resultado.resultado.imgURL && typeof adsDB !== 'undefined') {
+      const idx = adsDB.findIndex(x => x.id === a.id);
+      if (idx >= 0) { adsDB[idx].img = resultado.resultado.imgURL; if (typeof saveAds === 'function') saveAds(); }
+    }
+  } else {
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar anuncio:', detalle);
+    _scoutToast('⚠️ No se pudo subir el anuncio al Sheet: ' + detalle, true);
+  }
+}
+
+async function scoutEliminarAnuncioRemoto(id) {
+  const resultado = await scoutApiPost('eliminarAnuncio', { id });
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('eliminarAnuncio', { id });
+  } else if (!resultado.ok) {
+    console.warn('[Scoutdrive sync] Error al eliminar anuncio en el Sheet:', resultado.motivo || resultado.error);
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 //  RESUBIDA MASIVA — útil una sola vez tras arreglar/cambiar el
 //  backend, para subir todo lo que ya tienes guardado en local
@@ -280,7 +333,8 @@ async function scoutEliminarPartidoVideoRemoto(id) {
 async function scoutForzarResubidaTotal() {
   if (typeof jDB === 'undefined' || typeof eDB === 'undefined') return;
   const totalPartidos = (typeof pDB !== 'undefined') ? pDB.length : 0;
-  const total = jDB.length + eDB.length + totalPartidos;
+  const totalAds = (typeof adsDB !== 'undefined') ? adsDB.length : 0;
+  const total = jDB.length + eDB.length + totalPartidos + totalAds;
   if (total === 0) { _scoutToast('No hay nada local que resubir', true); return; }
 
   const btn = document.getElementById('btn-resubida-total');
@@ -329,9 +383,26 @@ async function scoutForzarResubidaTotal() {
     }
   }
 
+  if (typeof adsDB !== 'undefined') {
+    for (const a of adsDB) {
+      if (btn) btn.textContent = `⏳ Subiendo publicidad... (${hechos + fallos + 1}/${total})`;
+      const resultado = await scoutApiPost('guardarAnuncio', a);
+      if (resultado.ok) {
+        hechos++;
+        if (resultado.resultado && resultado.resultado.imgURL) a.img = resultado.resultado.imgURL;
+      } else {
+        fallos++;
+        const detalle = resultado.motivo || resultado.error || 'error desconocido';
+        if (!primerError) primerError = detalle;
+        console.warn('[Scoutdrive] Fallo al resubir anuncio', a.id, detalle);
+      }
+    }
+  }
+
   if (typeof saveJDB === 'function') saveJDB();
   if (typeof saveEDB === 'function') saveEDB();
   if (typeof savePDB === 'function') savePDB();
+  if (typeof saveAds === 'function') saveAds();
 
   if (btn) { btn.disabled = false; btn.textContent = '☁️ Forzar resubida de todo lo local'; }
 
@@ -428,6 +499,15 @@ async function scoutSincronizarAlAbrir() {
       }
     });
   }
+  if (respuesta.anuncios && respuesta.anuncios.length && typeof adsDB !== 'undefined') {
+    respuesta.anuncios.forEach(r => {
+      const remoto = _normalizarRegistro(r);
+      if (!remoto.id) return;
+      const idx = adsDB.findIndex(x => x.id === remoto.id);
+      if (idx < 0) { adsDB.unshift(remoto); huboNovedades = true; }
+      else { adsDB[idx] = remoto; huboNovedades = true; }
+    });
+  }
 
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
 
@@ -435,6 +515,8 @@ async function scoutSincronizarAlAbrir() {
     if (typeof saveJDB === 'function') saveJDB();
     if (typeof saveEDB === 'function') saveEDB();
     if (typeof savePDB === 'function') savePDB();
+    if (typeof saveAds === 'function') saveAds();
+    if (typeof renderBannerAdsGlobal === 'function') renderBannerAdsGlobal();
     if (typeof currentSection !== 'undefined') {
       if (currentSection === 'jugadores-db' && typeof renderJDB === 'function') renderJDB();
       if (currentSection === 'equipos-db' && typeof renderEDB === 'function') renderEDB();
@@ -572,14 +654,26 @@ async function scoutSyncCompleto(silencioso) {
     });
   }
 
+  if (respuesta.anuncios && respuesta.anuncios.length && typeof adsDB !== 'undefined') {
+    const reconstruidos = respuesta.anuncios.map(_normalizarRegistro);
+    reconstruidos.forEach(remoto => {
+      if (!remoto.id) return;
+      const idx = adsDB.findIndex(x => x.id === remoto.id);
+      if (idx >= 0) { adsDB[idx] = remoto; cambios++; }
+      else { adsDB.unshift(remoto); cambios++; }
+    });
+  }
+
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
 
   if (cambios > 0) {
     if (typeof saveJDB === 'function') saveJDB();
     if (typeof saveEDB === 'function') saveEDB();
     if (typeof savePDB === 'function') savePDB();
+    if (typeof saveAds === 'function') saveAds();
     if (typeof renderJDB === 'function') renderJDB();
     if (typeof renderEDB === 'function') renderEDB();
+    if (typeof renderBannerAdsGlobal === 'function') renderBannerAdsGlobal();
     if (typeof currentSection !== 'undefined' && currentSection === 'partidos' && typeof renderPartidos === 'function') renderPartidos();
     if (typeof currentSection !== 'undefined' && currentSection === 'inicio' && typeof renderInicio === 'function') renderInicio();
     _scoutToast(`☁️ ${cambios} elemento${cambios !== 1 ? 's' : ''} sincronizado${cambios !== 1 ? 's' : ''}`);
