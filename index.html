@@ -4327,7 +4327,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbyecXknLtflQhtEltr14B10ejVD_8BpYNAQb-uwMie7RGCTbYGsknpjDmdiURhF9qef/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -4359,6 +4359,10 @@ function guardarEConFeedback(){
         overlay.style.display = 'none';
         loginSyncBrand();
         if (typeof actualizarPanelAdmin === 'function') actualizarPanelAdmin();
+        // La sincronización con Google Sheets arranca AQUÍ, ya con la
+        // app abierta — así no compite por la red con el propio login
+        // en conexiones móviles lentas.
+        if (typeof window.scoutSyncInicial === 'function') window.scoutSyncInicial();
       }, 300);
     };
 
@@ -4876,7 +4880,7 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbyecXknLtflQhtEltr14B10ejVD_8BpYNAQb-uwMie7RGCTbYGsknpjDmdiURhF9qef/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
