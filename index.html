@@ -363,6 +363,102 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 
 /* CONFIG PAGE */
 .cfg-page{padding:28px 32px;gap:20px;max-width:640px;}
+
+/* ══ INICIO — DASHBOARD ══════════════════════════════════════ */
+.inicio-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+.inicio-highlights-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.inicio-hl-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.inicio-hl-tit{font-size:10px;font-weight:800;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;}
+.inicio-hl-row{display:flex;align-items:center;gap:10px;}
+.inicio-hl-img{width:44px;height:44px;object-fit:contain;border-radius:8px;background:var(--bg);flex-shrink:0;}
+.inicio-hl-img-fallback{background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:var(--gris);}
+.inicio-hl-nom{font-size:13px;font-weight:800;color:var(--blanco);}
+.inicio-hl-val{font-size:11px;font-weight:600;margin-top:2px;}
+.inicio-stat{background:var(--bg2);border:1px solid var(--border);border-radius:10px;
+  padding:16px;display:flex;flex-direction:column;gap:4px;}
+.inicio-stat-v{font-size:26px;font-weight:900;color:var(--azul-cl);line-height:1;}
+.inicio-stat-l{font-size:10px;color:var(--gris);text-transform:uppercase;letter-spacing:.6px;}
+.inicio-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.inicio-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px;}
+.inicio-card-tit{font-size:12px;font-weight:800;color:var(--blanco);margin-bottom:12px;}
+.inicio-row{display:flex;align-items:center;justify-content:space-between;
+  padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;}
+.inicio-row:last-child{border-bottom:none;}
+.inicio-row-l{color:var(--gris);}
+.inicio-row-r{font-weight:700;color:var(--blanco);}
+.inicio-empty{color:var(--gris2);font-size:11px;padding:10px 0;text-align:center;}
+
+/* Publicidad */
+.ad-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;
+  overflow:hidden;margin-bottom:10px;position:relative;transition:border-color .15s,transform .15s;}
+.ad-card:hover{border-color:var(--azul);transform:translateY(-1px);}
+.ad-card .ad-img-wrap{width:100%;height:150px;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;}
+.ad-card img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block;}
+.ad-card-body{padding:10px 13px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+.ad-card-txt{font-size:11px;color:var(--gris);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ad-card-actions{display:flex;gap:5px;flex-shrink:0;}
+.ad-badge-inactivo{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.75);
+  color:var(--gris);font-size:9px;font-weight:700;padding:3px 8px;border-radius:10px;}
+.ads-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+
+/* Banner de publicidad global (fijo abajo, visible en toda la app) */
+.ad-banner-global{
+  position:fixed;left:0;right:0;bottom:0;z-index:250;
+  background:var(--bg2);border-top:1px solid var(--border);
+  display:none;align-items:center;gap:12px;padding:7px 14px;
+  box-shadow:0 -4px 16px rgba(0,0,0,.35);
+  max-height:64px;
+}
+.ad-banner-global.show{display:flex;}
+.ad-banner-global .abg-link{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-decoration:none;color:inherit;cursor:pointer;}
+.ad-banner-global .abg-img-wrap{height:50px;width:90px;flex-shrink:0;background:var(--bg);border-radius:6px;
+  display:flex;align-items:center;justify-content:center;padding:5px;box-sizing:border-box;}
+.ad-banner-global img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
+.ad-banner-global .abg-txt{font-size:11px;color:var(--blanco);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ad-banner-global .abg-tag{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:1px;}
+.ad-banner-global .abg-close{background:none;border:none;color:var(--gris);cursor:pointer;font-size:15px;
+  padding:4px 6px;flex-shrink:0;border-radius:5px;transition:all .15s;}
+.ad-banner-global .abg-close:hover{color:#fff;background:rgba(255,255,255,.08);}
+body.ad-banner-activo .vista{padding-bottom:64px;}
+body.ad-banner-activo .ed-layout,
+body.ad-banner-activo #v-partidos{padding-bottom:0;}
+body.ad-banner-activo .ed-panel-ficha,
+body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
+
+@media(max-width:680px){
+  .ad-banner-global .abg-img-wrap{height:38px;width:60px;}
+  .ad-banner-global{padding:6px 10px;gap:8px;}
+}
+
+/* Filas clicables del dashboard de Inicio */
+.inicio-row.clicable{cursor:pointer;transition:background .15s;border-radius:6px;padding-left:6px;padding-right:6px;margin:0 -6px;}
+.inicio-row.clicable:hover{background:rgba(255,255,255,.04);}
+.inicio-liga-tit{font-size:10px;font-weight:800;color:var(--naranja-cl);text-transform:uppercase;
+  letter-spacing:.6px;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--border);}
+
+/* Cómo se marcan los goles — donut + leyenda */
+.inicio-origen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
+.inicio-origen-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.inicio-origen-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
+.inicio-donut-wrap{flex-shrink:0;}
+.inicio-origen-legend{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;}
+.inicio-legend-item{display:flex;align-items:center;gap:7px;font-size:11px;}
+.inicio-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.inicio-legend-lbl{color:var(--gris);flex:1;}
+.inicio-legend-pct{font-weight:800;color:var(--blanco);}
+.inicio-origen-badge{margin-top:12px;font-size:11px;color:var(--naranja-cl);background:rgba(210,153,34,.1);
+  border:1px solid rgba(210,153,34,.3);border-radius:7px;padding:7px 10px;}
+.inicio-origen-badge strong{color:var(--naranja-cl);}
+.inicio-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;flex-shrink:0;margin-right:8px;}
+.inicio-avatar-fallback{background:var(--azul-dk);display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:800;color:#fff;}
+.inicio-escudo{width:20px;height:20px;object-fit:contain;border-radius:4px;background:var(--bg);}
+.inicio-escudo-fallback{background:var(--bg3);}
+
+@media(max-width:680px){
+  .inicio-grid2{grid-template-columns:1fr;}
+}
+
 .cfg-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:20px;
   display:flex;flex-direction:column;gap:14px;}
 .cfg-title{font-size:14px;font-weight:800;color:var(--blanco);margin-bottom:2px;}
@@ -919,6 +1015,8 @@ body.solo-lectura [data-del-jugador],
 body.solo-lectura [data-del-equipo],
 body.solo-lectura .partido-card-actions,
 body.solo-lectura #btn-nuevo-top,
+body.solo-lectura #btn-nuevo-anuncio,
+body.solo-lectura .abg-close,
 body.solo-lectura .btn-guardar-float,
 body.solo-lectura .btn-guardar-bar,
 body.solo-lectura .add-partido-btn {
@@ -955,7 +1053,8 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
   <div class="nav-tabs">
-    <button class="nav-tab on" id="tab-jugadores" onclick="navTo('jugadores-db')">👤 Jugadores</button>
+    <button class="nav-tab on" id="tab-inicio" onclick="navTo('inicio')">🏠 Inicio</button>
+    <button class="nav-tab" id="tab-jugadores" onclick="navTo('jugadores-db')">👤 Jugadores</button>
     <button class="nav-tab" id="tab-equipos" onclick="navTo('equipos-db')">🏟️ Equipos</button>
     <button class="nav-tab" id="tab-partidos" onclick="navTo('partidos')">🎬 Partidos</button>
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
@@ -971,6 +1070,18 @@ body.solo-lectura .ed-panel-form {
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ── BANNER DE PUBLICIDAD GLOBAL (fijo abajo, visible en toda la app) ── -->
+<div class="ad-banner-global" id="ad-banner-global">
+  <a class="abg-link" id="abg-link" href="#" target="_blank" rel="noopener">
+    <div class="abg-img-wrap" id="abg-img-wrap" style="display:none"><img id="abg-img" src="" alt=""></div>
+    <div style="min-width:0">
+      <div class="abg-tag">Publicidad</div>
+      <div class="abg-txt" id="abg-txt"></div>
+    </div>
+  </a>
+  <button class="abg-close" onclick="cerrarBannerAds()" title="Ocultar">✕</button>
+</div>
 <div class="modal-bg" id="modal">
   <div class="modal">
     <button class="mc" onclick="cModal()">✕</button>
@@ -995,7 +1106,47 @@ body.solo-lectura .ed-panel-form {
 </div>
 
 <!-- ══ SECCIÓN JUGADORES DB ══════════════════════════════════════ -->
-<div class="vista on db-page" id="v-jugadores-db">
+<!-- ══ SECCIÓN INICIO — RESUMEN + PUBLICIDAD ═══════════════════════ -->
+<div class="vista on db-page" id="v-inicio">
+  <div class="db-hdr">
+    <div><div class="db-tit">🏠 Resumen</div></div>
+  </div>
+
+  <div class="inicio-stats-grid" id="inicio-stats-grid"></div>
+
+  <div class="inicio-highlights-grid" id="inicio-highlights-grid"></div>
+
+  <div class="inicio-grid2">
+    <div class="inicio-card">
+      <div class="inicio-card-tit">📅 Últimos partidos</div>
+      <div id="inicio-ultimos-partidos"></div>
+    </div>
+    <div class="inicio-card">
+      <div class="inicio-card-tit">⚽ Máximos goleadores</div>
+      <div id="inicio-top-goleadores"></div>
+    </div>
+  </div>
+
+  <div class="inicio-card" id="inicio-clas-card" style="overflow-x:auto">
+    <div class="inicio-card-tit">🏆 Clasificación</div>
+    <div id="inicio-clasificacion"></div>
+  </div>
+
+  <div class="inicio-card" id="inicio-origen-card">
+    <div class="inicio-card-tit">🎯 Cómo se marcan los goles</div>
+    <div id="inicio-origen-goles"></div>
+  </div>
+
+  <div class="inicio-card" id="inicio-ads-card">
+    <div class="inicio-card-tit" style="display:flex;justify-content:space-between;align-items:center">
+      <span>📢 Publicidad</span>
+      <button class="btn b-verde b-sm" id="btn-nuevo-anuncio" onclick="abrirModalAnuncio()">+ Añadir anuncio</button>
+    </div>
+    <div class="ads-grid" id="inicio-ads-list"></div>
+  </div>
+</div>
+
+<div class="vista db-page" id="v-jugadores-db">
   <div class="db-hdr">
     <div><div class="db-tit">👤 Jugadores</div><div class="db-sub">Base de datos de informes individuales</div></div>
     <div class="db-stats">
@@ -1109,6 +1260,10 @@ body.solo-lectura .ed-panel-form {
           <div class="fg"><label>Min/gol</label><input class="nbig" id="km" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>ABP goles</label><input class="nbig" id="kab" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>% Finaliz.</label><input class="nbig" id="kf" type="number" value="0" oninput="renderJ()"></div>
+        </div>
+        <div class="fg">
+          <label>Porterías a cero (solo porteros)</label>
+          <input class="nbig" id="kpz" type="number" value="0" oninput="renderJ()">
         </div>
       </div>
     </div>
@@ -1397,6 +1552,7 @@ body.solo-lectura .ed-panel-form {
 </div>
 
 <!-- ══ MODAL AÑADIR / EDITAR PARTIDO ══════════════════════════ -->
+
 <div class="add-partido-modal" id="add-partido-modal" onclick="if(event.target===this)cerrarAddPartido()">
   <div class="add-partido-box">
     <div class="add-partido-hdr">
@@ -1444,6 +1600,20 @@ body.solo-lectura .ed-panel-form {
         <!-- O URL -->
         <p style="font-size:9px;color:var(--gris);text-align:center;margin:4px 0">— o pega una URL —</p>
         <input id="ap-thumb" placeholder="https://drive.google.com/... o https://..." oninput="actualizarThumbPreview()">
+      </div>
+      <div class="apf">
+        <label>⚽ Goles del partido</label>
+        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Registra quién marcó cada gol, si hubo asistencia, el minuto y si fue de penalti.</p>
+        <div id="ap-goles-list"></div>
+        <button class="badd" type="button" onclick="addApGol()">+ Añadir gol</button>
+      </div>
+      <div class="apf">
+        <label>🧤 Porteros (para las porterías a cero)</label>
+        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Si el rival no marca, se apunta sola la portería a cero al portero que pongas aquí.</p>
+        <div class="apf-row">
+          <div><label style="font-size:9px;color:var(--gris2)">Portero local</label><input id="ap-portero-local" placeholder="Nombre del portero"></div>
+          <div><label style="font-size:9px;color:var(--gris2)">Portero visitante</label><input id="ap-portero-visitante" placeholder="Nombre del portero"></div>
+        </div>
       </div>
       <div class="apf">
         <label>📝 Notas tácticas</label>
@@ -1544,7 +1714,47 @@ body.solo-lectura .ed-panel-form {
   </div>
 </div>
 
+<!-- ══ MODAL NUEVO / EDITAR ANUNCIO ══════════════════════════ -->
+<div class="add-partido-modal" id="modal-anuncio" onclick="if(event.target===this)cerrarModalAnuncio()">
+  <div class="add-partido-box" style="max-width:440px">
+    <div class="add-partido-hdr">
+      <span id="modal-anuncio-titulo">➕ Nuevo anuncio</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarModalAnuncio()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <div class="apf">
+        <label>Imagen del anuncio</label>
+        <div class="uzone" id="uz-anuncio" onclick="document.getElementById('if-anuncio').click()">
+          <input type="file" id="if-anuncio" accept="image/*" style="display:none" onchange="loadImgAnuncio(event)">
+          <div id="pv-anuncio"><div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div></div>
+        </div>
+      </div>
+      <div class="apf">
+        <label>Texto / nombre del anunciante</label>
+        <input id="an-texto" placeholder="Ej: Patrocinador Oficial — Tienda XYZ">
+      </div>
+      <div class="apf">
+        <label>Enlace al hacer clic</label>
+        <input id="an-link" placeholder="https://...">
+      </div>
+      <div class="apf">
+        <label>Estado</label>
+        <select id="an-activo">
+          <option value="true">✅ Activo (visible)</option>
+          <option value="false">🚫 Oculto</option>
+        </select>
+      </div>
+      <input type="hidden" id="an-edit-id">
+    </div>
+    <div class="add-partido-footer">
+      <button class="btn-cancel-partido" onclick="cerrarModalAnuncio()">Cancelar</button>
+      <button class="btn-guardar-partido" onclick="guardarAnuncio()">💾 Guardar anuncio</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MODAL NUEVO / EDITAR USUARIO ══════════════════════════ -->
+
 <div class="add-partido-modal" id="modal-usuario" onclick="if(event.target===this)cerrarModalUsuario()">
   <div class="add-partido-box" style="max-width:440px">
     <div class="add-partido-hdr">
@@ -1602,13 +1812,14 @@ const OCSS={'Ataque Organizado':'to-atq','Juego Directo':'to-jd','Centro Lateral
 // ══════════════════════════════════════════════════════════════════
 // BD KEYS + CONFIG
 // ══════════════════════════════════════════════════════════════════
-const JDB='scout_j_v1', EDB='scout_e_v1', CFG_KEY='scout_cfg_v1';
-let jDB=[], eDB=[];
+const JDB='scout_j_v1', EDB='scout_e_v1', CFG_KEY='scout_cfg_v1', ADS_KEY='scout_ads_v1';
+let jDB=[], eDB=[], adsDB=[];
 let cfg={nombre:'Scoutdrive',sub:'Plataforma de análisis táctico',logo:null,footer:'Scoutdrive · Uso interno · Cuerpo técnico'};
 
-function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} loadCfg(); }
+function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} try{adsDB=JSON.parse(localStorage.getItem(ADS_KEY)||'[]');}catch(e){adsDB=[];} loadCfg(); }
 function saveJDB(){ try{localStorage.setItem(JDB,JSON.stringify(jDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
 function saveEDB(){ try{localStorage.setItem(EDB,JSON.stringify(eDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
+function saveAds(){ try{localStorage.setItem(ADS_KEY,JSON.stringify(adsDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
 function loadCfg(){ try{const c=JSON.parse(localStorage.getItem(CFG_KEY)||'null');if(c)cfg=c;}catch(e){} }
 function saveCfg(){ localStorage.setItem(CFG_KEY,JSON.stringify(cfg)); }
 function applyCfg(){
@@ -1618,7 +1829,7 @@ function applyCfg(){
   const bw=document.getElementById('brand-logo-wrap');
   const bd=document.getElementById('brand-logo-default');
   if(cfg.logo){
-    bw.innerHTML=`<img src="${cfg.logo}" style="width:36px;height:36px;border-radius:7px;object-fit:contain">`;
+    bw.innerHTML=`<img src="${cfg.logo}" style="width:36px;height:36px;border-radius:7px;object-fit:contain" onerror="this.parentElement.innerHTML='&lt;div id=&quot;brand-logo-default&quot;&gt;⚽&lt;/div&gt;'">`;
   }else{
     bw.innerHTML='<div id="brand-logo-default">⚽</div>';
   }
@@ -1640,16 +1851,428 @@ function toast(msg,err=false){
 }
 
 // ══════════════════════════════════════════════════════════════════
-// NAVEGACIÓN
+// INICIO — DASHBOARD RESUMEN
 // ══════════════════════════════════════════════════════════════════
-let currentSection='jugadores-db';
-const VISTAS=['jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config','admin'];
+function renderInicio(){
+  document.getElementById('inicio-stats-grid').innerHTML=`
+    <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--azul-cl)">${jDB.length}</div><div class="inicio-stat-l">Jugadores</div></div>
+    <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--verde-cl)">${eDB.length}</div><div class="inicio-stat-l">Equipos</div></div>
+    <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--naranja-cl)">${pDB.length}</div><div class="inicio-stat-l">Partidos en videoteca</div></div>
+  `;
+
+  // Últimos partidos (de la videoteca) — clicables, llevan al partido
+  const ultimosP=[...pDB].sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0)).slice(0,5);
+  document.getElementById('inicio-ultimos-partidos').innerHTML = ultimosP.length
+    ? ultimosP.map(p=>`<div class="inicio-row clicable" onclick="irAPartido('${p.id}')"><span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}</span><span class="inicio-row-r">${p.gf??'-'}:${p.gc??'-'}</span></div>`).join('')
+    : '<div class="inicio-empty">Sin partidos todavía</div>';
+
+  renderHighlightsInicio();
+  renderGoleadoresInicio();
+  renderClasificacionInicio();
+  renderOrigenGolesInicio();
+  renderAdsList();
+}
+
+// ── DESTACADOS: equipo más goleador, mejor defensa, portero menos batido ──
+function calcularClasificacionGlobal(){
+  const tabla={};
+  pDB.forEach(p=>{
+    if(p.gf==null || p.gc==null) return;
+    if(!p.local || !p.visitante) return;
+    [[p.local,p.gf,p.gc],[p.visitante,p.gc,p.gf]].forEach(([nombre,gf,gc])=>{
+      const key=nombre.trim().toLowerCase();
+      if(!tabla[key]) tabla[key]={nombre:nombre.trim(),pj:0,gf:0,gc:0};
+      const t=tabla[key];
+      t.pj++; t.gf+=gf; t.gc+=gc;
+    });
+  });
+  return Object.values(tabla);
+}
+
+function renderHighlightsInicio(){
+  const wrap=document.getElementById('inicio-highlights-grid');
+  if(!wrap) return;
+  const tabla=calcularClasificacionGlobal();
+  const conPartidos=tabla.filter(t=>t.pj>0);
+
+  const bloque=(titulo,html)=>`<div class="inicio-hl-card"><div class="inicio-hl-tit">${titulo}</div>${html}</div>`;
+
+  // Equipo más goleador de todos
+  let hMaxGol='<div class="inicio-empty">Sin datos todavía</div>';
+  if(conPartidos.length){
+    const t=[...conPartidos].sort((a,b)=>b.gf-a.gf)[0];
+    const escudo=escudoDeEquipoPorNombre(t.nombre);
+    hMaxGol=`<div class="inicio-hl-row clicable" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')">
+      ${escudo?`<img src="${eH(escudo)}" class="inicio-hl-img">`:`<div class="inicio-hl-img inicio-hl-img-fallback">🛡️</div>`}
+      <div><div class="inicio-hl-nom">${eH(t.nombre)}</div><div class="inicio-hl-val" style="color:var(--verde-cl)">${t.gf} goles a favor</div></div>
+    </div>`;
+  }
+
+  // Equipo que menos encaja de todos
+  let hMejorDef='<div class="inicio-empty">Sin datos todavía</div>';
+  if(conPartidos.length){
+    const t=[...conPartidos].sort((a,b)=>a.gc-b.gc)[0];
+    const escudo=escudoDeEquipoPorNombre(t.nombre);
+    hMejorDef=`<div class="inicio-hl-row clicable" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')">
+      ${escudo?`<img src="${eH(escudo)}" class="inicio-hl-img">`:`<div class="inicio-hl-img inicio-hl-img-fallback">🛡️</div>`}
+      <div><div class="inicio-hl-nom">${eH(t.nombre)}</div><div class="inicio-hl-val" style="color:var(--azul-cl)">${t.gc} goles encajados</div></div>
+    </div>`;
+  }
+
+  // Portero con más porterías a cero
+  let hPortero='<div class="inicio-empty">Registra "Porterías a cero" en la ficha del portero</div>';
+  const porteros=jDB.filter(j=>(j.pos||'').toLowerCase()==='portero' && (j.stats?.pz||0)>0);
+  if(porteros.length){
+    const top=[...porteros].sort((a,b)=>(b.stats?.pz||0)-(a.stats?.pz||0))[0];
+    const foto=top.imgJug;
+    hPortero=`<div class="inicio-hl-row clicable" onclick="irAJugador('${top.id}')">
+      ${foto?`<img src="${eH(foto)}" class="inicio-hl-img" style="border-radius:50%">`:`<div class="inicio-hl-img inicio-hl-img-fallback" style="border-radius:50%">${eH(ini(top.nom,top.ape)||'?')}</div>`}
+      <div><div class="inicio-hl-nom">${eH((top.nom+' '+top.ape).trim())}</div><div class="inicio-hl-val" style="color:var(--naranja-cl)">${top.stats.pz} porterías a cero</div></div>
+    </div>`;
+  }
+
+  wrap.innerHTML=
+    bloque('⚽ Equipo más goleador',hMaxGol)+
+    bloque('🛡️ Equipo que menos encaja',hMejorDef)+
+    bloque('🧤 Portero menos batido',hPortero);
+}
+
+// ── Helpers para relacionar equipos por nombre (liga y escudo) ────
+function _buscarEquipoPorNombre(nombre){
+  if(!nombre) return null;
+  const key=nombre.trim().toLowerCase();
+  return eDB.find(e=>(e.nom||'').trim().toLowerCase()===key)||null;
+}
+function ligaDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return (eq&&eq.liga)?eq.liga.trim():null;
+}
+function escudoDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return eq?(eq.imgEsc||null):null;
+}
+
+// ── GOLEADORES — separados por liga/grupo del club del jugador ────
+function renderGoleadoresInicio(){
+  const cont=document.getElementById('inicio-top-goleadores');
+  if(!cont) return;
+  const conGoles=jDB.filter(j=>(j.stats?.g||0)>0);
+  if(!conGoles.length){ cont.innerHTML='<div class="inicio-empty">Sin goles registrados</div>'; return; }
+
+  const grupos={};
+  conGoles.forEach(j=>{
+    const liga=ligaDeEquipoPorNombre(j.club)||'Sin liga especificada';
+    const key=liga.toLowerCase();
+    if(!grupos[key]) grupos[key]={nombre:liga,jugadores:[]};
+    grupos[key].jugadores.push(j);
+  });
+  const listaGrupos=Object.values(grupos)
+    .map(g=>({nombre:g.nombre,jugadores:g.jugadores.sort((a,b)=>(b.stats?.g||0)-(a.stats?.g||0)).slice(0,5)}))
+    .sort((a,b)=>a.nombre==='Sin liga especificada'?1:(b.nombre==='Sin liga especificada'?-1:a.nombre.localeCompare(b.nombre)));
+
+  cont.innerHTML=listaGrupos.map(g=>`
+    <div style="margin-bottom:14px">
+      ${listaGrupos.length>1?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}
+      ${g.jugadores.map(j=>{
+        const foto=j.imgJug;
+        const avatar=foto
+          ?`<img src="${eH(foto)}" class="inicio-avatar">`
+          :`<div class="inicio-avatar inicio-avatar-fallback">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+        return `<div class="inicio-row clicable" onclick="irAJugador('${j.id}')">
+          ${avatar}
+          <span class="inicio-row-l" style="flex:1">${eH((j.nom+' '+j.ape).trim())}</span>
+          <span class="inicio-row-r" style="color:var(--verde-cl)">${j.stats.g} ⚽</span>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+// ── CLASIFICACIÓN AUTOMÁTICA — separada por liga/grupo del equipo ──
+function calcularClasificacionPorLiga(){
+  const ligas={};
+  pDB.forEach(p=>{
+    if(p.gf==null || p.gc==null) return;
+    if(!p.local || !p.visitante) return;
+    [[p.local,p.gf,p.gc],[p.visitante,p.gc,p.gf]].forEach(([nombre,gf,gc])=>{
+      const ligaNom=ligaDeEquipoPorNombre(nombre)||'Sin liga especificada';
+      const ligaKey=ligaNom.toLowerCase();
+      if(!ligas[ligaKey]) ligas[ligaKey]={nombre:ligaNom,equipos:{}};
+      const key=nombre.trim().toLowerCase();
+      const tabla=ligas[ligaKey].equipos;
+      if(!tabla[key]) tabla[key]={nombre:nombre.trim(),pj:0,v:0,e:0,d:0,gf:0,gc:0,pts:0};
+      const t=tabla[key];
+      t.pj++; t.gf+=gf; t.gc+=gc;
+      if(gf>gc){t.v++;t.pts+=3;} else if(gf===gc){t.e++;t.pts+=1;} else {t.d++;}
+    });
+  });
+  return Object.values(ligas)
+    .map(l=>({nombre:l.nombre,equipos:Object.values(l.equipos).sort((a,b)=> b.pts-a.pts || (b.gf-b.gc)-(a.gf-a.gc) || b.gf-a.gf)}))
+    .sort((a,b)=>a.nombre==='Sin liga especificada'?1:(b.nombre==='Sin liga especificada'?-1:a.nombre.localeCompare(b.nombre)));
+}
+
+function renderClasificacionInicio(){
+  const cont=document.getElementById('inicio-clasificacion');
+  if(!cont) return;
+  const grupos=calcularClasificacionPorLiga();
+  if(!grupos.length){ cont.innerHTML='<div class="inicio-empty">Sube partidos con resultado para generar la clasificación</div>'; return; }
+  cont.innerHTML=grupos.map(g=>`
+    <div style="margin-bottom:18px">
+      ${grupos.length>1?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}
+      <table class="tg-v2" style="font-size:11px">
+        <thead><tr><th>#</th><th></th><th>Equipo</th><th>PJ</th><th>V</th><th>E</th><th>D</th><th>GF</th><th>GC</th><th>Pts</th></tr></thead>
+        <tbody>${g.equipos.map((t,i)=>{
+          const escudo=escudoDeEquipoPorNombre(t.nombre);
+          const escH=escudo?`<img src="${eH(escudo)}" class="inicio-escudo">`:`<div class="inicio-escudo inicio-escudo-fallback"></div>`;
+          return `<tr class="inicio-clas-row" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')" style="cursor:pointer">
+            <td style="color:var(--gris)">${i+1}</td>
+            <td>${escH}</td>
+            <td style="font-weight:700;color:var(--blanco)">${eH(t.nombre)}</td>
+            <td>${t.pj}</td><td style="color:var(--verde-cl)">${t.v}</td><td style="color:var(--naranja-cl)">${t.e}</td><td style="color:var(--rojo-cl)">${t.d}</td>
+            <td>${t.gf}</td><td>${t.gc}</td>
+            <td style="font-weight:800;color:var(--azul-cl)">${t.pts}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`).join('');
+}
+
+// ── CÓMO SE MARCAN LOS GOLES — resumen por liga/grupo ─────────────
+// Usa los datos de "Análisis de origen" ya cargados en cada equipo
+// (Ataque Organizado, ABP, Centro Lateral, Juego Directo, Transición)
+// y los suma por liga, para ver de dónde vienen más goles en cada grupo.
+function calcularOrigenGolesPorLiga(){
+  const ORIGEN_LBL=[
+    ['eoatq','Ataque Organizado','#2f81f7'],
+    ['eoabp','ABP Ofensiva','#d29922'],
+    ['eocl','Centro Lateral','#bc8cff'],
+    ['eojd','Juego Directo','#6e7681'],
+    ['eotr','Transición Ofensiva','#39d3f0']
+  ];
+  const ligas={};
+  eDB.forEach(eq=>{
+    const ligaNom=(eq.liga||'').trim()||'Sin liga especificada';
+    const key=ligaNom.toLowerCase();
+    if(!ligas[key]) ligas[key]={nombre:ligaNom,origen:{}};
+    const o=eq.orig||{};
+    ORIGEN_LBL.forEach(([campo])=>{ ligas[key].origen[campo]=(ligas[key].origen[campo]||0)+(o[campo]||0); });
+  });
+  return Object.values(ligas)
+    .map(l=>{
+      const total=ORIGEN_LBL.reduce((s,[campo])=>s+(l.origen[campo]||0),0);
+      const items=ORIGEN_LBL.map(([campo,label,color])=>({label,color,valor:l.origen[campo]||0}))
+        .sort((a,b)=>b.valor-a.valor);
+      return {nombre:l.nombre,total,items};
+    })
+    .filter(l=>l.total>0)
+    .sort((a,b)=>a.nombre==='Sin liga especificada'?1:(b.nombre==='Sin liga especificada'?-1:a.nombre.localeCompare(b.nombre)));
+}
+
+// Genera un gráfico de donut en SVG puro (sin librerías externas).
+function donutSVG(items, size=132, thickness=22){
+  const total=items.reduce((s,it)=>s+it.valor,0);
+  const r=(size-thickness)/2;
+  const cx=size/2, cy=size/2;
+  const C=2*Math.PI*r;
+  let offset=0;
+  const segmentos=items.filter(it=>it.valor>0).map(it=>{
+    const frac=total>0?it.valor/total:0;
+    const dash=Math.max(frac*C,0.001);
+    const seg=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${thickness}"
+      stroke-dasharray="${dash} ${C-dash}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})" stroke-linecap="butt"/>`;
+    offset+=dash;
+    return seg;
+  }).join('');
+  const top=items[0];
+  const topPct=total>0?Math.round(top.valor/total*100):0;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#21262d" stroke-width="${thickness}"/>
+    ${segmentos}
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="20" font-weight="900" fill="#e6edf3" font-family="Arial">${topPct}%</text>
+    <text x="${cx}" y="${cy+13}" text-anchor="middle" font-size="8" fill="#8b949e" font-family="Arial">MÁS FRECUENTE</text>
+  </svg>`;
+}
+
+function renderOrigenGolesInicio(){
+  const cont=document.getElementById('inicio-origen-goles');
+  if(!cont) return;
+  const grupos=calcularOrigenGolesPorLiga();
+  if(!grupos.length){ cont.innerHTML='<div class="inicio-empty">Rellena el "Análisis de origen" en tus equipos para ver este resumen</div>'; return; }
+  cont.innerHTML=`<div class="inicio-origen-grid">${grupos.map(g=>{
+    const top=g.items[0];
+    const topPct=g.total>0?Math.round(top.valor/g.total*100):0;
+    return `<div class="inicio-origen-card">
+      ${grupos.length>1?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}
+      <div class="inicio-origen-row">
+        <div class="inicio-donut-wrap">${donutSVG(g.items)}</div>
+        <div class="inicio-origen-legend">
+          ${g.items.map(it=>{
+            const pct=g.total>0?Math.round(it.valor/g.total*100):0;
+            return `<div class="inicio-legend-item">
+              <span class="inicio-legend-dot" style="background:${it.color}"></span>
+              <span class="inicio-legend-lbl">${eH(it.label)}</span>
+              <span class="inicio-legend-pct">${pct}%</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="inicio-origen-badge">🔥 Se marca más de <strong>${eH(top.label)}</strong> (${topPct}% de los goles)</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ── NAVEGACIÓN DIRECTA DESDE EL DASHBOARD ───────────────────────
+function irAPartido(id){
+  navTo('partidos');
+  setTimeout(()=>{ if(typeof verPartido==='function') verPartido(id); },120);
+}
+function irAJugador(id){
+  if(typeof editJ==='function') editJ(id);
+}
+function irAEquipoPorNombre(nombre){
+  const key=(nombre||'').trim().toLowerCase();
+  const eq=eDB.find(e=>(e.nom||'').trim().toLowerCase()===key);
+  if(eq){ editE(eq.id); }
+  else{
+    navTo('equipos-db');
+    setTimeout(()=>{ const q=document.getElementById('edb-q'); if(q){ q.value=nombre; renderEDB(); } },120);
+    toast('No hay ficha guardada para "'+nombre+'" — te muestro la búsqueda',true);
+  }
+}
+
+// ── PUBLICIDAD ────────────────────────────────────────────────────
+let _adImgTmp=null;
+function renderAdsList(){
+  const wrap=document.getElementById('inicio-ads-list');
+  if(!wrap) return;
+  const esAdmin=esAdminActual();
+  // Los usuarios normales solo ven los anuncios activos; el admin ve todos
+  const lista=esAdmin?adsDB:adsDB.filter(a=>a.activo!==false);
+  if(!lista.length){ wrap.innerHTML='<div class="inicio-empty">Sin anuncios todavía'+(esAdmin?'. Pulsa "+ Añadir anuncio".':'.')+'</div>'; return; }
+  const activosIds=new Set(adsDB.filter(a=>a.activo!==false && (a.img||a.texto)).slice(0,5).map(a=>a.id));
+  const avisoExceso=esAdmin && adsDB.filter(a=>a.activo!==false).length>5
+    ? '<div class="inicio-empty" style="text-align:left;padding:0 0 10px">📌 El banner de abajo solo rota los 5 primeros anuncios activos (marcados con 🔄). El resto se ve aquí en Inicio pero no en el banner.</div>' : '';
+  wrap.innerHTML=avisoExceso+lista.map(a=>`
+    <div class="ad-card">
+      ${a.activo===false?'<div class="ad-badge-inactivo">Oculto</div>':(activosIds.has(a.id)?'<div class="ad-badge-inactivo" style="background:rgba(63,185,80,.85);color:#fff">🔄 En banner</div>':'')}
+      ${a.img?`<a href="${a.link?eH(a.link):'#'}" target="_blank" rel="noopener"><div class="ad-img-wrap"><img src="${a.img}" alt="Anuncio"></div></a>`:''}
+      <div class="ad-card-body">
+        <div class="ad-card-txt">${eH(a.texto)||'—'}</div>
+        ${esAdmin?`<div class="ad-card-actions">
+          <button class="btn b-ghost b-sm" onclick="editarAnuncio('${a.id}')">✏️</button>
+          <button class="btn b-rojo b-sm" onclick="borrarAnuncio('${a.id}')">🗑</button>
+        </div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+function abrirModalAnuncio(){
+  if(!esAdminActual()){toast('Solo los administradores pueden añadir anuncios',true);return;}
+  document.getElementById('an-texto').value='';
+  document.getElementById('an-link').value='';
+  document.getElementById('an-activo').value='true';
+  document.getElementById('an-edit-id').value='';
+  document.getElementById('modal-anuncio-titulo').textContent='➕ Nuevo anuncio';
+  _adImgTmp=null;
+  document.getElementById('pv-anuncio').innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';
+  document.getElementById('uz-anuncio').classList.remove('has');
+  document.getElementById('modal-anuncio').classList.add('open');
+}
+function editarAnuncio(id){
+  const a=adsDB.find(x=>x.id===id); if(!a) return;
+  document.getElementById('an-texto').value=a.texto||'';
+  document.getElementById('an-link').value=a.link||'';
+  document.getElementById('an-activo').value=String(a.activo!==false);
+  document.getElementById('an-edit-id').value=a.id;
+  document.getElementById('modal-anuncio-titulo').textContent='✏️ Editar anuncio';
+  _adImgTmp=a.img||null;
+  const pv=document.getElementById('pv-anuncio');
+  if(a.img){pv.innerHTML=`<img src="${a.img}" class="uz-img">`;document.getElementById('uz-anuncio').classList.add('has');}
+  else{pv.innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';document.getElementById('uz-anuncio').classList.remove('has');}
+  document.getElementById('modal-anuncio').classList.add('open');
+}
+function cerrarModalAnuncio(){ document.getElementById('modal-anuncio').classList.remove('open'); }
+function loadImgAnuncio(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    _adImgTmp=ev.target.result;
+    document.getElementById('pv-anuncio').innerHTML=`<img src="${ev.target.result}" class="uz-img">`;
+    document.getElementById('uz-anuncio').classList.add('has');
+  };
+  r.readAsDataURL(f);
+}
+function guardarAnuncio(){
+  if(!esAdminActual()){toast('Solo los administradores pueden guardar anuncios',true);return;}
+  const editId=document.getElementById('an-edit-id').value;
+  const anuncio={
+    id: editId||('ad_'+Date.now()),
+    img:_adImgTmp||null,
+    texto:document.getElementById('an-texto').value.trim(),
+    link:document.getElementById('an-link').value.trim(),
+    activo:document.getElementById('an-activo').value==='true'
+  };
+  if(editId){ const idx=adsDB.findIndex(x=>x.id===editId); if(idx>=0)adsDB[idx]=anuncio; }
+  else adsDB.unshift(anuncio);
+  saveAds(); cerrarModalAnuncio(); renderAdsList(); renderBannerAdsGlobal();
+  toast('✅ Anuncio guardado');
+}
+function borrarAnuncio(id){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar anuncios',true);return;}
+  askDel('¿Borrar este anuncio?', ()=>{
+    adsDB=adsDB.filter(x=>x.id!==id); saveAds(); renderAdsList(); renderBannerAdsGlobal(); toast('🗑 Anuncio eliminado');
+  });
+}
+
+// ── BANNER GLOBAL DE PUBLICIDAD (visible en toda la app) ─────────
+let _adBannerIdx=0, _adBannerTimer=null, _adBannerOculto=false;
+
+function renderBannerAdsGlobal(){
+  const banner=document.getElementById('ad-banner-global');
+  if(!banner) return;
+  const MAX_BANNER_ADS=5;
+  const activos=adsDB.filter(a=>a.activo!==false && (a.img||a.texto)).slice(0,MAX_BANNER_ADS);
+  clearInterval(_adBannerTimer);
+  if(_adBannerOculto || !activos.length){
+    banner.classList.remove('show');
+    document.body.classList.remove('ad-banner-activo');
+    return;
+  }
+  _adBannerIdx=0;
+  pintarAdBanner(activos[0]);
+  document.body.classList.add('ad-banner-activo');
+  banner.classList.add('show');
+  if(activos.length>1){
+    _adBannerTimer=setInterval(()=>{
+      _adBannerIdx=(_adBannerIdx+1)%activos.length;
+      pintarAdBanner(activos[_adBannerIdx]);
+    },7000);
+  }
+}
+function pintarAdBanner(a){
+  const img=document.getElementById('abg-img'), imgWrap=document.getElementById('abg-img-wrap'), txt=document.getElementById('abg-txt'), link=document.getElementById('abg-link');
+  if(a.img){ img.src=a.img; imgWrap.style.display=''; } else { imgWrap.style.display='none'; }
+  txt.textContent=a.texto||'';
+  link.href=a.link||'#';
+  if(!a.link) link.removeAttribute('target');
+  else link.setAttribute('target','_blank');
+}
+function cerrarBannerAds(){
+  if(!esAdminActual()){ return; }
+  _adBannerOculto=true;
+  clearInterval(_adBannerTimer);
+  document.getElementById('ad-banner-global').classList.remove('show');
+  document.body.classList.remove('ad-banner-activo');
+}
+
+let currentSection='inicio';
+const VISTAS=['inicio','jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config','admin'];
 
 function navTo(sec){
   VISTAS.forEach(v=>{
     const el=document.getElementById('v-'+v);
     if(el)el.classList.toggle('on',v===sec);
   });
+  document.getElementById('tab-inicio').classList.toggle('on',sec==='inicio');
   document.getElementById('tab-jugadores').classList.toggle('on',sec.startsWith('jugador'));
   document.getElementById('tab-equipos').classList.toggle('on',sec.startsWith('equipo'));
   document.getElementById('tab-config').classList.toggle('on',sec==='config');
@@ -1660,11 +2283,11 @@ function navTo(sec){
   document.getElementById('top-right-ed').style.display=isEd?'':'none';
 
   const btnNuevo=document.getElementById('btn-nuevo-top');
-  if(sec==='jugadores-db'){btnNuevo.textContent='+ Nuevo jugador';btnNuevo.onclick=nuevoJ;}
-  else if(sec==='equipos-db'){btnNuevo.textContent='+ Nuevo equipo';btnNuevo.onclick=nuevoE;}
+  if(sec==='jugadores-db'){btnNuevo.textContent='+ Nuevo jugador';btnNuevo.onclick=nuevoJ;btnNuevo.style.display='';}
+  else if(sec==='equipos-db'){btnNuevo.textContent='+ Nuevo equipo';btnNuevo.onclick=nuevoE;btnNuevo.style.display='';}
   else{btnNuevo.style.display='none';}
-  if(sec!=='config')btnNuevo.style.display='';
 
+  if(sec==='inicio') renderInicio();
   if(sec==='jugadores-db') renderJDB();
   if(sec==='equipos-db') renderEDB();
   if(sec==='config') initCfgForm();
@@ -1779,7 +2402,7 @@ function renderJDB(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','km','kab','kf','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','km','kab','kf','kpz','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   document.getElementById('jdor').value='9';
@@ -1796,7 +2419,7 @@ function editJ(id){
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);S('kpz',j.stats?.pz);
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
     const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd'
     const v=j.orig?.[claveCorta]||0;
@@ -1818,7 +2441,7 @@ function guardarJ(){
   const nom=G('jnom').trim();if(!nom){toast('Añade el nombre del jugador',true);return;}
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf'),pz:GN('kpz')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
@@ -2676,8 +3299,21 @@ async function xPDF(){
       const PW=210,PH=297,iW=PW-10;
       const imgD=canvas.toDataURL('image/jpeg',.92);
       const iH=iW*(canvas.height/canvas.width);
-      if(iH<=PH-10){doc.addImage(imgD,'JPEG',5,5,iW,iH);}
-      else{let y=0;while(y<iH){if(y>0)doc.addPage();doc.addImage(imgD,'JPEG',5,5-y,iW,iH);y+=PH-10;}}
+      if(iH<=PH-10){
+        doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');
+        doc.addImage(imgD,'JPEG',5,5,iW,iH);
+      }else{
+        let y=0;
+        while(y<iH){
+          if(y>0)doc.addPage();
+          // Rellenamos toda la página con el fondo de la app ANTES de
+          // colocar el trozo de imagen — así, si el último trozo es
+          // pequeño, el resto de la página no se queda en blanco.
+          doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');
+          doc.addImage(imgD,'JPEG',5,5-y,iW,iH);
+          y+=PH-10;
+        }
+      }
       // Clips con portada (solo jugador)
       if(isJug){
         const clipsP=jClips.filter(c=>c.portada||c.src);
@@ -2685,7 +3321,7 @@ async function xPDF(){
           doc.addPage();doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');
           doc.setFillColor(15,23,42);doc.rect(0,0,210,28,'F');
           doc.setFont('helvetica','bold');doc.setFontSize(14);doc.setTextColor(230,237,243);
-          doc.text('🎬  GALERÍA DE CLIPS',14,17);
+          doc.text('GALERÍA DE CLIPS',14,17);
           doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
           doc.text(`${(G('jnom')+' '+G('jape')).trim()} · ${clipsP.length} clips`,14,23);
           let cy=34,col=0;const cW=88,cH=58;
@@ -2694,14 +3330,15 @@ async function xPDF(){
             doc.setFillColor(33,38,45);doc.roundedRect(cx,cy,cW,cH,3,3,'F');
             const tH=cW*0.5625;
             if(cl.portada){try{doc.addImage(cl.portada,'JPEG',cx,cy,cW,tH);}catch(e){doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');}}
-            else{doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');doc.setFillColor(47,129,247);doc.circle(cx+cW/2,cy+tH/2,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('▶',cx+cW/2-2.5,cy+tH/2+4);}
+            else{doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');doc.setFillColor(47,129,247);doc.circle(cx+cW/2,cy+tH/2,7,'F');doc.setFillColor(255,255,255);doc.triangle(cx+cW/2-2.5,cy+tH/2-4,cx+cW/2-2.5,cy+tH/2+4,cx+cW/2+4,cy+tH/2,'F');}
             const tC={'Ataque Organizado':[47,129,247],'ABP Ofensiva':[210,153,34],'Juego Directo':[63,185,80],'Centro Lateral':[188,140,255],'Finalización Frontal':[227,179,65],'Transición Ofensiva':[57,211,240]}[cl.tipo]||[47,129,247];
             doc.setFillColor(...tC);doc.rect(cx,cy+tH,cW,2,'F');
             const mY=cy+tH+6;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(230,237,243);
-            doc.text(`${clipsP.indexOf(cl)+1}. ${(cl.titulo||'Sin título').slice(0,32)}`,cx+3,mY);
+            const numClip=clipsP.indexOf(cl)+1;
+            doc.text(`${numClip}. ${(cl.titulo||('Clip '+numClip)).slice(0,32)}`,cx+3,mY);
             doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(139,148,158);
             if(cl.rival)doc.text(`vs ${cl.rival} · ${cl.tipo}`,cx+3,mY+5);
-            if(cl.src&&cl.srcType!=='blob'){doc.setTextColor(121,192,255);doc.textWithLink('🔗 '+cl.src.slice(0,48),cx+3,mY+11,{url:cl.src});}
+            if(cl.src&&cl.srcType!=='blob'){doc.setTextColor(121,192,255);doc.textWithLink(cl.src.slice(0,52),cx+3,mY+11,{url:cl.src});}
             col++;if(col>=2){col=0;cy+=cH+8;}
             if(cy+cH>285&&clipsP.indexOf(cl)<clipsP.length-1){doc.addPage();doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');cy=14;col=0;}
           }
@@ -2717,7 +3354,7 @@ async function xPDF(){
           doc.addPage();doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');
           doc.setFillColor(100,17,17);doc.rect(0,0,210,28,'F');
           doc.setFont('helvetica','bold');doc.setFontSize(14);doc.setTextColor(230,237,243);
-          doc.text('🎬  GALERÍA DE CLIPS · '+G('enom').toUpperCase(),14,17);
+          doc.text('GALERÍA DE CLIPS · '+G('enom').toUpperCase(),14,17);
           doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(200,150,150);
           doc.text(`${eClipsP.length} clips`,14,23);
           let cy=34,col=0;const cW=88,cH=60;
@@ -2726,17 +3363,21 @@ async function xPDF(){
             doc.setFillColor(33,38,45);doc.roundedRect(cx,cy,cW,cH,3,3,'F');
             const tH=cW*0.5625;
             if(cl.portada){try{doc.addImage(cl.portada,'JPEG',cx,cy,cW,tH);}catch(e2){doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');}}
-            else{doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');doc.setFillColor(47,129,247);doc.circle(cx+cW/2,cy+tH/2,7,'F');doc.setFont('helvetica','bold');doc.setFontSize(12);doc.setTextColor(255,255,255);doc.text('▶',cx+cW/2-2.5,cy+tH/2+4);}
+            else{doc.setFillColor(15,17,23);doc.rect(cx,cy,cW,tH,'F');doc.setFillColor(47,129,247);doc.circle(cx+cW/2,cy+tH/2,7,'F');doc.setFillColor(255,255,255);doc.triangle(cx+cW/2-2.5,cy+tH/2-4,cx+cW/2-2.5,cy+tH/2+4,cx+cW/2+4,cy+tH/2,'F');}
             const tC={'Ataque Organizado':[47,129,247],'ABP Ofensiva':[210,153,34],'Juego Directo':[63,185,80],'Centro Lateral':[188,140,255],'Finalización Frontal':[227,179,65],'Transición Ofensiva':[57,211,240]}[cl.tipo]||[47,129,247];
             doc.setFillColor(...tC);doc.rect(cx,cy+tH,cW,2,'F');
             const mY=cy+tH+7;doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(230,237,243);
-            doc.text(`${eClipsP.indexOf(cl)+1}. ${(cl.titulo||'Sin título').slice(0,32)}`,cx+3,mY);
+            const numClip2=eClipsP.indexOf(cl)+1;
+            doc.text(`${numClip2}. ${(cl.titulo||('Clip '+numClip2)).slice(0,32)}`,cx+3,mY);
             doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(139,148,158);
             if(cl.rival)doc.text(`${cl.rival} · ${cl.tipo}`,cx+3,mY+5);
-            if(cl.src&&cl.srcType!=='blob'){doc.setTextColor(121,192,255);doc.textWithLink('🔗 '+cl.src.slice(0,48),cx+3,mY+11,{url:cl.src});}
+            if(cl.src&&cl.srcType!=='blob'){doc.setTextColor(121,192,255);doc.textWithLink(cl.src.slice(0,52),cx+3,mY+11,{url:cl.src});}
             col++;if(col>=2){col=0;cy+=cH+8;}
             if(cy+cH>285&&eClipsP.indexOf(cl)<eClipsP.length-1){doc.addPage();doc.setFillColor(22,27,34);doc.rect(0,0,210,297,'F');cy=14;col=0;}
           }
+          doc.setFillColor(22,27,34);doc.rect(0,285,210,12,'F');
+          doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(72,79,88);
+          doc.text(cfg.nombre||'Scoutdrive',105,291,{align:'center'});
         }
       }
       const n=isJug?(G('jnom')+' '+G('jape')).trim().replace(/\s+/g,'_'):G('enom').replace(/\s+/g,'_');
@@ -2775,7 +3416,7 @@ function xBDJExcel(){
 // INIT
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded',()=>{
-  loadAll();applyCfg();renderJDB();
+  loadAll();applyCfg();loadPDB();recalcularStatsDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
   buildEPartidos();buildEGC();
 });
@@ -3057,8 +3698,9 @@ function guardarEConFeedback(){
       <img
         id="login-logo"
         src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png"
+        data-default-src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png"
         alt="Scoutdrive logo"
-        onerror="this.style.display='none'"
+        onerror="if(this.src!==this.dataset.defaultSrc){this.src=this.dataset.defaultSrc;}else{this.style.display='none';document.getElementById('login-logo-emoji').style.display='';}"
       >
       <span id="login-logo-emoji" style="display:none">⚽</span>
     </div>
@@ -3660,8 +4302,18 @@ function guardarEConFeedback(){
       if (cfg.nombre) { document.getElementById('login-titulo').textContent = cfg.nombre; document.title = cfg.nombre; }
       if (cfg.sub)    document.getElementById('login-subtitulo').textContent = cfg.sub;
       if (cfg.logo) {
-        document.getElementById('login-logo').src = cfg.logo;
-        document.getElementById('login-logo-emoji').style.display = 'none';
+        // Precargamos el logo personalizado antes de mostrarlo: si está
+        // roto o caducado, el logo por defecto se queda tal cual en vez
+        // de dejar el hueco en blanco.
+        const probe = new Image();
+        probe.onload = () => {
+          document.getElementById('login-logo').src = cfg.logo;
+          document.getElementById('login-logo-emoji').style.display = 'none';
+        };
+        probe.onerror = () => {
+          console.warn('[Scoutdrive] Logo personalizado no disponible, se mantiene el logo por defecto.');
+        };
+        probe.src = cfg.logo;
       }
     } catch(e) {}
   }
@@ -3916,9 +4568,43 @@ function verPartido(id){
   document.getElementById('video-modal').classList.add('open');
 }
 
+// ── GOLES DEL PARTIDO (quién marcó, asistencia, minuto, penalti) ──
+let apGoles=[];
+
+function buildApGoles(){
+  const cont=document.getElementById('ap-goles-list');
+  if(!cont) return;
+  const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
+  const nomVisit=document.getElementById('ap-visitante').value.trim()||'Visitante';
+  if(!apGoles.length){ cont.innerHTML='<p style="font-size:10px;color:var(--gris2);padding:4px 0">Sin goles añadidos todavía</p>'; return; }
+  cont.innerHTML=apGoles.map((g,i)=>`
+    <div class="gr" style="border-left-color:${g.equipo==='visitante'?'var(--rojo)':'var(--verde-dk)'}">
+      <div class="g1">
+        <input type="number" value="${g.minuto??''}" placeholder="min" style="text-align:center" oninput="apGoles[${i}].minuto=this.value?+this.value:null">
+        <select onchange="apGoles[${i}].equipo=this.value;buildApGoles()">
+          <option value="local"${g.equipo!=='visitante'?' selected':''}>${eH(nomLocal)}</option>
+          <option value="visitante"${g.equipo==='visitante'?' selected':''}>${eH(nomVisit)}</option>
+        </select>
+        <button class="brm2" type="button" onclick="apGoles.splice(${i},1);buildApGoles()">✕</button>
+      </div>
+      <div class="g2">
+        <input type="text" placeholder="Jugador (quién marca)" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value">
+        <input type="text" placeholder="Asistencia (opcional)" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value">
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);margin-top:5px;cursor:pointer">
+        <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
+      </label>
+    </div>`).join('');
+}
+
+function addApGol(){
+  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',penalti:false});
+  buildApGoles();
+}
+
 function abrirAddPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden añadir partidos',true);return;}
-  ['ap-local','ap-visitante','ap-jornada','ap-url','ap-thumb','ap-notas'].forEach(id=>{
+  ['ap-local','ap-visitante','ap-jornada','ap-url','ap-thumb','ap-notas','ap-portero-local','ap-portero-visitante'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
   document.getElementById('ap-gf').value='0';
@@ -3927,6 +4613,7 @@ function abrirAddPartido(){
   document.getElementById('ap-comp').value='3ª RFEF';
   document.getElementById('ap-fecha').value=new Date().toISOString().slice(0,10);
   document.getElementById('add-partido-titulo').textContent='➕ Añadir partido';
+  apGoles=[]; buildApGoles();
   _resetThumbPreview();
   document.getElementById('add-partido-modal').classList.add('open');
 }
@@ -3942,8 +4629,12 @@ function editarPartido(id){
   document.getElementById('ap-comp').value=p.comp||'3ª RFEF';
   document.getElementById('ap-url').value=p.urlOrig||'';
   document.getElementById('ap-notas').value=p.notas||'';
+  document.getElementById('ap-portero-local').value=p.porteroLocal||'';
+  document.getElementById('ap-portero-visitante').value=p.porteroVisitante||'';
   document.getElementById('ap-edit-id').value=p.id;
   document.getElementById('add-partido-titulo').textContent='✏️ Editar partido';
+  apGoles=(p.goles||[]).map(g=>({...g}));
+  buildApGoles();
   // Restaurar miniatura
   _resetThumbPreview();
   if(p.thumb){
@@ -3996,6 +4687,67 @@ function actualizarThumbPreview(){
   }
 }
 
+// ── CONEXIÓN: goles de Partidos → estadísticas del jugador ────────
+// Busca un jugador de la BD por su nombre completo (o solo nombre).
+function jugadorIdPorNombre(nombreCompleto){
+  if(!nombreCompleto) return null;
+  const key=nombreCompleto.trim().toLowerCase();
+  if(!key) return null;
+  let j=jDB.find(x=>((x.nom||'')+' '+(x.ape||'')).trim().toLowerCase()===key);
+  if(!j) j=jDB.find(x=>(x.nom||'').trim().toLowerCase()===key);
+  return j?j.id:null;
+}
+
+/** Recalcula Goles/Asistencias de cada jugador sumando lo registrado en
+ *  "Goles del partido" (Partidos) por encima de su base manual histórica.
+ *  La base (statsManualBase) se congela la primera vez que se ejecuta
+ *  esto para cada jugador, así nunca se pierden los goles que ya tenías
+ *  metidos a mano — solo se suma lo nuevo que venga de los partidos. */
+function recalcularStatsDesdePartidos(){
+  const tally={};
+  pDB.forEach(p=>{
+    (p.goles||[]).forEach(g=>{
+      if(g.jugador){
+        const id=jugadorIdPorNombre(g.jugador);
+        if(id){ if(!tally[id])tally[id]={g:0,a:0,pz:0}; tally[id].g++; }
+      }
+      if(g.asistencia){
+        const idA=jugadorIdPorNombre(g.asistencia);
+        if(idA){ if(!tally[idA])tally[idA]={g:0,a:0,pz:0}; tally[idA].a++; }
+      }
+    });
+    // Portería a cero: se deduce del marcador — si el rival no marca,
+    // el portero de ese equipo suma una.
+    if(p.gf!=null && p.gc!=null){
+      if(p.gc===0 && p.porteroLocal){
+        const idL=jugadorIdPorNombre(p.porteroLocal);
+        if(idL){ if(!tally[idL])tally[idL]={g:0,a:0,pz:0}; tally[idL].pz++; }
+      }
+      if(p.gf===0 && p.porteroVisitante){
+        const idV=jugadorIdPorNombre(p.porteroVisitante);
+        if(idV){ if(!tally[idV])tally[idV]={g:0,a:0,pz:0}; tally[idV].pz++; }
+      }
+    }
+  });
+  let cambios=false;
+  jDB.forEach(j=>{
+    if(!j.stats) j.stats={};
+    if(j.statsManualBase===undefined){
+      j.statsManualBase={g:j.stats.g||0,a:j.stats.a||0,pz:j.stats.pz||0};
+      cambios=true;
+    }
+    if(j.statsManualBase.pz===undefined){ j.statsManualBase.pz=j.stats.pz||0; cambios=true; }
+    const t=tally[j.id]||{g:0,a:0,pz:0};
+    const nuevoG=(j.statsManualBase.g||0)+t.g;
+    const nuevoA=(j.statsManualBase.a||0)+t.a;
+    const nuevoPz=(j.statsManualBase.pz||0)+t.pz;
+    if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz){
+      j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; cambios=true;
+    }
+  });
+  if(cambios) saveJDB();
+}
+
 function guardarPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
@@ -4013,11 +4765,17 @@ function guardarPartido(){
     urlNorm: _normalizarURLPartido(urlOrig),
     thumb: window._thumbBase64 || document.getElementById('ap-thumb').value.trim(),
     notas: document.getElementById('ap-notas').value.trim(),
+    goles: apGoles.map(g=>({...g})),
+    porteroLocal: document.getElementById('ap-portero-local').value.trim(),
+    porteroVisitante: document.getElementById('ap-portero-visitante').value.trim(),
     fechaReg: new Date().toISOString()
   };
   if(editId){ const idx=pDB.findIndex(x=>x.id===editId); if(idx>=0) pDB[idx]=partido; }
   else { pDB.unshift(partido); }
-  savePDB(); cerrarAddPartido(); renderPartidos();
+  savePDB();
+  recalcularStatsDesdePartidos();
+  cerrarAddPartido(); renderPartidos();
+  if(currentSection==='inicio') renderInicio();
   if(typeof toast==='function') toast('✅ Partido guardado');
 }
 
@@ -4028,11 +4786,16 @@ function borrarPartido(id){
   if(typeof askDel==='function'){
     askDel(`¿Borrar "${nom}"?`,()=>{
       pDB=pDB.filter(x=>x.id!==id);
-      savePDB(); renderPartidos();
+      savePDB();
+      recalcularStatsDesdePartidos();
+      renderPartidos();
+      if(currentSection==='inicio') renderInicio();
       if(typeof toast==='function') toast('🗑 Partido eliminado');
     });
   }
 }
+
+
 
 document.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
@@ -4040,6 +4803,7 @@ document.addEventListener('keydown', e=>{
     if(m&&m.classList.contains('open')) cerrarAddPartido();
   }
 });
+
 
 
 // ════════════════════════════════════════════════════════════════
