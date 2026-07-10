@@ -29,7 +29,7 @@
 // ════════════════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbyecXknLtflQhtEltr14B10ejVD_8BpYNAQb-uwMie7RGCTbYGsknpjDmdiURhF9qef/exec';
+const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
 
 // Pon esto en false desde la consola si alguna vez quieres trabajar
 // offline puro sin que intente conectar (vuelve a true al recargar).
@@ -179,7 +179,39 @@ setInterval(scoutProcesarCola, 60000);
     else console.warn('[Scoutdrive sync] Equipo no encontrado en eDB tras guardar:', id);
   };
 
+  // guardarPartido / borrarPartido puede que aún no existan en este punto
+  // (viven en el bloque de Partidos, más abajo en el archivo) — se
+  // enganchan igual, más adelante, en engancharPartidos().
   console.log('[Scoutdrive sync] Conectado: guardarJ() y guardarE() ahora sincronizan con Google Sheets.');
+})();
+
+(function engancharPartidos() {
+  if (typeof guardarPartido !== 'function' || typeof borrarPartido !== 'function') {
+    setTimeout(engancharPartidos, 50);
+    return;
+  }
+
+  const _guardarPartido_original = guardarPartido;
+  guardarPartido = function () {
+    const editIdAntes = document.getElementById('ap-edit-id') ? document.getElementById('ap-edit-id').value : '';
+    _guardarPartido_original();
+    const id = editIdAntes || (typeof pDB !== 'undefined' && pDB.length ? pDB[0].id : null);
+    const p = (typeof pDB !== 'undefined') ? pDB.find(x => String(x.id) === String(id)) : null;
+    if (p) scoutSincronizarPartidoVideo(p);
+  };
+
+  const _borrarPartido_original = borrarPartido;
+  borrarPartido = function (id) {
+    _borrarPartido_original(id);
+    // Si se confirmó el borrado (el usuario aceptó el modal), pDB ya no
+    // tendrá ese id. Lo mandamos a borrar también en el Sheet.
+    setTimeout(() => {
+      const sigueExistiendo = (typeof pDB !== 'undefined') && pDB.some(x => String(x.id) === String(id));
+      if (!sigueExistiendo) scoutEliminarPartidoVideoRemoto(id);
+    }, 300);
+  };
+
+  console.log('[Scoutdrive sync] Conectado: guardarPartido()/borrarPartido() ahora sincronizan con Google Sheets.');
 })();
 
 async function scoutSincronizarJugador(j) {
@@ -210,6 +242,35 @@ async function scoutSincronizarEquipo(eq) {
   }
 }
 
+async function scoutSincronizarPartidoVideo(p) {
+  const resultado = await scoutApiPost('guardarPartidoVideo', p);
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('guardarPartidoVideo', p);
+  } else if (resultado.ok) {
+    _scoutToast('☁️ Partido sincronizado con Google Sheets');
+    if (resultado.resultado && resultado.resultado.thumbURL && typeof pDB !== 'undefined') {
+      const idx = pDB.findIndex(x => x.id === p.id);
+      if (idx >= 0 && resultado.resultado.thumbURL) {
+        pDB[idx].thumb = resultado.resultado.thumbURL;
+        if (typeof savePDB === 'function') savePDB();
+      }
+    }
+  } else {
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar partido:', detalle);
+    _scoutToast('⚠️ No se pudo subir el partido al Sheet: ' + detalle, true);
+  }
+}
+
+async function scoutEliminarPartidoVideoRemoto(id) {
+  const resultado = await scoutApiPost('eliminarPartidoVideo', { id });
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('eliminarPartidoVideo', { id });
+  } else if (!resultado.ok) {
+    console.warn('[Scoutdrive sync] Error al eliminar partido en el Sheet:', resultado.motivo || resultado.error);
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 //  RESUBIDA MASIVA — útil una sola vez tras arreglar/cambiar el
 //  backend, para subir todo lo que ya tienes guardado en local
@@ -218,7 +279,8 @@ async function scoutSincronizarEquipo(eq) {
 // ════════════════════════════════════════════════════════════════
 async function scoutForzarResubidaTotal() {
   if (typeof jDB === 'undefined' || typeof eDB === 'undefined') return;
-  const total = jDB.length + eDB.length;
+  const totalPartidos = (typeof pDB !== 'undefined') ? pDB.length : 0;
+  const total = jDB.length + eDB.length + totalPartidos;
   if (total === 0) { _scoutToast('No hay nada local que resubir', true); return; }
 
   const btn = document.getElementById('btn-resubida-total');
@@ -251,8 +313,25 @@ async function scoutForzarResubidaTotal() {
     }
   }
 
+  if (typeof pDB !== 'undefined') {
+    for (const p of pDB) {
+      if (btn) btn.textContent = `⏳ Subiendo partidos... (${hechos + fallos + 1}/${total})`;
+      const resultado = await scoutApiPost('guardarPartidoVideo', p);
+      if (resultado.ok) {
+        hechos++;
+        if (resultado.resultado && resultado.resultado.thumbURL) p.thumb = resultado.resultado.thumbURL;
+      } else {
+        fallos++;
+        const detalle = resultado.motivo || resultado.error || 'error desconocido';
+        if (!primerError) primerError = detalle;
+        console.warn('[Scoutdrive] Fallo al resubir partido', p.id, detalle);
+      }
+    }
+  }
+
   if (typeof saveJDB === 'function') saveJDB();
   if (typeof saveEDB === 'function') saveEDB();
+  if (typeof savePDB === 'function') savePDB();
 
   if (btn) { btn.disabled = false; btn.textContent = '☁️ Forzar resubida de todo lo local'; }
 
@@ -335,15 +414,32 @@ async function scoutSincronizarAlAbrir() {
       }
     });
   }
+  if (respuesta.partidosVideo && respuesta.partidosVideo.length && typeof pDB !== 'undefined') {
+    respuesta.partidosVideo.forEach(r => {
+      const remoto = _normalizarRegistro(r);
+      if (!remoto.id) return;
+      const idx = pDB.findIndex(x => x.id === remoto.id);
+      const fechaLocal = idx >= 0 ? new Date(pDB[idx].fechaReg || 0).getTime() : 0;
+      const fechaRemota = new Date(remoto.fechaActualizacion || 0).getTime();
+      if (idx < 0) {
+        if (remoto.local || remoto.visitante) { pDB.unshift(remoto); huboNovedades = true; }
+      } else if (fechaRemota > fechaLocal) {
+        if (_scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante'])) huboNovedades = true;
+      }
+    });
+  }
 
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
 
   if (huboNovedades) {
     if (typeof saveJDB === 'function') saveJDB();
     if (typeof saveEDB === 'function') saveEDB();
+    if (typeof savePDB === 'function') savePDB();
     if (typeof currentSection !== 'undefined') {
       if (currentSection === 'jugadores-db' && typeof renderJDB === 'function') renderJDB();
       if (currentSection === 'equipos-db' && typeof renderEDB === 'function') renderEDB();
+      if (currentSection === 'partidos' && typeof renderPartidos === 'function') renderPartidos();
+      if (currentSection === 'inicio' && typeof renderInicio === 'function') renderInicio();
     }
     _scoutToast('☁️ Datos actualizados desde Google Sheets');
   }
@@ -466,13 +562,26 @@ async function scoutSyncCompleto(silencioso) {
     });
   }
 
+  if (respuesta.partidosVideo && respuesta.partidosVideo.length && typeof pDB !== 'undefined') {
+    const reconstruidos = respuesta.partidosVideo.map(_normalizarRegistro);
+    reconstruidos.forEach(remoto => {
+      if (!remoto.id) return;
+      const idx = pDB.findIndex(x => x.id === remoto.id);
+      if (idx >= 0) { _scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante']); cambios++; }
+      else { pDB.unshift(remoto); cambios++; }
+    });
+  }
+
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
 
   if (cambios > 0) {
     if (typeof saveJDB === 'function') saveJDB();
     if (typeof saveEDB === 'function') saveEDB();
+    if (typeof savePDB === 'function') savePDB();
     if (typeof renderJDB === 'function') renderJDB();
     if (typeof renderEDB === 'function') renderEDB();
+    if (typeof currentSection !== 'undefined' && currentSection === 'partidos' && typeof renderPartidos === 'function') renderPartidos();
+    if (typeof currentSection !== 'undefined' && currentSection === 'inicio' && typeof renderInicio === 'function') renderInicio();
     _scoutToast(`☁️ ${cambios} elemento${cambios !== 1 ? 's' : ''} sincronizado${cambios !== 1 ? 's' : ''}`);
   } else {
     if (!silencioso) _scoutToast('✅ Todo actualizado');
@@ -483,21 +592,25 @@ async function scoutSyncCompleto(silencioso) {
 
 
 
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(async () => {
-    // Si el localStorage está vacío (dispositivo nuevo), traer todo del Sheet
-    const tieneJugadores = localStorage.getItem('scout_j_v1');
-    const tieneEquipos   = localStorage.getItem('scout_e_v1');
-    const estaVacio = (!tieneJugadores || tieneJugadores === '[]') &&
-                      (!tieneEquipos   || tieneEquipos   === '[]');
+// Antes esto se disparaba solo a los 1.2s de cargar la página — es decir,
+// justo mientras el usuario está escribiendo el usuario/contraseña. En
+// móviles con conexión lenta, esa sincronización de fondo competía por
+// la red con el propio envío del login, y todo se sentía lento.
+// Ahora esperamos a que el login haya terminado (ver window.scoutSyncInicial,
+// llamado desde el bloque de login en index.html) para no interferir.
+window.scoutSyncInicial = async function scoutSyncInicial() {
+  // Si el localStorage está vacío (dispositivo nuevo), traer todo del Sheet
+  const tieneJugadores = localStorage.getItem('scout_j_v1');
+  const tieneEquipos   = localStorage.getItem('scout_e_v1');
+  const estaVacio = (!tieneJugadores || tieneJugadores === '[]') &&
+                    (!tieneEquipos   || tieneEquipos   === '[]');
 
-    if (estaVacio) {
-      // Dispositivo nuevo: sync completo automático
-      await scoutSyncCompleto(false);
-    } else {
-      // Dispositivo conocido: solo cambios recientes
-      await scoutSincronizarAlAbrir();
-    }
-    await scoutProcesarCola();
-  }, 1200);
-});
+  if (estaVacio) {
+    // Dispositivo nuevo: sync completo automático
+    await scoutSyncCompleto(false);
+  } else {
+    // Dispositivo conocido: solo cambios recientes
+    await scoutSincronizarAlAbrir();
+  }
+  await scoutProcesarCola();
+};
