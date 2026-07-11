@@ -4701,11 +4701,39 @@ function guardarEConFeedback(){
   // ── Login via Apps Script con SHA-256 ────────────────────────
   const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbzd48VqvNICO6KhkFsCCKVQ3HzdAsco4hr4yUu4xYnhua-BMotf2Ra-AKlR7gMZdLNm/exec';
 
-  // Credenciales locales de emergencia (por si la API no responde)
+  // Credenciales locales de emergencia (solo se usan si la API no responde).
+  // IMPORTANTE: guardamos el HASH SHA-256 de la contraseña, nunca la
+  // contraseña en claro — así nadie puede leerla abriendo el "ver código
+  // fuente" de la página (antes estaban escritas literalmente aquí).
+  // Estas dos contraseñas son NUEVAS (no las que estaban antes en el
+  // repositorio, que hay que dar por comprometidas al haber estado en
+  // texto plano en un repo público). Pídele al usuario la contraseña en
+  // claro fuera del código si necesita dársela a un compañero.
   const FALLBACK_USERS = {
-    'entrenador@donbenito.es': { pass: 'clave_entrenador', rol: 'admin',   nombre: 'Iván MC' },
-    'analista@donbenito.es':   { pass: 'clave_analista',   rol: 'usuario', nombre: 'Analista' }
+    'entrenador@donbenito.es': { passHash: '351fab881c4763305e68f8b70e40e3476b22dbf8070e2127f30e2ee6f4cdb13e', rol: 'admin',   nombre: 'Iván MC' },
+    'analista@donbenito.es':   { passHash: 'cdf209d5b2d9b1d401dc3158058049c4e78c650c1d96bb1331149717e4c49665', rol: 'usuario', nombre: 'Analista' }
   };
+
+  // ── Protección anti fuerza-bruta para el login de emergencia ──────
+  // Tras varios intentos fallidos seguidos con el mismo email, obligamos
+  // a esperar antes de dejar probar de nuevo. Se guarda en localStorage
+  // para que sobreviva a recargas de página (no es infalible, pero frena
+  // los intentos automatizados sencillos).
+  const LOGIN_LOCK_KEY = 'scout_login_lock_v1';
+  const LOGIN_MAX_INTENTOS = 5;
+  const LOGIN_BLOQUEO_MS = 30000; // 30s
+  function _loginLockGet(email){
+    try{ const all=JSON.parse(localStorage.getItem(LOGIN_LOCK_KEY)||'{}'); return all[email]||{fallos:0,hasta:0}; }catch(e){ return {fallos:0,hasta:0}; }
+  }
+  function _loginLockSet(email,estado){
+    try{ const all=JSON.parse(localStorage.getItem(LOGIN_LOCK_KEY)||'{}'); all[email]=estado; localStorage.setItem(LOGIN_LOCK_KEY,JSON.stringify(all)); }catch(e){}
+  }
+  function _loginLockRegistrarFallo(email){
+    const st=_loginLockGet(email); st.fallos=(st.fallos||0)+1;
+    if(st.fallos>=LOGIN_MAX_INTENTOS){ st.hasta=Date.now()+LOGIN_BLOQUEO_MS; st.fallos=0; }
+    _loginLockSet(email,st);
+  }
+  function _loginLockLimpiar(email){ _loginLockSet(email,{fallos:0,hasta:0}); }
 
   async function loginValidar(event) {
     event.preventDefault();
@@ -4717,6 +4745,17 @@ function guardarEConFeedback(){
     const email = emailInput.value.trim().toLowerCase();
     const pass  = passInput.value;
     if (!email || !pass) return;
+
+    // ── Bloqueo anti fuerza-bruta: si ha habido demasiados fallos
+    // seguidos para este email, no dejamos ni intentarlo hasta que pase
+    // el tiempo de espera.
+    const _lock = _loginLockGet(email);
+    if (_lock.hasta && _lock.hasta > Date.now()) {
+      const segRestantes = Math.ceil((_lock.hasta - Date.now()) / 1000);
+      errorDiv.textContent = `Demasiados intentos fallidos. Espera ${segRestantes}s antes de volver a intentarlo.`;
+      errorDiv.style.display = 'block';
+      return;
+    }
 
     boton.classList.add('cargando');
     boton.textContent = 'Comprobando…';
@@ -4772,20 +4811,26 @@ function guardarEConFeedback(){
       });
       const data = await res.json();
       if (data.ok && data.resultado && data.resultado.ok) {
+        _loginLockLimpiar(email);
         _abrirApp(data.resultado.usuario);
       } else {
+        _loginLockRegistrarFallo(email);
         const motivo = (data.resultado && data.resultado.motivo) || '';
         _mostrarError(motivo === 'cuenta_desactivada'
           ? 'Esta cuenta está desactivada. Contacta con el administrador.'
           : 'Usuario o contraseña incorrectos.');
       }
     } catch(err) {
-      // Sin conexión — fallback local
+      // Sin conexión — fallback local (compara el HASH, nunca la
+      // contraseña en claro; ver comentario junto a FALLBACK_USERS).
       console.warn('[Scoutdrive] API no disponible, usando fallback:', err.message);
       const u = FALLBACK_USERS[email];
-      if (u && u.pass === pass) {
+      const passHashFallback = u ? await sha256Browser(pass) : null;
+      if (u && passHashFallback === u.passHash) {
+        _loginLockLimpiar(email);
         _abrirApp({ email, rol: u.rol, nombre: u.nombre, _fallback: true });
       } else {
+        _loginLockRegistrarFallo(email);
         _mostrarError('Sin conexión con el servidor. Verifica tu internet e inténtalo de nuevo.');
       }
     }
