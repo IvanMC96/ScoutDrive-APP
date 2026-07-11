@@ -3656,6 +3656,27 @@ function jclipAbrirModal(i){
  *  ÚNICA función que decide cómo reproducir un vídeo en toda la app,
  *  así evitamos que cada galería tenga su propia lógica duplicada y
  *  propensa a errores de contención. */
+/** Calcula a mano el alto del reproductor de vídeo (16:9 según el ancho
+ *  real disponible) en vez de fiarnos solo del CSS "aspect-ratio" — en
+ *  algunos navegadores de Android dentro de la app instalada esa
+ *  propiedad no se aplica bien y el vídeo se queda aplastado. */
+function _ajustarAlturaVideoModal(){
+  const player=document.getElementById('video-modal-player');
+  if(!player) return;
+  requestAnimationFrame(()=>{
+    const w=player.getBoundingClientRect().width;
+    if(w>0){
+      const h=Math.round(w*9/16);
+      const maxH=window.innerHeight-16-44; // deja hueco para cabecera y márgenes
+      player.style.height=Math.min(h,maxH>120?maxH:h)+'px';
+    }
+  });
+}
+window.addEventListener('resize',()=>{
+  const modal=document.getElementById('video-modal');
+  if(modal && modal.classList.contains('open')) _ajustarAlturaVideoModal();
+});
+
 function abrirVideoModal(cl){
   const player = document.getElementById('video-modal-player');
   const titulo = document.getElementById('video-modal-titulo');
@@ -3691,6 +3712,7 @@ function abrirVideoModal(cl){
 
   player.innerHTML = html;
   document.getElementById('video-modal').classList.add('open');
+  _ajustarAlturaVideoModal();
 }
 
 function cerrarVideoModal(){
@@ -4624,6 +4646,7 @@ function verPartido(id){
   tituloEl.textContent=titulo;
   player.innerHTML=playerH;
   document.getElementById('video-modal').classList.add('open');
+  _ajustarAlturaVideoModal();
 }
 
 // ── GOLES DEL PARTIDO (quién marcó, asistencia, minuto, penalti) ──
