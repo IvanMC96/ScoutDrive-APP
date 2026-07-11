@@ -361,6 +361,12 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   position:absolute;inset:0;width:100%!important;height:100%!important;border:none;
 }
 
+@media(max-width:680px){
+  .video-modal-bg{ padding:8px; }
+  .video-modal-box{ max-height:calc(100vh - 16px); max-width:100%; }
+  .video-modal-player{ max-height:calc(100vh - 16px - 44px); }
+}
+
 /* CONFIG PAGE */
 .cfg-page{padding:28px 32px;gap:20px;max-width:640px;}
 
@@ -1057,6 +1063,7 @@ body.solo-lectura .ed-panel-form {
     <button class="nav-tab" id="tab-jugadores" onclick="navTo('jugadores-db')">👤 Jugadores</button>
     <button class="nav-tab" id="tab-equipos" onclick="navTo('equipos-db')">🏟️ Equipos</button>
     <button class="nav-tab" id="tab-partidos" onclick="navTo('partidos')">🎬 Partidos</button>
+    <button class="nav-tab" id="tab-goles" onclick="navTo('goles')">⚽ Goles</button>
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
     <button class="nav-tab" id="tab-admin" onclick="navTo('admin')" style="display:none;color:var(--naranja-cl)">🛡️ Admin</button>
   </div>
@@ -1551,7 +1558,47 @@ body.solo-lectura .ed-panel-form {
   </div>
 </div>
 
+<!-- ══ SECCIÓN GOLES — REGISTRO UNIFICADO ═══════════════════════ -->
+<div class="vista" id="v-goles" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px)">
+  <div class="partidos-wrap">
+    <div class="partidos-header">
+      <div>
+        <h2>⚽ Goles</h2>
+        <p style="font-size:11px;color:var(--gris);margin-top:2px">Registro unificado — junta automáticamente los goles de jugadores, equipos y partidos</p>
+      </div>
+      <div class="partidos-stats">
+        <div class="pstat"><div class="pstat-v" id="goles-stat-total">0</div><div class="pstat-l">Goles</div></div>
+      </div>
+    </div>
+
+    <div class="partidos-filters">
+      <input type="search" id="goles-buscar" name="goles-buscar" autocomplete="off" placeholder="🔍 Buscar jugador o equipo..." oninput="renderGolesView()" style="flex:1;min-width:140px">
+      <select id="goles-fil-equipo" onchange="renderGolesView()" style="min-width:150px">
+        <option value="">Todos los equipos</option>
+      </select>
+      <select id="goles-fil-jugador" onchange="renderGolesView()" style="min-width:150px">
+        <option value="">Todos los jugadores</option>
+      </select>
+      <select id="goles-fil-origen" onchange="renderGolesView()" style="min-width:130px">
+        <option value="">Todo tipo</option>
+      </select>
+      <button class="btn-add-partido" onclick="exportarGolesPDF()">📄 Exportar PDF</button>
+    </div>
+
+    <div id="goles-tabla-wrap" style="overflow-x:auto"></div>
+
+    <div style="margin-top:24px">
+      <div class="inicio-card-tit" style="display:flex;align-items:center;gap:8px;font-size:13px">
+        🎬 Vídeos de los goles
+        <span style="background:var(--azul-dk);color:#fff;font-size:9px;padding:2px 8px;border-radius:8px" id="goles-clips-count">0</span>
+      </div>
+      <div id="goles-clips-wrap" style="margin-top:10px"></div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MODAL AÑADIR / EDITAR PARTIDO ══════════════════════════ -->
+
 
 <div class="add-partido-modal" id="add-partido-modal" onclick="if(event.target===this)cerrarAddPartido()">
   <div class="add-partido-box">
@@ -2265,7 +2312,7 @@ function cerrarBannerAds(){
 }
 
 let currentSection='inicio';
-const VISTAS=['inicio','jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','config','admin'];
+const VISTAS=['inicio','jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','goles','config','admin'];
 
 function navTo(sec){
   VISTAS.forEach(v=>{
@@ -2277,6 +2324,7 @@ function navTo(sec){
   document.getElementById('tab-equipos').classList.toggle('on',sec.startsWith('equipo'));
   document.getElementById('tab-config').classList.toggle('on',sec==='config');
   document.getElementById('tab-partidos').classList.toggle('on',sec==='partidos');
+  document.getElementById('tab-goles').classList.toggle('on',sec==='goles');
   document.getElementById('tab-admin').classList.toggle('on',sec==='admin');
   const isEd=sec.endsWith('-ed');
   document.getElementById('top-right-db').style.display=isEd?'none':'';
@@ -2292,6 +2340,7 @@ function navTo(sec){
   if(sec==='equipos-db') renderEDB();
   if(sec==='config') initCfgForm();
   if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
+  if(sec==='goles'){ loadPDB(); setTimeout(initGolesView, 50); }
   if(sec==='admin') cargarUsuariosAdmin();
   currentSection=sec;
 }
@@ -4327,7 +4376,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbzwDpz60sxJktRkX7GTnIuYNleZwoEV4fNQZ6O7bqRRj0Fcs2WEiIEr-5fwulUnytEF/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -4563,7 +4612,8 @@ function verPartido(id){
   } else {
     playerH=`<video controls autoplay preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
   }
-  const titulo=`${p.local||'—'} ${p.gf!=null&&p.gc!=null?p.gf+'-'+p.gc:'vs'} ${p.visitante||'—'}${p.jornada?' · J'+p.jornada:''}${p.comp?' · '+p.comp:''}`;
+  const jornadaTxt = p.jornada ? (/^\d+$/.test(p.jornada)?'J'+p.jornada:p.jornada) : '';
+  const titulo=`${p.local||'—'} ${p.gf!=null&&p.gc!=null?p.gf+'-'+p.gc:'vs'} ${p.visitante||'—'}${jornadaTxt?' · '+jornadaTxt:''}${p.comp?' · '+p.comp:''}`;
   const player=document.getElementById('video-modal-player');
   const tituloEl=document.getElementById('video-modal-titulo');
   if(!player||!tituloEl) return;
@@ -4798,6 +4848,279 @@ function borrarPartido(id){
     });
   }
 }
+// ════════════════════════════════════════════════════════════════
+//  GOLES — REGISTRO UNIFICADO
+//  Junta automáticamente los goles de 3 sitios distintos, sin que
+//  haga falta registrar nada dos veces:
+//   1) Ficha del jugador → j.goles (taxonomía táctica completa)
+//   2) Ficha del equipo  → eq.partidos[].golesGF (por partido)
+//   3) Partidos (videoteca) → p.goles (jugador/asistencia/penalti)
+// ════════════════════════════════════════════════════════════════
+function calcularTodosLosGoles(){
+  const lista=[];
+
+  jDB.forEach(j=>{
+    (j.goles||[]).forEach((g,i)=>{
+      lista.push({
+        id:'j_'+j.id+'_'+i,
+        jugador:(j.nom+' '+j.ape).trim()||'—',
+        jugadorId:j.id,
+        equipo:j.club||'—',
+        rival:g.rival||'—',
+        minuto:g.min??null,
+        origen:g.origen||'—',
+        subtipo:g.subtipo||'',
+        zona:g.zona||'',
+        cuerpo:g.cuerpo||'',
+        asistencia:'',
+        penalti:g.subtipo==='Penalti',
+        fuente:'Ficha jugador'
+      });
+    });
+  });
+
+  eDB.forEach(eq=>{
+    (eq.partidos||[]).forEach(p=>{
+      (p.golesGF||[]).forEach((g,i)=>{
+        lista.push({
+          id:'e_'+eq.id+'_'+(p.id||'')+'_'+i,
+          jugador:g.jugador||'—',
+          jugadorId:null,
+          equipo:eq.nom||'—',
+          rival:p.rival||'—',
+          minuto:g.min??null,
+          origen:g.origen||'—',
+          subtipo:g.subtipo||'',
+          zona:g.zona||'',
+          cuerpo:g.cuerpo||'',
+          asistencia:'',
+          penalti:g.subtipo==='Penalti',
+          fuente:'Ficha equipo'
+        });
+      });
+    });
+  });
+
+  pDB.forEach(p=>{
+    (p.goles||[]).forEach((g,i)=>{
+      const equipoNom = g.equipo==='visitante' ? (p.visitante||'—') : (p.local||'—');
+      const rivalNom  = g.equipo==='visitante' ? (p.local||'—') : (p.visitante||'—');
+      lista.push({
+        id:'p_'+p.id+'_'+i,
+        jugador:g.jugador||'—',
+        jugadorId:(typeof jugadorIdPorNombre==='function')?jugadorIdPorNombre(g.jugador):null,
+        equipo:equipoNom,
+        rival:rivalNom,
+        minuto:g.minuto??null,
+        origen:'',
+        subtipo:'',
+        zona:'',
+        cuerpo:'',
+        asistencia:g.asistencia||'',
+        penalti:!!g.penalti,
+        fuente:'Partido'
+      });
+    });
+  });
+
+  return lista;
+}
+
+function initGolesView(){
+  const golesAll=calcularTodosLosGoles();
+
+  const equipos=[...new Set([...golesAll.map(g=>g.equipo),...calcularTodosLosClips().map(c=>c.equipo)].filter(e=>e&&e!=='—'))].sort();
+  const jugadores=[...new Set([...golesAll.map(g=>g.jugador),...calcularTodosLosClips().map(c=>c.jugador)].filter(j=>j&&j!=='—'))].sort();
+
+  const selE=document.getElementById('goles-fil-equipo');
+  const selJ=document.getElementById('goles-fil-jugador');
+  const selO=document.getElementById('goles-fil-origen');
+  if(selE) selE.innerHTML='<option value="">Todos los equipos</option>'+equipos.map(e=>`<option value="${eH(e)}">${eH(e)}</option>`).join('');
+  if(selJ) selJ.innerHTML='<option value="">Todos los jugadores</option>'+jugadores.map(j=>`<option value="${eH(j)}">${eH(j)}</option>`).join('');
+  // Usamos la lista fija de orígenes tácticos de la app — así el filtro
+  // funciona igual para los goles con taxonomía y para los tipos de clip.
+  if(selO) selO.innerHTML='<option value="">Todo tipo</option>'+ORIGENES.map(o=>`<option value="${eH(o)}">${eH(o)}</option>`).join('');
+
+  renderGolesView();
+}
+
+function _golesFiltrados(){
+  const golesAll=calcularTodosLosGoles();
+  const q=(document.getElementById('goles-buscar')?.value||'').toLowerCase();
+  const filE=document.getElementById('goles-fil-equipo')?.value||'';
+  const filJ=document.getElementById('goles-fil-jugador')?.value||'';
+  const filO=document.getElementById('goles-fil-origen')?.value||'';
+  return golesAll.filter(g=>{
+    if(q && !(`${g.jugador} ${g.equipo} ${g.rival}`.toLowerCase().includes(q))) return false;
+    if(filE && g.equipo!==filE) return false;
+    if(filJ && g.jugador!==filJ) return false;
+    if(filO && g.origen!==filO) return false;
+    return true;
+  });
+}
+
+function renderGolesView(){
+  const lista=_golesFiltrados();
+  document.getElementById('goles-stat-total').textContent=lista.length;
+  const wrap=document.getElementById('goles-tabla-wrap');
+  if(!wrap) return;
+  if(!lista.length){
+    wrap.innerHTML=`<div class="partidos-empty"><span>⚽</span><p>No hay goles que coincidan con estos filtros.</p></div>`;
+  }else{
+  wrap.innerHTML=`<table class="tg-v2">
+    <thead><tr>
+      <th>Jugador</th><th>Equipo</th><th>Rival</th><th>Min</th><th>Origen</th><th>Subtipo</th><th>Asist.</th><th>Penalti</th><th>Fuente</th>
+    </tr></thead>
+    <tbody>${lista.map(g=>`<tr>
+      <td style="font-weight:700;color:var(--blanco);cursor:${g.jugadorId?'pointer':'default'}" ${g.jugadorId?`onclick="irAJugador('${g.jugadorId}')"`:''}>${eH(g.jugador)}</td>
+      <td style="cursor:pointer" onclick="irAEquipoPorNombre('${eH(g.equipo).replace(/'/g,"\\'")}')">${eH(g.equipo)}</td>
+      <td style="font-size:10px;color:var(--gris2)">${eH(g.rival)}</td>
+      <td class="tg-min">${g.minuto!=null?'m.'+g.minuto:'—'}</td>
+      <td>${g.origen?`<span class="tbdg ${OCSS[g.origen]||'to-atq'}">${eH(g.origen)}</span>`:'<span style="color:var(--gris2)">—</span>'}</td>
+      <td>${g.subtipo?`<span class="tbdg ${OCSS[g.subtipo]||'to-abp'}">${eH(g.subtipo)}</span>`:'<span style="color:var(--gris2)">—</span>'}</td>
+      <td style="font-size:10px;color:var(--gris)">${eH(g.asistencia)||'—'}</td>
+      <td>${g.penalti?'⚽ Sí':'—'}</td>
+      <td style="font-size:9px;color:var(--gris2)">${eH(g.fuente)}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+  }
+  renderGolesClipsView();
+}
+
+// ── Vídeos de los goles: junta los clips de jugadores y equipos ──
+function calcularTodosLosClips(){
+  const lista=[];
+  jDB.forEach(j=>{
+    (j.clips||[]).forEach(c=>{
+      if(!c.portada && !c.src) return;
+      lista.push(Object.assign({},c,{jugador:(j.nom+' '+j.ape).trim()||'—',jugadorId:j.id,equipo:j.club||'—',fuente:'Jugador'}));
+    });
+  });
+  eDB.forEach(eq=>{
+    (eq.clips||[]).forEach(c=>{
+      if(!c.portada && !c.src) return;
+      lista.push(Object.assign({},c,{jugador:'',jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · A favor'}));
+    });
+    (eq.clipsGC||[]).forEach(c=>{
+      if(!c.portada && !c.src) return;
+      lista.push(Object.assign({},c,{jugador:'',jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
+    });
+  });
+  return lista;
+}
+
+function _clipsFiltrados(){
+  const clipsAll=calcularTodosLosClips();
+  const q=(document.getElementById('goles-buscar')?.value||'').toLowerCase();
+  const filE=document.getElementById('goles-fil-equipo')?.value||'';
+  const filJ=document.getElementById('goles-fil-jugador')?.value||'';
+  const filO=document.getElementById('goles-fil-origen')?.value||'';
+  return clipsAll.filter(c=>{
+    if(q && !(`${c.jugador} ${c.equipo} ${c.rival||''} ${c.titulo||''}`.toLowerCase().includes(q))) return false;
+    if(filE && c.equipo!==filE) return false;
+    if(filJ && c.jugador!==filJ) return false;
+    if(filO && c.tipo!==filO) return false;
+    return true;
+  });
+}
+
+const GOLES_TIPO_COL={'Ataque Organizado':'#2f81f7','ABP Ofensiva':'#d29922','Juego Directo':'#3fb950','Centro Lateral':'#bc8cff','Finalización Frontal':'#e3b341','Transición Ofensiva':'#39d3f0'};
+
+function renderGolesClipsView(){
+  const cont=document.getElementById('goles-clips-wrap');
+  if(!cont) return;
+  const clips=_clipsFiltrados();
+  const contEl=document.getElementById('goles-clips-count');
+  if(contEl) contEl.textContent=clips.length;
+  window._golesClipsActuales=clips;
+  if(!clips.length){
+    cont.innerHTML='<div class="inicio-empty">No hay vídeos que coincidan con estos filtros</div>';
+    return;
+  }
+  cont.innerHTML=`<div class="eclips-grid-v2">${clips.map((c,i)=>{
+    const tC=GOLES_TIPO_COL[c.tipo]||'#2f81f7';
+    const tieneVideo=(c.blobURL&&c.srcType==='blob')||(c.src&&(c.srcType==='youtube'||c.srcType==='gdrive'||c.srcType==='direct'))||c.srcType==='blob_local';
+    let mediaH;
+    if(c.portada){
+      mediaH=`<div class="eclip-portada-wrap" onclick="golesAbrirClip(${i})"><img src="${c.portada}" alt="Portada"><div class="eclip-play-overlay"><div class="eclip-play-btn">▶</div></div></div>`;
+    }else if(tieneVideo){
+      mediaH=`<div class="eclip-portada-wrap eclip-sin-portada" onclick="golesAbrirClip(${i})"><div class="eclip-play-overlay" style="opacity:1;background:rgba(0,0,0,.55)"><div class="eclip-play-btn">▶</div></div></div>`;
+    }else{
+      mediaH=`<div class="eclip-media"><div class="em-empty"><span>🎬</span><p>Sin vídeo</p></div></div>`;
+    }
+    const quien=c.jugador||c.equipo;
+    return `<div class="eclip-card-v2">
+      ${mediaH}
+      <div class="eclip-info">
+        <div class="eclip-titulo">${eH(c.titulo)||'Sin título'}</div>
+        <div class="eclip-sub">
+          <span class="eclip-tipo-dot" style="background:${tC}"></span>
+          ${eH(quien)}${c.rival?' · vs '+eH(c.rival):''}${c.tipo?' · '+eH(c.tipo):''}
+        </div>
+        <div style="font-size:8px;color:var(--gris2);margin-top:3px">${eH(c.fuente)}</div>
+      </div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function golesAbrirClip(i){
+  const c=(window._golesClipsActuales||[])[i];
+  if(c) abrirVideoModal(c);
+}
+
+function exportarGolesPDF(){
+  const lista=_golesFiltrados();
+  if(!lista.length){toast('No hay goles que exportar con estos filtros',true);return;}
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'l',unit:'mm',format:'a4'});
+  const W=297,H=210;
+  doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');
+  doc.setFillColor(15,23,42);doc.rect(0,0,W,22,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(230,237,243);
+  doc.text('ANÁLISIS DE GOLES',10,13);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
+
+  const filE=document.getElementById('goles-fil-equipo')?.value||'';
+  const filJ=document.getElementById('goles-fil-jugador')?.value||'';
+  const filO=document.getElementById('goles-fil-origen')?.value||'';
+  const filtrosTxt=[filJ&&`Jugador: ${filJ}`,filE&&`Equipo: ${filE}`,filO&&`Origen: ${filO}`].filter(Boolean).join('  ·  ')||'Todos los goles registrados';
+  doc.text(`${filtrosTxt}  —  ${lista.length} goles`,10,18.5);
+
+  let y=30;
+  doc.setFontSize(8);
+  const cols=[
+    {t:'Jugador',w:45},{t:'Equipo',w:38},{t:'Rival',w:38},{t:'Min',w:14},
+    {t:'Origen',w:42},{t:'Subtipo',w:36},{t:'Asist.',w:34},{t:'Pen.',w:14}
+  ];
+  const x0=10;
+  function cabecera(){
+    doc.setFillColor(33,38,45);doc.rect(x0,y-5,cols.reduce((s,c)=>s+c.w,0),7,'F');
+    doc.setFont('helvetica','bold');doc.setTextColor(139,148,158);
+    let cx=x0+2;
+    cols.forEach(c=>{doc.text(c.t,cx,y);cx+=c.w;});
+    y+=6;
+    doc.setFont('helvetica','normal');doc.setTextColor(230,237,243);
+  }
+  cabecera();
+  lista.forEach((g,i)=>{
+    if(y>H-15){doc.addPage();doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');y=20;cabecera();}
+    let cx=x0+2;
+    const vals=[g.jugador,g.equipo,g.rival,g.minuto!=null?'m.'+g.minuto:'—',g.origen||'—',g.subtipo||'—',g.asistencia||'—',g.penalti?'Sí':'—'];
+    vals.forEach((v,vi)=>{
+      doc.text(String(v).slice(0,vi===0?26:vi===4?24:20),cx,y);
+      cx+=cols[vi].w;
+    });
+    doc.setDrawColor(48,54,61);
+    doc.line(x0,y+2,x0+cols.reduce((s,c)=>s+c.w,0),y+2);
+    y+=6;
+  });
+
+  doc.setFontSize(7);doc.setTextColor(72,79,88);
+  doc.text(`${cfg.nombre||'Scoutdrive'} · ${new Date().toLocaleDateString('es-ES')}`,10,H-6);
+
+  doc.save(`${cfg.nombre||'Scout'}_Analisis_Goles.pdf`);
+  toast('📄 PDF de goles exportado');
+}
 
 
 
@@ -4880,7 +5203,7 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbzwDpz60sxJktRkX7GTnIuYNleZwoEV4fNQZ6O7bqRRj0Fcs2WEiIEr-5fwulUnytEF/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
