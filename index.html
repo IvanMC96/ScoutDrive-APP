@@ -1203,6 +1203,15 @@ body.solo-lectura .ed-panel-form {
   <div class="cards-grid" id="j-grid"></div>
 </div>
 
+<div class="compare-bar" id="compare-bar" style="display:none">
+  <span id="compare-bar-count">0 jugadores seleccionados</span>
+  <div class="compare-bar-act">
+    <button class="btn b-ghost b-sm" onclick="limpiarSeleccionComparar()">✕ Cancelar</button>
+    <button class="btn b-ghost b-sm" data-compare-btn disabled onclick="xComparativaExcel()">📊 Excel</button>
+    <button class="btn b-azul b-sm" data-compare-btn disabled onclick="xComparativaPDF()">📄 PDF comparativa</button>
+  </div>
+</div>
+
 <!-- ══ EDITOR JUGADOR ════════════════════════════════════════════ -->
 <div class="vista ed-layout" id="v-jugador-ed">
 
@@ -2538,6 +2547,9 @@ function rmImg(key,e){e.stopPropagation();imgStore[key]=null;uzZone(key,null);if
 let jId=null, jForma=[], jGoles=[], jClips=[], jRadar=[50,50,50,50,50,50,50], jClipCnt=0;
 const jRadarEjes=['Goles','Asistencias','ABP','Transición Defensiva','Transición Ofensiva','Físico','Mentalidad'];
 
+// ── Selección para comparar varios jugadores a la vez ──────────────
+let jComparar=new Set();
+
 // ── DB ────────────────────────────────────────────────────────────
 function renderJDB(){
   let _huboReparoJ=false;
@@ -2547,15 +2559,23 @@ function renderJDB(){
   const jDBVisible=jDB.filter(j=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
   document.getElementById('jst-n').textContent=jDBVisible.length;
   document.getElementById('jst-g').textContent=jDBVisible.reduce((s,j)=>s+(j.stats?.g||0),0);
+  // Si algún jugador seleccionado para comparar ya no existe (o ya no es
+  // visible para este usuario), lo quitamos de la selección.
+  const idsVisibles=new Set(jDBVisible.map(j=>j.id));
+  [...jComparar].forEach(id=>{ if(!idsVisibles.has(id)) jComparar.delete(id); });
   const q=(G('jdb-q')||'').toLowerCase();
   const lst=q?jDBVisible.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q)):jDBVisible;
   const grid=document.getElementById('j-grid');
-  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
+  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;actualizarBarraComparar();return;}
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
     const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
     const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
-    return `<div class="card"><div class="card-hdr" onclick="editJ('${j.id}')">
+    return `<div class="card">
+      <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
+        <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
+      </label>
+      <div class="card-hdr" onclick="editJ('${j.id}')">
       ${av}<div><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>
     </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
@@ -2568,6 +2588,143 @@ function renderJDB(){
       ${esAdminActual()?'<button class="btn b-rojo b-sm" data-del-jugador="'+eH(j.id)+'" onclick="borrarJugador(this)">🗑</button>':''}
     </div></div>`;
   }).join('');
+  actualizarBarraComparar();
+}
+
+// ── Comparar varios jugadores ───────────────────────────────────────
+function toggleComparar(id,checked){
+  if(checked) jComparar.add(id); else jComparar.delete(id);
+  actualizarBarraComparar();
+}
+function limpiarSeleccionComparar(){
+  jComparar.clear();
+  renderJDB();
+}
+function actualizarBarraComparar(){
+  const bar=document.getElementById('compare-bar');
+  if(!bar) return;
+  const n=jComparar.size;
+  bar.style.display = n>0 ? 'flex' : 'none';
+  const txt=document.getElementById('compare-bar-count');
+  if(txt) txt.textContent = n===1 ? '1 jugador seleccionado (elige al menos 2 para comparar)' : `${n} jugadores seleccionados`;
+  const btns=bar.querySelectorAll('[data-compare-btn]');
+  btns.forEach(b=>b.disabled = n<2);
+}
+
+// Filas compartidas por los dos exportadores de comparativa: cada una
+// define la etiqueta y cómo sacar el valor de un jugador, así ambos
+// formatos (Excel/PDF) muestran siempre las mismas estadísticas.
+function _comparativaFilasBase(){
+  return [
+    {l:'Club',v:j=>j.club||'—'},
+    {l:'Posición',v:j=>j.pos||'—'},
+    {l:'Dorsal',v:j=>j.dor?'#'+j.dor:'—'},
+    {l:'Edad',v:j=>j.edad||'—'},
+    {l:'Pie',v:j=>j.pie||'—'},
+    {l:'Temporada',v:j=>j.temp||'—'},
+    {l:'Partidos (PJ)',v:j=>j.stats?.p||0},
+    {l:'Goles',v:j=>j.stats?.g||0},
+    {l:'Asistencias',v:j=>j.stats?.a||0},
+    {l:'G+A',v:j=>(j.stats?.g||0)+(j.stats?.a||0)},
+    {l:'Min/gol',v:j=>j.stats?.m||0},
+    {l:'ABP goles',v:j=>j.stats?.ab||0},
+    {l:'% Finalización',v:j=>(j.stats?.f||0)+'%'},
+    {l:'Nota técnica',v:j=>j.nota||'—'},
+  ];
+}
+function _comparativaFilasRadar(){
+  return jRadarEjes.map((eje,i)=>({l:eje,v:j=>(j.radar&&j.radar[i])||0}));
+}
+function _comparativaJugadoresSeleccionados(){
+  return [...jComparar].map(id=>jDB.find(x=>x.id===id)).filter(Boolean);
+}
+
+function xComparativaExcel(){
+  const jugadores=_comparativaJugadoresSeleccionados();
+  if(jugadores.length<2){toast('Selecciona al menos 2 jugadores para comparar',true);return;}
+  const WB=XLSX.utils.book_new();
+  const rows=[
+    ['COMPARATIVA DE JUGADORES'],
+    ['Exportado',new Date().toLocaleDateString('es-ES')],[],
+    ['Estadística',...jugadores.map(j=>(j.nom+' '+j.ape).trim()||'Sin nombre')],
+  ];
+  _comparativaFilasBase().forEach(f=>rows.push([f.l,...jugadores.map(f.v)]));
+  rows.push([]);
+  rows.push(['PERFIL (0-100)']);
+  _comparativaFilasRadar().forEach(f=>rows.push([f.l,...jugadores.map(f.v)]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:22},...jugadores.map(()=>({wch:18}))];
+  XLSX.utils.book_append_sheet(WB,ws,'Comparativa');
+  XLSX.writeFile(WB,`Scout_Comparativa_${jugadores.length}jug_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('📊 Excel comparativa exportado');
+}
+
+function xComparativaPDF(){
+  const jugadores=_comparativaJugadoresSeleccionados();
+  if(jugadores.length<2){toast('Selecciona al menos 2 jugadores para comparar',true);return;}
+
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'l',unit:'mm',format:'a4'});
+  const W=297,H=210,x0=12;
+  const fondo=()=>{doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');};
+
+  const filas=_comparativaFilasBase();
+  const filasRadar=_comparativaFilasRadar();
+
+  // Con muchos jugadores seleccionados no caben todas las columnas en una
+  // sola página legible — los repartimos en grupos de hasta 6 por página.
+  const MAX_COLS_PAGINA=6;
+  const bloquesJug=[];
+  for(let i=0;i<jugadores.length;i+=MAX_COLS_PAGINA) bloquesJug.push(jugadores.slice(i,i+MAX_COLS_PAGINA));
+
+  const labelW=48;
+
+  bloquesJug.forEach((grupo,gi)=>{
+    if(gi>0) doc.addPage();
+    fondo();
+    doc.setFillColor(15,23,42);doc.rect(0,0,W,24,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(230,237,243);
+    doc.text('COMPARATIVA DE JUGADORES',x0,14);
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
+    const rangoTxt=bloquesJug.length>1?`  ·  Grupo ${gi+1}/${bloquesJug.length}`:'';
+    doc.text(`${grupo.length} de ${jugadores.length} jugadores comparados${rangoTxt}`,x0,20.5);
+
+    const colW=(W-2*x0-labelW)/grupo.length;
+    let y=34;
+
+    doc.setFillColor(33,38,45);doc.rect(x0,y-4.5,W-2*x0,7.5,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
+    doc.text('Estadística',x0+2,y);
+    grupo.forEach((j,ci)=>{
+      const nom=((j.nom||'')+' '+(j.ape||'')).trim().slice(0,18)||'Sin nombre';
+      doc.text(nom,x0+labelW+ci*colW+2,y);
+    });
+    y+=8.5;
+
+    function pintarFila(f){
+      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
+      doc.text(String(f.l),x0+2,y);
+      grupo.forEach((j,ci)=>{
+        doc.text(String(f.v(j)),x0+labelW+ci*colW+2,y);
+      });
+      doc.setDrawColor(48,54,61);doc.line(x0,y+2,W-x0,y+2);
+      y+=6.5;
+    }
+
+    filas.forEach(pintarFila);
+
+    y+=4;
+    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(139,148,158);
+    doc.text('PERFIL (0-100)',x0,y);
+    y+=7;
+    filasRadar.forEach(pintarFila);
+
+    doc.setFontSize(7);doc.setTextColor(72,79,88);
+    doc.text(`${cfg.nombre||'Scoutdrive'} · ${new Date().toLocaleDateString('es-ES')}`,x0,H-6);
+  });
+
+  doc.save(`${cfg.nombre||'Scout'}_Comparativa_${jugadores.length}jug.pdf`);
+  toast('📄 PDF comparativa exportado');
 }
 
 function nuevoJ(){
@@ -4851,6 +5008,33 @@ function guardarEConFeedback(){
     transform:translateY(-16px);
   }
   .toast.show{ transform:translateY(0); }
+}
+
+/* ── Comparar varios jugadores ─────────────────────────────────── */
+.card{ position:relative; }
+.card-cmp-chk{
+  position:absolute; top:8px; left:8px; z-index:5;
+  width:22px; height:22px; border-radius:6px;
+  background:rgba(13,17,23,.72); border:1px solid var(--border2);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer;
+}
+.card-cmp-chk input{ width:16px; height:16px; margin:0; accent-color:var(--azul); cursor:pointer; }
+
+.compare-bar{
+  position:fixed; left:0; right:0; bottom:0; z-index:500;
+  display:none; align-items:center; justify-content:space-between; gap:12px;
+  flex-wrap:wrap;
+  background:var(--bg3); border-top:1px solid var(--border2);
+  padding:10px 16px; box-shadow:0 -4px 14px rgba(0,0,0,.35);
+}
+.compare-bar span{ font-size:13px; color:var(--gris); }
+.compare-bar-act{ display:flex; gap:8px; flex-wrap:wrap; }
+.compare-bar [data-compare-btn]:disabled{ opacity:.4; cursor:not-allowed; }
+
+@media(max-width:680px){
+  .compare-bar{ flex-direction:column; align-items:stretch; text-align:center; }
+  .compare-bar-act{ justify-content:center; }
 }
 
 </style>
