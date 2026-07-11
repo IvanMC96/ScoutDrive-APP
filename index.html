@@ -2799,13 +2799,13 @@ function guardarE(){
     fecha:new Date().toLocaleDateString('es-ES')};
 // Persist clips (no blob)
   const clipsGuardar=eClips.map(c=>({
-    id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
+    id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,jugador:c.jugador||'',
     srcType:c.srcType==='blob'?'blob_local':c.srcType,
     src:c.srcType==='blob'?'':c.src,
     portada:c.portada||null
   }));
   const clipsGCGuardar=eClipsGC.map(c=>({
-    id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
+    id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,jugador:c.jugador||'',
     srcType:c.srcType==='blob'?'blob_local':c.srcType,
     src:c.srcType==='blob'?'':c.src,
     portada:c.portada||null
@@ -2814,7 +2814,9 @@ function guardarE(){
   eq.clipsGC=clipsGCGuardar;
   const idx2=eDB.findIndex(x=>x.id===id);
   if(idx2>=0)eDB[idx2]=eq;else eDB.unshift(eq);
-  saveEDB();toast(`✅ ${nom} guardado`);
+  saveEDB();
+  if(typeof recalcularStatsDesdePartidos==='function') recalcularStatsDesdePartidos();
+  toast(`✅ ${nom} guardado`);
 }
 
 // ── PARTIDOS ──────────────────────────────────────────────────────
@@ -3551,6 +3553,8 @@ function buildEClips(){
         ${portH}
         <div class="clip-player" style="position:relative">${playerH}</div>
         <div>${stH}</div>
+        <input type="text" placeholder="⚽ Jugador que marca (para que salga en Goles)" value="${eH(cl.jugador||'')}"
+               oninput="eClips[${i}].jugador=this.value;renderE()" style="margin-bottom:6px">
         <div class="clip-fields2">
           <input type="text" placeholder="Rival / Partido" value="${eH(cl.rival)}"
                  oninput="eClips[${i}].rival=this.value;renderE()">
@@ -4759,30 +4763,35 @@ function jugadorIdPorNombre(nombreCompleto){
  *  metidos a mano — solo se suma lo nuevo que venga de los partidos. */
 function recalcularStatsDesdePartidos(){
   const tally={};
+  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0}; tally[id][campo]++; };
+
+  // Fuente 1: goles registrados en Partidos (videoteca) — jugador/asistencia
   pDB.forEach(p=>{
     (p.goles||[]).forEach(g=>{
-      if(g.jugador){
-        const id=jugadorIdPorNombre(g.jugador);
-        if(id){ if(!tally[id])tally[id]={g:0,a:0,pz:0}; tally[id].g++; }
-      }
-      if(g.asistencia){
-        const idA=jugadorIdPorNombre(g.asistencia);
-        if(idA){ if(!tally[idA])tally[idA]={g:0,a:0,pz:0}; tally[idA].a++; }
-      }
+      if(g.jugador) sumar(jugadorIdPorNombre(g.jugador),'g');
+      if(g.asistencia) sumar(jugadorIdPorNombre(g.asistencia),'a');
     });
     // Portería a cero: se deduce del marcador — si el rival no marca,
     // el portero de ese equipo suma una.
     if(p.gf!=null && p.gc!=null){
-      if(p.gc===0 && p.porteroLocal){
-        const idL=jugadorIdPorNombre(p.porteroLocal);
-        if(idL){ if(!tally[idL])tally[idL]={g:0,a:0,pz:0}; tally[idL].pz++; }
-      }
-      if(p.gf===0 && p.porteroVisitante){
-        const idV=jugadorIdPorNombre(p.porteroVisitante);
-        if(idV){ if(!tally[idV])tally[idV]={g:0,a:0,pz:0}; tally[idV].pz++; }
-      }
+      if(p.gc===0 && p.porteroLocal) sumar(jugadorIdPorNombre(p.porteroLocal),'pz');
+      if(p.gf===0 && p.porteroVisitante) sumar(jugadorIdPorNombre(p.porteroVisitante),'pz');
     }
   });
+
+  // Fuente 2: goles registrados en la ficha del Equipo, dentro de cada
+  // partido ("⚽ Partidos + Goles a Favor" → jugador que marca).
+  // IMPORTANTE: si un gol ya está contado por Partidos (fuente 1), no lo
+  // vuelvas a registrar aquí también o se sumará dos veces — usa un solo
+  // sitio por gol.
+  eDB.forEach(eq=>{
+    (eq.partidos||[]).forEach(p=>{
+      (p.golesGF||[]).forEach(g=>{
+        if(g.jugador) sumar(jugadorIdPorNombre(g.jugador),'g');
+      });
+    });
+  });
+
   let cambios=false;
   jDB.forEach(j=>{
     if(!j.stats) j.stats={};
@@ -4923,6 +4932,30 @@ function calcularTodosLosGoles(){
     });
   });
 
+  // 4) Goles "sueltos" que solo están etiquetados en un clip (sin ficha
+  //    de gol formal) — como el caso de un clip de equipo al que le has
+  //    puesto el jugador que marca. Se marcan con fuente "Clip equipo"
+  //    para que se note que vienen de ahí y no de un registro táctico.
+  calcularTodosLosClips().forEach(c=>{
+    if(c.fuente!=='Equipo · A favor') return; // solo goles a favor, no en contra
+    if(!c.jugador) return; // sin jugador etiquetado, no se puede listar como gol
+    lista.push({
+      id:'clip_'+c.id+'_'+c.equipo,
+      jugador:c.jugador,
+      jugadorId:c.jugadorId||null,
+      equipo:c.equipo,
+      rival:c.rival||'—',
+      minuto:null,
+      origen:c.tipo||'',
+      subtipo:'',
+      zona:'',
+      cuerpo:'',
+      asistencia:'',
+      penalti:false,
+      fuente:'Clip equipo'
+    });
+  });
+
   return lista;
 }
 
@@ -4999,11 +5032,13 @@ function calcularTodosLosClips(){
   eDB.forEach(eq=>{
     (eq.clips||[]).forEach(c=>{
       if(!c.portada && !c.src) return;
-      lista.push(Object.assign({},c,{jugador:'',jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · A favor'}));
+      const nomJug=(c.jugador||'').trim();
+      const jid=nomJug?jugadorIdPorNombre(nomJug):null;
+      lista.push(Object.assign({},c,{jugador:nomJug,jugadorId:jid,equipo:eq.nom||'—',fuente:'Equipo · A favor'}));
     });
     (eq.clipsGC||[]).forEach(c=>{
       if(!c.portada && !c.src) return;
-      lista.push(Object.assign({},c,{jugador:'',jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
+      lista.push(Object.assign({},c,{jugador:(c.jugador||'').trim(),jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
     });
   });
   return lista;
@@ -5157,6 +5192,8 @@ function buildEClipsGC(){
       </div>
       <input class="clip-input" placeholder="Título del clip (ej: Gol m.23)" value="${eH(cl.titulo||'')}"
         oninput="eClipsGC[${i}].titulo=this.value">
+      <input class="clip-input" placeholder="⚽ Jugador rival que marca" value="${eH(cl.jugador||'')}"
+        oninput="eClipsGC[${i}].jugador=this.value">
       <input class="clip-input" placeholder="Rival / partido" value="${eH(cl.rival||'')}"
         oninput="eClipsGC[${i}].rival=this.value">
       <select class="clip-input" onchange="eClipsGC[${i}].tipo=this.value">
