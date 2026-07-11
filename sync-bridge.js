@@ -29,7 +29,7 @@
 // ════════════════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbyTBb0Fa-OSSDASu1wGuDNDixHue9E8699k09qZI29K-_Ght_MeLOtmLAAk66suAMi7/exec';
+const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbzwDpz60sxJktRkX7GTnIuYNleZwoEV4fNQZ6O7bqRRj0Fcs2WEiIEr-5fwulUnytEF/exec';
 
 // Pon esto en false desde la consola si alguna vez quieres trabajar
 // offline puro sin que intente conectar (vuelve a true al recargar).
@@ -467,7 +467,7 @@ async function scoutSincronizarAlAbrir() {
         // Aquí sí protegemos: nunca dejamos que un remoto sin nombre/apellidos
         // borre uno local que sí los tiene — evita que un jugador "se quede
         // sin nombre" por una fila incompleta o mal mapeada en el Sheet.
-        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'])) huboNovedades = true;
       }
     });
   }
@@ -481,7 +481,7 @@ async function scoutSincronizarAlAbrir() {
       if (idx < 0) {
         eDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
-        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'])) huboNovedades = true;
       }
     });
   }
@@ -495,7 +495,7 @@ async function scoutSincronizarAlAbrir() {
       if (idx < 0) {
         if (remoto.local || remoto.visitante) { pDB.unshift(remoto); huboNovedades = true; }
       } else if (fechaRemota > fechaLocal) {
-        if (_scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante'], ['thumb'])) huboNovedades = true;
       }
     });
   }
@@ -527,23 +527,31 @@ async function scoutSincronizarAlAbrir() {
   }
 }
 
-/** Sustituye arr[idx] por "remoto", pero si remoto no trae ninguno de los
- *  "camposClave" (p.ej. nom/ape) mientras el local sí los tenía, conserva
- *  esos campos del local en vez de dejar el registro sin nombre.
- *  Esto es lo que impedía que un equipo/jugador "perdiera" su nombre al
- *  reabrir la app tras sincronizar con una fila incompleta del Sheet. */
-function _scoutFusionarSeguro(arr, idx, remoto, camposClave) {
+/** Sustituye arr[idx] por "remoto", pero:
+ *  1) si remoto no trae ninguno de los "camposClave" (p.ej. nom/ape)
+ *     mientras el local sí los tenía, conserva esos campos del local
+ *     en vez de dejar el registro sin nombre.
+ *  2) si remoto no trae imagen en alguno de "camposImagen" (escudo,
+ *     foto, miniatura...) pero el local SÍ la tenía, conserva la
+ *     imagen local — esto es justo lo que evita que un escudo/foto que
+ *     ya estaba bien subido se borre al sincronizar con una fila del
+ *     Sheet que se guardó a medias (p.ej. por un fallo anterior). */
+function _scoutFusionarSeguro(arr, idx, remoto, camposClave, camposImagen) {
   const local = arr[idx];
   const remotoTieneAlgunCampo = camposClave.some(c => remoto[c]);
   const localTieneAlgunCampo = camposClave.some(c => local[c]);
+  const fusionado = { ...remoto };
   if (!remotoTieneAlgunCampo && localTieneAlgunCampo) {
-    const fusionado = { ...remoto };
     camposClave.forEach(c => { fusionado[c] = local[c]; });
-    arr[idx] = fusionado;
     console.warn('[Scoutdrive sync] Fila remota sin nombre; se conserva el nombre local para', local.id);
-  } else {
-    arr[idx] = remoto;
   }
+  (camposImagen || []).forEach(c => {
+    if (!remoto[c] && local[c]) {
+      fusionado[c] = local[c];
+      console.warn('[Scoutdrive sync] Fila remota sin imagen (' + c + '); se conserva la local para', local.id);
+    }
+  });
+  arr[idx] = fusionado;
   return true;
 }
 
@@ -629,7 +637,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc']); cambios++; }
       else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
   }
@@ -639,7 +647,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc']); cambios++; }
       else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
@@ -649,7 +657,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = pDB.findIndex(x => x.id === remoto.id);
-      if (idx >= 0) { _scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(pDB, idx, remoto, ['local', 'visitante'], ['thumb']); cambios++; }
       else { pDB.unshift(remoto); cambios++; }
     });
   }
