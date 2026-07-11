@@ -29,7 +29,7 @@
 // ════════════════════════════════════════════════════════════════
 //  CONFIGURACIÓN
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbwEu3CM6GwQYp74k9NPW0tHdxq2tFNaMX1lWf7jEpXtirs4LVzUsufEjg-Y9DenUF1y/exec';
+const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbzd48VqvNICO6KhkFsCCKVQ3HzdAsco4hr4yUu4xYnhua-BMotf2Ra-AKlR7gMZdLNm/exec';
 
 /** Convierte cualquier enlace de Drive (uc?export=view&id=..., file/d/.../view,
  *  open?id=...) al formato que Google SÍ deja insertar de forma fiable
