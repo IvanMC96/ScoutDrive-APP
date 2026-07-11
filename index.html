@@ -593,13 +593,13 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .feq-hdr-v2{
   background:linear-gradient(135deg,#161b22 0%,#1c2333 100%);
   padding:20px 22px;display:flex;align-items:center;
-  justify-content:space-between;border-bottom:2px solid var(--border);
+  justify-content:space-between;border-bottom:3px solid var(--eq-accent,var(--border));
   position:relative;overflow:hidden;border-radius:10px 10px 0 0;
 }
 .feq-hdr-v2::before{
   content:'';position:absolute;top:-30px;right:-30px;
   width:140px;height:140px;border-radius:50%;
-  background:rgba(47,129,247,.07);pointer-events:none;
+  background:var(--eq-accent-glow,rgba(47,129,247,.07));pointer-events:none;
 }
 .feq-av-v2{
   width:60px;height:60px;border-radius:10px;background:var(--azul-dk);
@@ -1421,6 +1421,19 @@ body.solo-lectura .ed-panel-form {
           </div>
         </div>
         <div class="fg2">
+          <div class="fg">
+            <label>🎨 Color del equipo</label>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="color" id="ecolor" value="#2f81f7" oninput="document.getElementById('ecolor-hex').value=this.value;renderE()" style="width:44px;height:34px;padding:2px;border-radius:8px;cursor:pointer">
+              <input type="text" id="ecolor-hex" value="#2f81f7" oninput="document.getElementById('ecolor').value=this.value;renderE()" style="flex:1;font-family:monospace;text-transform:uppercase">
+            </div>
+          </div>
+          <div class="fg" style="justify-content:flex-end;display:flex;flex-direction:column">
+            <label>&nbsp;</label>
+            <button type="button" class="btn b-ghost b-sm" onclick="document.getElementById('ecolor').value='#2f81f7';document.getElementById('ecolor-hex').value='#2f81f7';renderE()">↺ Restablecer color</button>
+          </div>
+        </div>
+        <div class="fg2">
           <div class="fg"><label>Liga / Categoría</label><input id="eliga" value="2ª RFEF Grupo IV" oninput="renderE()"></div>
           <div class="fg"><label>Entrenador</label><input id="eent" oninput="renderE()"></div>
         </div>
@@ -1835,6 +1848,21 @@ body.solo-lectura .ed-panel-form {
           <option value="false">🚫 Desactivado</option>
         </select>
       </div>
+      <div class="apf">
+        <label>🔒 Qué puede ver este usuario</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gris);cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="mu-ver-todo" style="width:auto" onchange="toggleMuLigas()" checked>
+          Ver todo (sin restricción)
+        </label>
+        <div id="mu-ligas-wrap" style="display:none">
+          <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Marca solo las ligas/grupos que este usuario podrá ver — equipos, jugadores y partidos de otras ligas quedarán ocultos para él.</p>
+          <div id="mu-ligas-list" style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px"></div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input id="mu-liga-nueva" placeholder="Añadir otra liga/grupo..." style="flex:1">
+            <button class="btn b-ghost b-sm" type="button" onclick="agregarLigaNueva()">+ Añadir</button>
+          </div>
+        </div>
+      </div>
       <input type="hidden" id="mu-edit-id">
     </div>
     <div class="add-partido-footer">
@@ -1908,7 +1936,8 @@ function renderInicio(){
   `;
 
   // Últimos partidos (de la videoteca) — clicables, llevan al partido
-  const ultimosP=[...pDB].sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0)).slice(0,5);
+  const ultimosP=pDB.filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
+    .sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0)).slice(0,5);
   document.getElementById('inicio-ultimos-partidos').innerHTML = ultimosP.length
     ? ultimosP.map(p=>`<div class="inicio-row clicable" onclick="irAPartido('${p.id}')"><span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}</span><span class="inicio-row-r">${p.gf??'-'}:${p.gc??'-'}</span></div>`).join('')
     : '<div class="inicio-empty">Sin partidos todavía</div>';
@@ -1927,6 +1956,7 @@ function calcularClasificacionGlobal(){
     if(p.gf==null || p.gc==null) return;
     if(!p.local || !p.visitante) return;
     [[p.local,p.gf,p.gc],[p.visitante,p.gc,p.gf]].forEach(([nombre,gf,gc])=>{
+      if(!usuarioPuedeVerLiga(ligaDeEquipoPorNombre(nombre))) return;
       const key=nombre.trim().toLowerCase();
       if(!tabla[key]) tabla[key]={nombre:nombre.trim(),pj:0,gf:0,gc:0};
       const t=tabla[key];
@@ -1968,7 +1998,7 @@ function renderHighlightsInicio(){
 
   // Portero con más porterías a cero
   let hPortero='<div class="inicio-empty">Registra "Porterías a cero" en la ficha del portero</div>';
-  const porteros=jDB.filter(j=>(j.pos||'').toLowerCase()==='portero' && (j.stats?.pz||0)>0);
+  const porteros=jDB.filter(j=>(j.pos||'').toLowerCase()==='portero' && (j.stats?.pz||0)>0 && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
   if(porteros.length){
     const top=[...porteros].sort((a,b)=>(b.stats?.pz||0)-(a.stats?.pz||0))[0];
     const foto=top.imgJug;
@@ -2003,7 +2033,7 @@ function escudoDeEquipoPorNombre(nombre){
 function renderGoleadoresInicio(){
   const cont=document.getElementById('inicio-top-goleadores');
   if(!cont) return;
-  const conGoles=jDB.filter(j=>(j.stats?.g||0)>0);
+  const conGoles=jDB.filter(j=>(j.stats?.g||0)>0 && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
   if(!conGoles.length){ cont.innerHTML='<div class="inicio-empty">Sin goles registrados</div>'; return; }
 
   const grupos={};
@@ -2042,6 +2072,7 @@ function calcularClasificacionPorLiga(){
     if(!p.local || !p.visitante) return;
     [[p.local,p.gf,p.gc],[p.visitante,p.gc,p.gf]].forEach(([nombre,gf,gc])=>{
       const ligaNom=ligaDeEquipoPorNombre(nombre)||'Sin liga especificada';
+      if(!usuarioPuedeVerLiga(ligaDeEquipoPorNombre(nombre))) return;
       const ligaKey=ligaNom.toLowerCase();
       if(!ligas[ligaKey]) ligas[ligaKey]={nombre:ligaNom,equipos:{}};
       const key=nombre.trim().toLowerCase();
@@ -2097,6 +2128,7 @@ function calcularOrigenGolesPorLiga(){
   ];
   const ligas={};
   eDB.forEach(eq=>{
+    if(!usuarioPuedeVerLiga(eq.liga)) return;
     const ligaNom=(eq.liga||'').trim()||'Sin liga especificada';
     const key=ligaNom.toLowerCase();
     if(!ligas[key]) ligas[key]={nombre:ligaNom,origen:{}};
@@ -2424,12 +2456,14 @@ function renderJDB(){
   let _huboReparoJ=false;
   jDB.forEach(j=>{ if(!j.id){ j.id='j_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparoJ=true; } });
   if(_huboReparoJ) saveJDB();
-  document.getElementById('jst-n').textContent=jDB.length;
-  document.getElementById('jst-g').textContent=jDB.reduce((s,j)=>s+(j.stats?.g||0),0);
+  // Solo jugadores cuyo club esté en una liga permitida para este usuario.
+  const jDBVisible=jDB.filter(j=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
+  document.getElementById('jst-n').textContent=jDBVisible.length;
+  document.getElementById('jst-g').textContent=jDBVisible.reduce((s,j)=>s+(j.stats?.g||0),0);
   const q=(G('jdb-q')||'').toLowerCase();
-  const lst=q?jDB.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q)):jDB;
+  const lst=q?jDBVisible.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q)):jDBVisible;
   const grid=document.getElementById('j-grid');
-  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDB.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDB.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDB.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
+  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
     const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%">${eH(ini(j.nom,j.ape)||'?')}</div>`;
@@ -2464,6 +2498,7 @@ function nuevoJ(){
 
 function editJ(id){
   const j=jDB.find(x=>x.id===id);if(!j)return;
+  if(!usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club))){ toast('No tienes acceso a este jugador',true); return; }
   jId=id;
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
@@ -2719,20 +2754,24 @@ function renderEDB(){
   let _huboReparo=false;
   eDB.forEach(eq=>{ if(!eq.id){ eq.id='e_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparo=true; } });
   if(_huboReparo) saveEDB();
-  document.getElementById('est-n').textContent=eDB.length;
-  document.getElementById('est-gf').textContent=eDB.reduce((s,e)=>s+(e.stats?.gf||0),0);
-  document.getElementById('est-gc').textContent=eDB.reduce((s,e)=>s+(e.stats?.gc||0),0);
+  // Solo se cuentan/muestran los equipos de las ligas que este usuario
+  // tiene permitidas (los admin siempre ven todo).
+  const eDBVisible=eDB.filter(e=>usuarioPuedeVerLiga(e.liga));
+  document.getElementById('est-n').textContent=eDBVisible.length;
+  document.getElementById('est-gf').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gf||0),0);
+  document.getElementById('est-gc').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gc||0),0);
   const q=(G('edb-q')||'').toLowerCase(),filtro=G('edb-filtro')||'';
-  let lst=filtro?eDB.filter(e=>e.tipo===filtro):eDB;
+  let lst=filtro?eDBVisible.filter(e=>e.tipo===filtro):eDBVisible;
   if(q)lst=lst.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q));
   const grid=document.getElementById('e-grid');
-  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDB.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDB.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;return;}
+  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;return;}
   grid.innerHTML=lst.map(eq=>{
     const s=eq.stats||{};
     const typeClr=eq.tipo==='propio'?'var(--azul-dk)':'#7d1717';
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
+    const eqColor=eq.color||'#30363d';
     const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
-    return `<div class="card"><div class="card-hdr" onclick="editE('${eq.id}')">
+    return `<div class="card" style="border-left:4px solid ${eqColor}"><div class="card-hdr" onclick="editE('${eq.id}')">
       ${av}<div><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>
     </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
@@ -2755,6 +2794,8 @@ function nuevoE(){
     const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}
   });
   document.getElementById('eliga').value='2ª RFEF Grupo IV';
+  document.getElementById('ecolor').value='#2f81f7';
+  document.getElementById('ecolor-hex').value='#2f81f7';
   imgStore.eesc=null;ePartidos=[];eGC=[];eClips=[];eClipsGC=[];ePartCnt=0;eClipCnt=0;eClipGCCnt=0;
   uzZone('eesc',null);buildEPartidos();buildEGC();buildEClips();buildEClipsGC();buildEClipsGC();
   navTo('equipo-ed');renderE();
@@ -2762,9 +2803,11 @@ function nuevoE(){
 
 function editE(id){
   const eq=eDB.find(x=>x.id===id);if(!eq)return;
+  if(!usuarioPuedeVerLiga(eq.liga)){ toast('No tienes acceso a este equipo',true); return; }
   eId=id;
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   S('enom',eq.nom);S('etipo',eq.tipo);S('etemp',eq.temp);S('eliga',eq.liga);S('eent',eq.ent);S('esist',eq.sist);S('enota',eq.nota);
+  S('ecolor',eq.color||'#2f81f7');S('ecolor-hex',eq.color||'#2f81f7');
   S('epj',eq.stats?.pj);S('ev',eq.stats?.v);S('ee',eq.stats?.e);S('ed',eq.stats?.d);S('egf',eq.stats?.gf);S('egc',eq.stats?.gc);
   ['eoatq','eoabp','eocl','eojd','eotr','egcatq','egcabp','egctr','egcjd'].forEach(k=>{
     const v=eq.orig?.[k]||0;const e=document.getElementById(k);if(e){e.value=v;sv(k+'_v',v);}
@@ -2792,6 +2835,7 @@ function guardarE(){
     });
   }
   const eq={id,nom,tipo:G('etipo'),temp:G('etemp'),liga:G('eliga'),ent:G('eent'),sist:G('esist'),nota:G('enota'),
+    color:G('ecolor')||'#2f81f7',
     stats:{pj,v,e:e2,d,gf,gc},
     orig:{eoatq:GN('eoatq'),eoabp:GN('eoabp'),eocl:GN('eocl'),eojd:GN('eojd'),eotr:GN('eotr'),
           egcatq:GN('egcatq'),egcabp:GN('egcabp'),egctr:GN('egctr'),egcjd:GN('egcjd')},
@@ -3080,7 +3124,7 @@ function renderE(){
   <div class="ficha-eq" id="e-ficha-pdf">
 
     <!-- ── HEADER ── -->
-    <div class="feq-hdr-v2">
+    <div class="feq-hdr-v2" style="--eq-accent:${eH(G('ecolor')||'#2f81f7')};--eq-accent-glow:${eH(G('ecolor')||'#2f81f7')}22">
       <div style="display:flex;align-items:center;gap:14px">
         ${avH}
         <div>
@@ -4402,7 +4446,7 @@ function guardarEConFeedback(){
   }
 
   // ── Login via Apps Script con SHA-256 ────────────────────────
-  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbwEu3CM6GwQYp74k9NPW0tHdxq2tFNaMX1lWf7jEpXtirs4LVzUsufEjg-Y9DenUF1y/exec';
+  const SCOUT_API_LOGIN = 'https://script.google.com/macros/s/AKfycbzd48VqvNICO6KhkFsCCKVQ3HzdAsco4hr4yUu4xYnhua-BMotf2Ra-AKlR7gMZdLNm/exec';
 
   // Credenciales locales de emergencia (por si la API no responde)
   const FALLBACK_USERS = {
@@ -4521,7 +4565,13 @@ function renderPartidos(){
 
   _actualizarFiltrosPartidos();
 
-  let lista = pDB.filter(p => {
+  // Solo partidos donde al menos uno de los dos equipos esté en una
+  // liga permitida para este usuario (los admin ven todo).
+  const pDBVisible = pDB.filter(p=>
+    usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local)) || usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante))
+  );
+
+  let lista = pDBVisible.filter(p => {
     const txt = `${p.local} ${p.visitante} ${p.comp} ${p.notas}`.toLowerCase();
     if(buscar && !txt.includes(buscar)) return false;
     if(filJornada && p.jornada !== filJornada) return false;
@@ -4536,8 +4586,8 @@ function renderPartidos(){
     return (a.jornada||'').localeCompare(b.jornada||'');
   });
 
-  document.getElementById('pstat-total').textContent = pDB.length;
-  const jornadas = [...new Set(pDB.map(p=>p.jornada).filter(Boolean))];
+  document.getElementById('pstat-total').textContent = pDBVisible.length;
+  const jornadas = [...new Set(pDBVisible.map(p=>p.jornada).filter(Boolean))];
   document.getElementById('pstat-jornadas').textContent = jornadas.length;
 
   const wrap = document.getElementById('partidos-grid-wrap');
@@ -4979,7 +5029,8 @@ function calcularTodosLosGoles(){
     });
   });
 
-  return lista;
+  // Filtro final por liga permitida — cubre las 4 fuentes de golpe.
+  return lista.filter(g=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(g.equipo)));
 }
 
 function initGolesView(){
@@ -5064,7 +5115,7 @@ function calcularTodosLosClips(){
       lista.push(Object.assign({},c,{jugador:(c.jugador||'').trim(),jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
     });
   });
-  return lista;
+  return lista.filter(c=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(c.equipo)));
 }
 
 function _clipsFiltrados(){
@@ -5263,7 +5314,7 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 //  PANEL DE ADMINISTRACIÓN DE USUARIOS
 // ════════════════════════════════════════════════════════════════
-const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbwEu3CM6GwQYp74k9NPW0tHdxq2tFNaMX1lWf7jEpXtirs4LVzUsufEjg-Y9DenUF1y/exec';
+const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbzd48VqvNICO6KhkFsCCKVQ3HzdAsco4hr4yUu4xYnhua-BMotf2Ra-AKlR7gMZdLNm/exec';
 
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
@@ -5295,6 +5346,7 @@ function actualizarPanelAdmin() {
 
   // Guardar referencia global del rol para usarla en renders
   window._esAdmin = esAdmin;
+  window._ligasPermitidas = esAdmin ? [] : (sesion.ligasPermitidas || []);
 
   // Aplicar clase solo-lectura al body para ocultar botones de edición
   // via CSS sin necesidad de tocar cada render individualmente
@@ -5310,6 +5362,19 @@ function actualizarPanelAdmin() {
 /** Devuelve true si el usuario actual es admin */
 function esAdminActual() {
   return window._esAdmin === true;
+}
+
+/** true si el usuario actual puede ver contenido de esa liga/grupo.
+ *  Admin siempre ve todo. Un usuario normal sin restricción (array
+ *  vacío) también ve todo. Si tiene restricción, solo ve las ligas
+ *  de su lista — y si el contenido no tiene liga asignada, NO lo ve
+ *  (más seguro: mejor ocultar de más que enseñar de más). */
+function usuarioPuedeVerLiga(liga){
+  if(esAdminActual()) return true;
+  const permitidas=window._ligasPermitidas;
+  if(!permitidas || !permitidas.length) return true;
+  if(!liga) return false;
+  return permitidas.includes(liga.trim());
 }
 
 async function cargarUsuariosAdmin() {
@@ -5364,6 +5429,45 @@ async function cargarUsuariosAdmin() {
 }
 
 // ── Modal nuevo/editar usuario ───────────────────────────────────
+function _ligasDisponibles(){
+  const deEquipos=eDB.map(e=>(e.liga||'').trim()).filter(Boolean);
+  return [...new Set(deEquipos)].sort();
+}
+function renderMuLigasCheckboxes(seleccionadas){
+  const sel=new Set(seleccionadas||[]);
+  const ligas=_ligasDisponibles();
+  const cont=document.getElementById('mu-ligas-list');
+  if(!ligas.length){
+    cont.innerHTML='<p style="font-size:10px;color:var(--gris2);margin:0">Todavía no hay ninguna liga creada — añade equipos primero, o escribe el nombre a mano abajo.</p>';
+    return;
+  }
+  cont.innerHTML=ligas.map(l=>`
+    <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:var(--blanco);cursor:pointer">
+      <input type="checkbox" class="mu-liga-chk" value="${eH(l)}" style="width:auto" ${sel.has(l)?'checked':''}>
+      ${eH(l)}
+    </label>`).join('');
+}
+function toggleMuLigas(){
+  const verTodo=document.getElementById('mu-ver-todo').checked;
+  document.getElementById('mu-ligas-wrap').style.display=verTodo?'none':'';
+}
+function agregarLigaNueva(){
+  const inp=document.getElementById('mu-liga-nueva');
+  const val=inp.value.trim();
+  if(!val) return;
+  const cont=document.getElementById('mu-ligas-list');
+  const ya=[...cont.querySelectorAll('.mu-liga-chk')].some(c=>c.value.toLowerCase()===val.toLowerCase());
+  if(ya){ toast('Esa liga ya está en la lista',true); inp.value=''; return; }
+  const label=document.createElement('label');
+  label.style.cssText='display:flex;align-items:center;gap:7px;font-size:11px;color:var(--blanco);cursor:pointer';
+  label.innerHTML=`<input type="checkbox" class="mu-liga-chk" value="${eH(val)}" style="width:auto" checked> ${eH(val)}`;
+  cont.appendChild(label);
+  inp.value='';
+}
+function _ligasSeleccionadasMu(){
+  return [...document.querySelectorAll('.mu-liga-chk:checked')].map(c=>c.value);
+}
+
 function abrirModalNuevoUsuario() {
   document.getElementById('mu-email').value = '';
   document.getElementById('mu-email').disabled = false;
@@ -5374,6 +5478,9 @@ function abrirModalNuevoUsuario() {
   document.getElementById('mu-edit-id').value = '';
   document.getElementById('mu-activo-wrap').style.display = 'none';
   document.getElementById('mu-pass-hint').textContent = '';
+  document.getElementById('mu-ver-todo').checked = true;
+  renderMuLigasCheckboxes([]);
+  toggleMuLigas();
   document.getElementById('modal-usuario-titulo').textContent = '➕ Nuevo usuario';
   document.getElementById('modal-usuario').classList.add('open');
 }
@@ -5396,6 +5503,10 @@ async function editarUsuarioAdmin(id) {
   document.getElementById('mu-edit-id').value = u.id;
   document.getElementById('mu-activo-wrap').style.display = '';
   document.getElementById('mu-pass-hint').textContent = '(dejar vacío para no cambiar)';
+  const ligas=u.ligasPermitidas||[];
+  document.getElementById('mu-ver-todo').checked = !ligas.length;
+  renderMuLigasCheckboxes(ligas);
+  toggleMuLigas();
   document.getElementById('modal-usuario-titulo').textContent = '✏️ Editar usuario';
   document.getElementById('modal-usuario').classList.add('open');
 }
@@ -5411,8 +5522,11 @@ async function guardarUsuario() {
   const pass    = document.getElementById('mu-pass').value;
   const rol     = document.getElementById('mu-rol').value;
   const activo  = document.getElementById('mu-activo').value === 'true';
+  const verTodo = document.getElementById('mu-ver-todo').checked;
+  const ligasPermitidas = verTodo ? [] : _ligasSeleccionadasMu();
 
   if (!email) { toast('El email es obligatorio', true); return; }
+  if (!verTodo && !ligasPermitidas.length) { toast('Marca al menos una liga, o activa "Ver todo"', true); return; }
 
   let hashPass = null;
   if (pass) {
@@ -5426,7 +5540,7 @@ async function guardarUsuario() {
   let resultado;
   if (editId) {
     // Editar usuario existente
-    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo } });
+    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas } });
     // Cambiar contraseña si se proporcionó
     if (resultado.ok && hashPass) {
       await _apiAdmin('cambiarPassword', { id: editId, hashPassNuevo: hashPass });
@@ -5434,7 +5548,7 @@ async function guardarUsuario() {
   } else {
     // Crear nuevo usuario
     if (!pass) { toast('La contraseña es obligatoria para nuevos usuarios', true); return; }
-    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol } });
+    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol, ligasPermitidas } });
   }
 
   if (resultado && resultado.ok) {
