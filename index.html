@@ -493,7 +493,7 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .bn{background:var(--bg);color:var(--gris);border:1px solid var(--border);}
 .bt{background:var(--bg);color:var(--gris2);border:1px solid var(--border);}
 .fhdr-r{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:4px;}
-.fesc img{width:40px;height:40px;object-fit:contain;}
+.fesc img{width:64px;height:64px;object-fit:contain;}
 .fclub{font-size:12px;font-weight:700;}
 .fliga{font-size:10px;color:var(--gris);}
 .fkpis{display:grid;grid-template-columns:repeat(7,1fr);border-bottom:1px solid var(--border);}
@@ -1268,6 +1268,15 @@ body.solo-lectura .ed-panel-form {
     <div class="psec">
       <div class="phdr" onclick="tog(this)">🖼️ Foto y Escudo <span class="arr">▾</span></div>
       <div class="pbody">
+        <div class="fg">
+          <label>🎨 Color de fondo de la foto</label>
+          <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Déjalo vacío para que coja solo el color del equipo (Club). Ponlo a mano si quieres uno distinto para este jugador.</p>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="color" id="javcolor" value="#2f81f7" oninput="document.getElementById('javcolor-hex').value=this.value;renderJ()" style="width:44px;height:34px;padding:2px;border-radius:8px;cursor:pointer">
+            <input type="text" id="javcolor-hex" placeholder="Auto (color del equipo)" oninput="document.getElementById('javcolor').value=this.value||'#2f81f7';renderJ()" style="flex:1;font-family:monospace;text-transform:uppercase">
+            <button type="button" class="btn b-ghost b-sm" onclick="document.getElementById('javcolor-hex').value='';renderJ()">↺ Auto</button>
+          </div>
+        </div>
         <label>Foto del jugador</label>
         <div class="uzone" id="uz-jfoto" onclick="document.getElementById('if-jfoto').click()">
           <input type="file" id="if-jfoto" accept="image/*" style="display:none" onchange="loadImg(event,'jfoto')">
@@ -2070,6 +2079,10 @@ function escudoDeEquipoPorNombre(nombre){
   const eq=_buscarEquipoPorNombre(nombre);
   return eq?(eq.imgEsc||null):null;
 }
+function colorDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return eq?(eq.color||null):null;
+}
 
 // ── GOLEADORES — separados por liga/grupo del club del jugador ────
 function renderGoleadoresInicio(){
@@ -2531,7 +2544,8 @@ function renderJDB(){
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;return;}
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
-    const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+    const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+    const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
     return `<div class="card"><div class="card-hdr" onclick="editJ('${j.id}')">
       ${av}<div><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>
     </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
@@ -2554,6 +2568,8 @@ function nuevoJ(){
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   document.getElementById('jdor').value='9';
+  document.getElementById('javcolor').value='#2f81f7';
+  document.getElementById('javcolor-hex').value='';
   jForma=Array(10).fill('nada');jGoles=[];jClips=[];jRadar=Array(jRadarEjes.length).fill(50);
   imgStore.jfoto=null;imgStore.jesc=null;jClipCnt=0;
   uzZone('jfoto',null);uzZone('jesc',null);
@@ -2569,6 +2585,7 @@ function editJ(id){
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
   S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
+  S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
     const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd'
     const v=j.orig?.[claveCorta]||0;
@@ -2591,6 +2608,7 @@ function guardarJ(){
   const nom=G('jnom').trim();if(!nom){toast('Añade el nombre del jugador',true);return;}
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
+    avColor:G('javcolor-hex').trim()||'',
     stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf'),pz:GN('kpz'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
@@ -2743,15 +2761,29 @@ function getYTId(url){const m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?
 function barra(l,v,mx,col){const p=mx>0?Math.min(100,v/mx*100):0;return `<div class="br"><span class="brl">${l}</span><div class="brt"><div class="brf" style="width:${p}%;background:${col}"></div></div><span class="brn">${v}</span></div>`;}
 
 function radarSVG(vals,labels,sz=185){
-  const cx=sz/2,cy=sz/2,r=sz*.37,n=vals.length;
+  // Antes las etiquetas largas ("Transición Defensiva", "Mentalidad"...)
+  // se salían del viewBox y se cortaban. Ahora dejamos un margen
+  // alrededor del gráfico y partimos en dos líneas las etiquetas de
+  // más de una palabra para que siempre quepan enteras.
+  const padX=50,padY=24;
+  const cx=sz/2+padX,cy=sz/2+padY,r=sz*.37,n=vals.length;
+  const totalW=sz+padX*2,totalH=sz+padY*2;
   const ang=i=>(i/n)*Math.PI*2-Math.PI/2;
   const pt=(i,f)=>[cx+f*r*Math.cos(ang(i)),cy+f*r*Math.sin(ang(i))];
   const rings=[.25,.5,.75,1].map(f=>`<polygon points="${Array.from({length:n},(_,i)=>pt(i,f).join(',')).join(' ')}" fill="none" stroke="#30363d" stroke-width="1"/>`).join('');
   const axes=Array.from({length:n},(_,i)=>{const[x2,y2]=pt(i,1);return `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#30363d" stroke-width="1"/>`;}).join('');
   const poly=`<polygon points="${Array.from({length:n},(_,i)=>pt(i,vals[i]/100).join(',')).join(' ')}" fill="rgba(47,129,247,.2)" stroke="#2f81f7" stroke-width="2"/>`;
   const dots=Array.from({length:n},(_,i)=>{const[x,y]=pt(i,vals[i]/100);return `<circle cx="${x}" cy="${y}" r="4" fill="#2f81f7"/>`;}).join('');
-  const lbls=labels.map((l,i)=>{const[lx,ly]=pt(i,1.22);const anch=lx<cx-5?'end':lx>cx+5?'start':'middle';return `<text x="${lx}" y="${ly+3}" fill="#8b949e" font-size="9" text-anchor="${anch}" font-family="Arial">${l}</text>`;}).join('');
-  return `<svg width="${sz}" height="${sz}" viewBox="0 0 ${sz} ${sz}">${rings}${axes}${poly}${dots}${lbls}</svg>`;
+  const lbls=labels.map((l,i)=>{
+    const[lx,ly]=pt(i,1.3);
+    const anch=lx<cx-5?'end':lx>cx+5?'start':'middle';
+    const partes=(l.includes(' ')&&l.length>9)?l.split(' '):[l];
+    if(partes.length===1){
+      return `<text x="${lx}" y="${ly+3}" fill="#8b949e" font-size="8.5" text-anchor="${anch}" font-family="Arial">${l}</text>`;
+    }
+    return `<text x="${lx}" y="${ly-1}" fill="#8b949e" font-size="8.5" text-anchor="${anch}" font-family="Arial"><tspan x="${lx}" dy="0">${partes[0]}</tspan><tspan x="${lx}" dy="10">${partes.slice(1).join(' ')}</tspan></text>`;
+  }).join('');
+  return `<svg width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="max-width:100%;height:auto">${rings}${axes}${poly}${dots}${lbls}</svg>`;
 }
 
 function renderJ(){
@@ -2768,7 +2800,8 @@ function renderJ(){
     :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Origen</th><th>Sub.</th><th>Fase</th><th>Zona</th><th>Cuerpo</th></tr></thead><tbody>
     ${jGoles.slice(0,10).map(gl=>{const isA=gl.origen==='ABP Ofensiva';const oc=OCSS[isA&&gl.subtipo?gl.subtipo:gl.origen]||'to-atq';return `<tr><td class="tmin">m.${gl.min}</td><td>${eH(gl.rival)||'—'}</td><td><span class="tbdg ${OCSS[gl.origen]||'to-atq'}">${gl.origen}</span></td><td>${isA&&gl.subtipo?`<span class="tbdg ${oc}">${gl.subtipo}</span>`:'—'}</td><td style="font-size:9px;color:var(--gris2)">${eH(gl.fase||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.zona||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.cuerpo||'—')}</td></tr>`;}).join('')}
     </tbody></table>`;
-  const avH=imgStore.jfoto?`<div class="fav"><img src="${imgStore.jfoto}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
+  const avColor=G('javcolor-hex').trim()||colorDeEquipoPorNombre(club)||'#2f81f7';
+  const avH=imgStore.jfoto?`<div class="fav"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
   const escH=imgStore.jesc?`<div class="fesc"><img src="${imgStore.jesc}"></div>`:'';
   let clipsH='';
   if(jClips.length>0){
