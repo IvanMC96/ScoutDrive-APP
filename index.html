@@ -1448,6 +1448,9 @@ body.solo-lectura .ed-panel-form {
     <button class="ed-tab" id="etab-editar" onclick="edTabSwitch('e','editar')">
       ✏️ Editar datos
     </button>
+    <button class="ed-tab" id="etab-campograma" onclick="edTabSwitch('e','campograma')">
+      🏟️ Campograma
+    </button>
     <div class="ed-tabs-right">
       <button class="btn b-ghost b-sm" onclick="xExcel()" title="Exportar Excel (resumen del equipo)">📊 Excel</button>
       <button class="btn b-ghost b-sm" id="btn-pdf-ed-e" onclick="xPDF()" title="Exportar PDF (resumen del equipo)">📄 PDF</button>
@@ -1598,6 +1601,17 @@ body.solo-lectura .ed-panel-form {
     <div id="e-ficha-container"></div>
   </div>
   </div><!-- /epanel-editar -->
+
+  <!-- ── PANEL CAMPOGRAMA ── -->
+  <div class="ed-panel ed-panel-ficha" id="epanel-campograma">
+    <div class="campo-toolbar" id="campo-toolbar">
+      <button class="btn b-ghost b-sm" id="campo-btn-editar" onclick="toggleCampogramaEdit()" style="display:none">✏️ Editar campograma</button>
+      <button class="btn b-ghost b-sm" id="campo-btn-reset" onclick="campogramaResetTodo()" style="display:none">↺ Restablecer automático</button>
+      <button class="btn b-azul b-sm" onclick="descargarCampogramaImagen()">📷 Descargar imagen</button>
+    </div>
+    <div id="campograma-container"></div>
+    <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">Los jugadores se agrupan automáticamente por posición y el sistema del equipo (pestaña "Editar datos"). Como admin puedes reasignar a cualquiera a otra línea.</p>
+  </div>
 </div><!-- /v-equipo-ed -->
 
 
@@ -3126,20 +3140,22 @@ function _comparativaEFilasBase(){
   ];
 }
 function _comparativaEFilasOfensivo(){
+  // Estos valores se guardan anidados en eq.orig (ver guardarE()), no
+  // sueltos en el propio eq — de ahí el eq.orig?.[...] en vez de eq.[...].
   return [
-    {l:'Ataque Organizado',v:eq=>eq.eoatq||0},
-    {l:'ABP Ofensiva',v:eq=>eq.eoabp||0},
-    {l:'Centro Lateral',v:eq=>eq.eocl||0},
-    {l:'Juego Directo',v:eq=>eq.eojd||0},
-    {l:'Transición Ofensiva',v:eq=>eq.eotr||0},
+    {l:'Ataque Organizado',v:eq=>eq.orig?.eoatq||0},
+    {l:'ABP Ofensiva',v:eq=>eq.orig?.eoabp||0},
+    {l:'Centro Lateral',v:eq=>eq.orig?.eocl||0},
+    {l:'Juego Directo',v:eq=>eq.orig?.eojd||0},
+    {l:'Transición Ofensiva',v:eq=>eq.orig?.eotr||0},
   ];
 }
 function _comparativaEFilasDefensivo(){
   return [
-    {l:'Ataque Org. rival',v:eq=>eq.egcatq||0},
-    {l:'ABP rival',v:eq=>eq.egcabp||0},
-    {l:'Transición rival',v:eq=>eq.egctr||0},
-    {l:'Juego Directo rival',v:eq=>eq.egcjd||0},
+    {l:'Ataque Org. rival',v:eq=>eq.orig?.egcatq||0},
+    {l:'ABP rival',v:eq=>eq.orig?.egcabp||0},
+    {l:'Transición rival',v:eq=>eq.orig?.egctr||0},
+    {l:'Juego Directo rival',v:eq=>eq.orig?.egcjd||0},
   ];
 }
 function _comparativaEEquiposSeleccionados(){
@@ -3325,7 +3341,12 @@ function guardarE(){
   eq.clips=clipsGuardar;
   eq.clipsGC=clipsGCGuardar;
   const idx2=eDB.findIndex(x=>x.id===id);
-  if(idx2>=0)eDB[idx2]=eq;else eDB.unshift(eq);
+  // Este guardado reconstruye el equipo entero desde los campos del
+  // formulario, así que cualquier dato que viva fuera de ese formulario
+  // (como las reasignaciones manuales del campograma) se perdería si no
+  // se traspasa aquí explícitamente desde el registro anterior.
+  if(idx2>=0){ if(eDB[idx2].campoOverrides) eq.campoOverrides=eDB[idx2].campoOverrides; eDB[idx2]=eq; }
+  else eDB.unshift(eq);
   saveEDB();
   if(typeof recalcularStatsDesdePartidos==='function') recalcularStatsDesdePartidos();
   toast(`✅ ${nom} guardado`);
@@ -3442,6 +3463,224 @@ function calcularPlantillaEquipo(nombreEquipo,temporada){
   });
   Object.values(grupos).forEach(lista=>lista.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
   return grupos;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// CAMPOGRAMA — plantilla completa dibujada sobre un campo, agrupada
+// por línea (Porteros/Defensas/Centrocampistas/Delanteros) según el
+// sistema táctico del equipo. Muestra TODOS los jugadores de cada
+// línea (titulares y suplentes juntos), no un once ideal de 11.
+// ══════════════════════════════════════════════════════════════════
+let _campogramaEditMode=false;
+
+/** Lee el campo "Sistema" (p.ej. "4-3-3", "4-2-3-1") y devuelve cuántos
+ *  jugadores de campo corresponden a cada línea, solo como cifra
+ *  orientativa junto al nombre de la línea — no limita cuántos jugadores
+ *  reales se muestran ahí (eso lo decide la posición de cada jugador,
+ *  o la reasignación manual del admin). Si el sistema no es un patrón
+ *  numérico reconocible (p.ej. "Otro"), devuelve null y no se muestra
+ *  ninguna cifra. */
+function _sistemaConteos(sist){
+  const partes=(sist||'').split('-').map(n=>parseInt(n,10));
+  if(!partes.length || partes.some(isNaN)) return null;
+  const df=partes[0];
+  const fw=partes[partes.length-1];
+  const mc=partes.length>2 ? partes.slice(1,-1).reduce((s,n)=>s+n,0) : 0;
+  return {df,mc,fw};
+}
+
+/** Agrupa la plantilla del equipo por línea (Porteros/Defensas/
+ *  Centrocampistas/Delanteros), partiendo del mismo agrupado automático
+ *  que ya usa la exportación de plantilla (calcularPlantillaEquipo), y
+ *  aplicando encima las reasignaciones manuales guardadas en
+ *  eq.campoOverrides (jugadorId -> nombre de línea), si las hay. */
+function _campogramaGrupos(eq){
+  const base=calcularPlantillaEquipo(eq.nom,eq.temp);
+  const overrides=eq.campoOverrides||{};
+  const grupos={};
+  POS_GRUPO_ORDEN.forEach(g=>grupos[g]=[]);
+  POS_GRUPO_ORDEN.forEach(g=>{
+    (base[g]||[]).forEach(j=>{
+      const destino=(overrides[j.id] && POS_GRUPO_ORDEN.includes(overrides[j.id])) ? overrides[j.id] : g;
+      grupos[destino].push(j);
+    });
+  });
+  Object.values(grupos).forEach(lista=>lista.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
+  return grupos;
+}
+
+/** Aclara/oscurece un color hexadecimal. amt entre -100 (negro) y 100
+ *  (blanco); se usa para generar el rayado del césped y el degradado de
+ *  la cabecera a partir del color propio del equipo, sin depender de
+ *  color-mix() ni de ninguna librería externa. */
+function _sombraHex(hex,amt){
+  hex=(hex||'#2f81f7').replace('#','');
+  if(hex.length===3) hex=hex.split('').map(c=>c+c).join('');
+  if(hex.length!==6) hex='2f81f7';
+  const num=parseInt(hex,16);
+  let r=(num>>16)&255,g=(num>>8)&255,b=num&255;
+  const t=amt<0?0:255,p=Math.min(100,Math.abs(amt))/100;
+  r=Math.round((t-r)*p)+r;g=Math.round((t-g)*p)+g;b=Math.round((t-b)*p)+b;
+  const h=v=>Math.max(0,Math.min(255,v)).toString(16).padStart(2,'0');
+  return '#'+h(r)+h(g)+h(b);
+}
+
+function _campogramaChipHTML(j,editMode){
+  const s=j.stats||{};
+  const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+  const av=j.imgJug
+    ?`<img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'">`
+    :eH(ini(j.nom,j.ape)||'?');
+  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre');
+  const selector=editMode?`
+      <select class="campo-chip-sel" onchange="campogramaMoverJugador('${j.id}',this.value)" onclick="event.stopPropagation()">
+        ${POS_GRUPO_ORDEN.map(g=>`<option value="${g}"${_campogramaGrupoActual(j)===g?' selected':''}>${g}</option>`).join('')}
+      </select>`:'';
+  return `<div class="campo-chip" title="${nomCorto} · ${eH(j.pos||'')}">
+    <div class="campo-chip-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${av}</div>
+    <div class="campo-chip-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
+    ${selector}
+  </div>`;
+}
+
+// Guardamos el último eq calculado para poder resolver el grupo actual
+// de un jugador concreto al construir el <select> del modo edición sin
+// tener que recalcular toda la plantilla otra vez por cada chip.
+let _campogramaUltimosGrupos=null;
+function _campogramaGrupoActual(j){
+  if(!_campogramaUltimosGrupos) return POS_GRUPO_MAP[j.pos]||'Centrocampistas';
+  for(const g of POS_GRUPO_ORDEN){ if(_campogramaUltimosGrupos[g].some(x=>x.id===j.id)) return g; }
+  return POS_GRUPO_MAP[j.pos]||'Centrocampistas';
+}
+
+function renderCampograma(){
+  const cont=document.getElementById('campograma-container');
+  if(!cont || !eId) return;
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq){ cont.innerHTML=''; return; }
+
+  const grupos=_campogramaGrupos(eq);
+  _campogramaUltimosGrupos=grupos;
+  const totalJug=Object.values(grupos).reduce((s,l)=>s+l.length,0);
+
+  const btnEditar=document.getElementById('campo-btn-editar');
+  const btnReset=document.getElementById('campo-btn-reset');
+  const esAdmin=esAdminActual();
+  if(btnEditar){
+    btnEditar.style.display=esAdmin?'':'none';
+    btnEditar.textContent=_campogramaEditMode?'✅ Terminar edición':'✏️ Editar campograma';
+  }
+  if(btnReset) btnReset.style.display=(esAdmin && eq.campoOverrides && Object.keys(eq.campoOverrides).length)?'':'none';
+
+  if(!totalJug){
+    cont.innerHTML=`<div class="empty" style="margin:20px 0"><div class="empty-ic">🏟️</div><div style="font-size:14px">Sin jugadores vinculados a ${eH(eq.nom||'este equipo')} en la temporada ${eH(eq.temp||'actual')}</div></div>`;
+    return;
+  }
+
+  const conteos=_sistemaConteos(eq.sist);
+  const etiqueta=(g)=>{
+    if(!conteos) return g;
+    if(g==='Defensas') return `${g} (${conteos.df})`;
+    if(g==='Centrocampistas') return `${g} (${conteos.mc})`;
+    if(g==='Delanteros') return `${g} (${conteos.fw})`;
+    return g;
+  };
+
+  const colorBase=eq.color||'#2f81f7';
+  const stripeA=_sombraHex(colorBase,14),stripeB=_sombraHex(colorBase,-4);
+  const hdrA=_sombraHex(colorBase,-58),hdrB=_sombraHex(colorBase,-30);
+  const escudo=eq.imgEsc?`<img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='🛡️'">`:'🛡️';
+
+  // Orden visual de arriba a abajo: Delanteros primero (ataque, arriba
+  // del todo) y Porteros al final (defendiendo la portería de abajo),
+  // como en un campograma de plantilla al uso.
+  const ordenVisual=[...POS_GRUPO_ORDEN].reverse();
+
+  cont.innerHTML=`
+    <div class="campo-wrap" id="campo-capture">
+      <div class="campo-hdr" style="background:linear-gradient(120deg,${hdrA},${hdrB})">
+        <div class="campo-hdr-badge">${escudo}</div>
+        <div class="campo-hdr-txt">
+          <div class="campo-hdr-nom">${eH(eq.nom||'Equipo')}</div>
+          <div class="campo-hdr-sub">PLANTILLA · TEMPORADA ${eH(eq.temp||'—')}${eq.sist?' · '+eH(eq.sist):''}</div>
+        </div>
+      </div>
+      <div class="campo-pitch" style="background:repeating-linear-gradient(180deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
+        <svg class="campo-marcas" viewBox="0 0 100 140" preserveAspectRatio="none">
+          <rect x="2" y="2" width="96" height="136" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <line x1="2" y1="71" x2="98" y2="71" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="50" cy="71" r="12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="50" cy="71" r="0.8" fill="rgba(255,255,255,.55)"/>
+          <rect x="25" y="2" width="50" height="20" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="38" y="2" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 38 22 A 12 12 0 0 0 62 22" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="25" y="118" width="50" height="20" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="38" y="130" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 38 118 A 12 12 0 0 1 62 118" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+        </svg>
+        ${ordenVisual.map(g=>`
+          <div class="campo-banda" style="border-color:${POS_GRUPO_COLOR[g]}">
+            <div class="campo-banda-lbl" style="background:${POS_GRUPO_COLOR[g]}">${eH(etiqueta(g))}</div>
+            <div class="campo-banda-jugs">
+              ${grupos[g].length?grupos[g].map(j=>_campogramaChipHTML(j,_campogramaEditMode)).join(''):'<div class="campo-banda-vacia">—</div>'}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+
+function toggleCampogramaEdit(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden editar el campograma',true); return; }
+  _campogramaEditMode=!_campogramaEditMode;
+  renderCampograma();
+}
+
+function campogramaMoverJugador(jugadorId,nuevoGrupo){
+  if(!esAdminActual() || !eId) return;
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq || !POS_GRUPO_ORDEN.includes(nuevoGrupo)) return;
+  const j=jDB.find(x=>x.id===jugadorId);
+  eq.campoOverrides=eq.campoOverrides||{};
+  // Si coincide con el grupo automático (por posición) ya no hace falta
+  // guardar una excepción — así no se acumulan overrides "vacíos".
+  const grupoAuto=POS_GRUPO_MAP[j?.pos]||'Centrocampistas';
+  if(nuevoGrupo===grupoAuto) delete eq.campoOverrides[jugadorId];
+  else eq.campoOverrides[jugadorId]=nuevoGrupo;
+  saveEDB();
+  renderCampograma();
+}
+
+function campogramaResetTodo(){
+  if(!esAdminActual() || !eId) return;
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq) return;
+  askDel('¿Quitar todas las reasignaciones manuales del campograma y volver a la agrupación automática por posición?',()=>{
+    eq.campoOverrides={};
+    saveEDB();
+    renderCampograma();
+    toast('↺ Campograma restablecido');
+  });
+}
+
+async function descargarCampogramaImagen(){
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq){ toast('Abre primero un equipo',true); return; }
+  const editabaAntes=_campogramaEditMode;
+  if(editabaAntes){ _campogramaEditMode=false; renderCampograma(); await new Promise(r=>setTimeout(r,50)); }
+  const el=document.getElementById('campo-capture');
+  if(!el){ toast('No se pudo generar la imagen',true); if(editabaAntes){_campogramaEditMode=true;renderCampograma();} return; }
+  try{
+    const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
+    const url=canvas.toDataURL('image/png');
+    const a=document.createElement('a');
+    a.href=url;a.download=`Campograma_${(eq.nom||'Equipo').replace(/\s+/g,'_')}.png`;
+    document.body.appendChild(a);a.click();a.remove();
+    toast('📷 Imagen del campograma descargada');
+  }catch(err){
+    toast('No se pudo generar la imagen',true);
+  }finally{
+    if(editabaAntes){ _campogramaEditMode=true; renderCampograma(); }
+  }
 }
 
 function renderE(){
@@ -3738,7 +3977,7 @@ function renderE(){
                 ${av}
                 <div style="min-width:0">
                   <div class="feq-plant-nom">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div>
-                  <div class="feq-plant-sub">#${eH(j.dor||'-')} · ${eH(j.pos||'—')}</div>
+                  <div class="feq-plant-sub">#${eH(String(j.dor||'-'))} · ${eH(j.pos||'—')}</div>
                 </div>
               </div>`;
             }).join('')}
@@ -5240,6 +5479,67 @@ function guardarEConFeedback(){
   .compare-bar-act{ justify-content:center; }
 }
 
+/* ── Campograma (plantilla visual sobre el campo) ─────────────────── */
+.campo-toolbar{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; padding:4px 0 18px; width:100%; }
+
+.campo-wrap{
+  width:100%; max-width:480px; margin:0 auto;
+  border-radius:14px; overflow:hidden;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+  border:1px solid var(--border2);
+}
+.campo-hdr{ display:flex; align-items:center; gap:12px; padding:16px 18px; }
+.campo-hdr-badge{
+  width:48px; height:48px; border-radius:10px; background:rgba(255,255,255,.12);
+  display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0; overflow:hidden;
+}
+.campo-hdr-badge img{ width:100%; height:100%; object-fit:contain; }
+.campo-hdr-nom{ color:#fff; font-weight:800; font-size:19px; letter-spacing:.3px; }
+.campo-hdr-sub{ color:rgba(255,255,255,.7); font-size:10.5px; font-weight:700; letter-spacing:1px; margin-top:2px; }
+
+.campo-pitch{
+  position:relative; min-height:640px;
+  display:flex; flex-direction:column; justify-content:space-between;
+  padding:18px 10px;
+}
+.campo-marcas{ position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
+
+.campo-banda{ position:relative; z-index:1; padding:6px 4px 2px; text-align:center; }
+.campo-banda-lbl{
+  display:inline-block; margin:0 auto 10px; padding:3px 12px;
+  border-radius:20px; font-size:10px; font-weight:800; letter-spacing:.5px;
+  color:#0a0d13; text-align:center;
+}
+.campo-banda-jugs{ display:flex; flex-wrap:wrap; justify-content:center; gap:16px 10px; }
+.campo-banda-vacia{ color:rgba(255,255,255,.55); font-size:11px; padding:8px 0; }
+
+.campo-chip{ display:flex; flex-direction:column; align-items:center; width:96px; }
+.campo-chip-av{
+  width:58px; height:58px; border-radius:50%; overflow:hidden; flex-shrink:0;
+  border:3px solid rgba(255,255,255,.7); box-shadow:0 3px 10px rgba(0,0,0,.35);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:800; font-size:16px;
+}
+.campo-chip-av img{ width:100%; height:100%; object-fit:cover; }
+.campo-chip-nm{
+  margin-top:-8px; background:#fff; color:#0d1117;
+  font-size:9.5px; font-weight:800; text-align:center; line-height:1.25;
+  padding:3px 7px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.3);
+  max-width:100%; overflow-wrap:break-word;
+}
+.campo-chip-sel{
+  margin-top:4px; font-size:9px; max-width:96px; padding:2px 3px;
+  border-radius:6px; border:1px solid var(--border2); background:var(--bg2); color:var(--blanco);
+}
+
+@media(max-width:680px){
+  .campo-pitch{ min-height:560px; padding:14px 6px; }
+  .campo-chip{ width:76px; }
+  .campo-chip-av{ width:48px; height:48px; font-size:13px; }
+  .campo-chip-nm{ font-size:9px; }
+  .campo-banda-jugs{ gap:14px 6px; }
+}
+
 </style>
 
 
@@ -6647,10 +6947,16 @@ function edTabSwitch(tipo, tab) {
   // Tabs
   document.getElementById(`${prefix}tab-ficha`).className  = 'ed-tab' + (tab==='ficha'  ? ' activa' : '');
   document.getElementById(`${prefix}tab-editar`).className = 'ed-tab' + (tab==='editar' ? ' activa-verde' : '');
+  // El campograma solo existe para equipos ('e'), no para jugadores — de
+  // ahí el guard con "if(elCampo)" en vez de asumir que siempre existe.
+  const tabCampo = document.getElementById(`${prefix}tab-campograma`);
+  if (tabCampo) tabCampo.className = 'ed-tab' + (tab==='campograma' ? ' activa' : '');
 
   // Paneles
   document.getElementById(`${prefix}panel-ficha`).classList.toggle('show',  tab==='ficha');
   document.getElementById(`${prefix}panel-editar`).classList.toggle('show', tab==='editar');
+  const panelCampo = document.getElementById(`${prefix}panel-campograma`);
+  if (panelCampo) panelCampo.classList.toggle('show', tab==='campograma');
 
   // Al cambiar a Ficha: primero forzar un render fresco y luego sincronizar
   if (tab === 'ficha') {
@@ -6661,6 +6967,9 @@ function edTabSwitch(tipo, tab) {
       if (typeof renderE === 'function') renderE();
       setTimeout(sincronizarFichaEFull, 80);
     }
+  }
+  if (tab === 'campograma' && tipo === 'e' && typeof renderCampograma === 'function') {
+    renderCampograma();
   }
 }
 
