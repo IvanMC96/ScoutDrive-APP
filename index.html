@@ -632,6 +632,15 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 
 /* Plantilla del equipo */
 .feq-plantilla{border-bottom:1px solid var(--border);padding-bottom:16px;}
+.feq-plant-hl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:8px 18px 4px;}
+.feq-plant-hl{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px;}
+.feq-plant-hl-tit{font-size:9px;font-weight:800;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px;}
+.feq-plant-hl-empty{font-size:10px;color:var(--gris2);}
+.feq-plant-hl-row{display:flex;align-items:center;gap:8px;}
+.feq-plant-hl-av{width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;background:var(--bg3);}
+.feq-plant-hl-av-fb{display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--gris);}
+.feq-plant-hl-nom{font-size:11px;font-weight:700;color:var(--blanco);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.feq-plant-hl-val{font-size:10px;font-weight:700;margin-top:1px;}
 .feq-plantilla-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;padding:10px 18px 0;}
 .feq-plantilla-col{background:var(--bg3);border:1px solid var(--border);border-radius:9px;padding:10px;}
 .feq-plantilla-col-tit{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;
@@ -1283,6 +1292,10 @@ body.solo-lectura .ed-panel-form {
         <div class="fg">
           <label>Porterías a cero (solo porteros)</label>
           <input class="nbig" id="kpz" type="number" value="0" oninput="renderJ()">
+        </div>
+        <div class="fg">
+          <label>Minutos jugados (total)</label>
+          <input class="nbig" id="kmj" type="number" value="0" oninput="renderJ()">
         </div>
       </div>
     </div>
@@ -2497,7 +2510,7 @@ function renderJDB(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','km','kab','kf','kpz','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','km','kab','kf','kpz','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   document.getElementById('jdor').value='9';
@@ -2515,7 +2528,7 @@ function editJ(id){
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);S('kpz',j.stats?.pz);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
     const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd'
     const v=j.orig?.[claveCorta]||0;
@@ -2537,7 +2550,7 @@ function guardarJ(){
   const nom=G('jnom').trim();if(!nom){toast('Añade el nombre del jugador',true);return;}
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf'),pz:GN('kpz')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf'),pz:GN('kpz'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
@@ -3234,11 +3247,41 @@ function renderE(){
       <div class="feq-blkt-v2" style="padding:14px 18px 6px"><span class="dot" style="background:var(--azul-cl)"></span>Plantilla · Temporada ${eH(temp)||'—'}</div>
       ${(()=>{
         const grupos=calcularPlantillaEquipo(nom,temp);
-        const totalJug=Object.values(grupos).reduce((s,l)=>s+l.length,0);
+        const todos=Object.values(grupos).flat();
+        const totalJug=todos.length;
         if(!totalJug){
           return `<div class="empty-section" style="padding:10px 18px 18px"><span>👥</span><p>Sin jugadores vinculados a este equipo en la temporada ${eH(temp)||'actual'}.<br>Ponles este mismo nombre de club y temporada en su ficha para que salgan aquí.</p></div>`;
         }
-        return `<div class="feq-plantilla-grid">${POS_GRUPO_ORDEN.map(grupo=>{
+        // ── Destacados de la plantilla (se recalculan solos cada vez) ──
+        const destacado=(tit,j,valorTxt,color,icono)=>{
+          if(!j) return `<div class="feq-plant-hl"><div class="feq-plant-hl-tit">${icono} ${tit}</div><div class="feq-plant-hl-empty">Sin datos todavía</div></div>`;
+          const av=j.imgJug?`<img src="${eH(j.imgJug)}" class="feq-plant-hl-av">`:`<div class="feq-plant-hl-av feq-plant-hl-av-fb">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+          return `<div class="feq-plant-hl">
+            <div class="feq-plant-hl-tit">${icono} ${tit}</div>
+            <div class="feq-plant-hl-row">
+              ${av}
+              <div style="min-width:0">
+                <div class="feq-plant-hl-nom">${eH((j.nom+' '+j.ape).trim())}</div>
+                <div class="feq-plant-hl-val" style="color:${color}">${valorTxt}</div>
+              </div>
+            </div>
+          </div>`;
+        };
+        const conGoles=todos.filter(j=>(j.stats?.g||0)>0);
+        const maxGoleador=conGoles.length?[...conGoles].sort((a,b)=>b.stats.g-a.stats.g)[0]:null;
+        const conAsist=todos.filter(j=>(j.stats?.a||0)>0);
+        const maxAsistente=conAsist.length?[...conAsist].sort((a,b)=>b.stats.a-a.stats.a)[0]:null;
+        const porteros=todos.filter(j=>j.pos==='Portero' && (j.stats?.pz||0)>0);
+        const mejorPortero=porteros.length?[...porteros].sort((a,b)=>b.stats.pz-a.stats.pz)[0]:null;
+        const conMinutos=todos.filter(j=>(j.stats?.min||0)>0);
+        const masMinutos=conMinutos.length?[...conMinutos].sort((a,b)=>b.stats.min-a.stats.min)[0]:null;
+        const highlightsH=`<div class="feq-plant-hl-grid">
+          ${destacado('Máximo goleador',maxGoleador,maxGoleador?`${maxGoleador.stats.g} goles`:'',  '#3fb950','⚽')}
+          ${destacado('Máximo asistente',maxAsistente,maxAsistente?`${maxAsistente.stats.a} asistencias`:'','#2f81f7','🎯')}
+          ${destacado('Portero menos batido',mejorPortero,mejorPortero?`${mejorPortero.stats.pz} porterías a cero`:'','#d29922','🧤')}
+          ${destacado('Más minutos jugados',masMinutos,masMinutos?`${masMinutos.stats.min}′ jugados`:'','#bc8cff','⏱️')}
+        </div>`;
+        const gridH=`<div class="feq-plantilla-grid">${POS_GRUPO_ORDEN.map(grupo=>{
           const lista=grupos[grupo];
           if(!lista.length) return '';
           const col=POS_GRUPO_COLOR[grupo];
@@ -3258,6 +3301,7 @@ function renderE(){
             }).join('')}
           </div>`;
         }).join('')}</div>`;
+        return highlightsH+gridH;
       })()}
     </div>
 
