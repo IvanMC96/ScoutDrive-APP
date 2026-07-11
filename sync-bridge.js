@@ -31,6 +31,20 @@
 // ════════════════════════════════════════════════════════════════
 const SCOUT_API_URL = 'https://script.google.com/macros/s/AKfycbzwDpz60sxJktRkX7GTnIuYNleZwoEV4fNQZ6O7bqRRj0Fcs2WEiIEr-5fwulUnytEF/exec';
 
+/** Convierte cualquier enlace de Drive (uc?export=view&id=..., file/d/.../view,
+ *  open?id=...) al formato que Google SÍ deja insertar de forma fiable
+ *  dentro de una etiqueta <img>. El formato "uc?export=view" que usaba
+ *  antes el backend funciona al abrirlo directamente en el navegador,
+ *  pero Google lo bloquea a menudo cuando se carga como imagen incrustada
+ *  (por eso se veía bien en el Sheet pero no dentro de la app). */
+function _driveURLViewable(url) {
+  if (!url || typeof url !== 'string') return url;
+  if (!url.includes('drive.google.com') && !url.includes('googleusercontent.com')) return url;
+  const m = url.match(/[-\w]{25,}/);
+  if (!m) return url;
+  return `https://lh3.googleusercontent.com/d/${m[0]}=s0`;
+}
+
 // Pon esto en false desde la consola si alguna vez quieres trabajar
 // offline puro sin que intente conectar (vuelve a true al recargar).
 let SCOUT_SYNC_ENABLED = true;
@@ -278,7 +292,7 @@ async function scoutSincronizarPartidoVideo(p) {
     if (resultado.resultado && resultado.resultado.thumbURL && typeof pDB !== 'undefined') {
       const idx = pDB.findIndex(x => x.id === p.id);
       if (idx >= 0 && resultado.resultado.thumbURL) {
-        pDB[idx].thumb = resultado.resultado.thumbURL;
+        pDB[idx].thumb = _driveURLViewable(resultado.resultado.thumbURL);
         if (typeof savePDB === 'function') savePDB();
       }
     }
@@ -306,7 +320,7 @@ async function scoutSincronizarAnuncio(a) {
     _scoutToast('☁️ Anuncio sincronizado con Google Sheets');
     if (resultado.resultado && resultado.resultado.imgURL && typeof adsDB !== 'undefined') {
       const idx = adsDB.findIndex(x => x.id === a.id);
-      if (idx >= 0) { adsDB[idx].img = resultado.resultado.imgURL; if (typeof saveAds === 'function') saveAds(); }
+      if (idx >= 0) { adsDB[idx].img = _driveURLViewable(resultado.resultado.imgURL); if (typeof saveAds === 'function') saveAds(); }
     }
   } else {
     const detalle = resultado.motivo || resultado.error || 'error desconocido';
@@ -373,7 +387,7 @@ async function scoutForzarResubidaTotal() {
       const resultado = await scoutApiPost('guardarPartidoVideo', p);
       if (resultado.ok) {
         hechos++;
-        if (resultado.resultado && resultado.resultado.thumbURL) p.thumb = resultado.resultado.thumbURL;
+        if (resultado.resultado && resultado.resultado.thumbURL) p.thumb = _driveURLViewable(resultado.resultado.thumbURL);
       } else {
         fallos++;
         const detalle = resultado.motivo || resultado.error || 'error desconocido';
@@ -389,7 +403,7 @@ async function scoutForzarResubidaTotal() {
       const resultado = await scoutApiPost('guardarAnuncio', a);
       if (resultado.ok) {
         hechos++;
-        if (resultado.resultado && resultado.resultado.imgURL) a.img = resultado.resultado.imgURL;
+        if (resultado.resultado && resultado.resultado.imgURL) a.img = _driveURLViewable(resultado.resultado.imgURL);
       } else {
         fallos++;
         const detalle = resultado.motivo || resultado.error || 'error desconocido';
@@ -424,10 +438,10 @@ function _scoutActualizarURLsImagen(arrayName, id, resultadoBackend) {
   if (!registro) return;
   let cambiado = false;
   if (resultadoBackend.fotoURL && registro.imgJug && registro.imgJug.startsWith('data:')) {
-    registro.imgJug = resultadoBackend.fotoURL; cambiado = true;
+    registro.imgJug = _driveURLViewable(resultadoBackend.fotoURL); cambiado = true;
   }
   if (resultadoBackend.escudoURL && registro.imgEsc && registro.imgEsc.startsWith('data:')) {
-    registro.imgEsc = resultadoBackend.escudoURL; cambiado = true;
+    registro.imgEsc = _driveURLViewable(resultadoBackend.escudoURL); cambiado = true;
   }
   if (cambiado) {
     if (arrayName === 'jDB' && typeof saveJDB === 'function') saveJDB();
@@ -564,15 +578,23 @@ function _normalizarRegistro(r) {
   if (r.jsonCompleto) {
     try {
       const obj = JSON.parse(r.jsonCompleto);
-      // IMPORTANTE: aunque jsonCompleto traiga imgJug/imgEsc, preferimos
-      // siempre la URL de Drive de las columnas planas (fotoURL/escudoURL)
-      // si existe. Las celdas de Google Sheets tienen un límite de 50.000
-      // caracteres; si la foto era grande en base64, jsonCompleto pudo
-      // guardarse truncado/corrupto y dejar la imagen rota, aunque el
-      // resto de la ficha esté perfectamente bien. La URL de Drive no
+      // IMPORTANTE: aunque jsonCompleto traiga imgJug/imgEsc/thumb/img,
+      // preferimos siempre la URL de Drive de las columnas planas
+      // (fotoURL/escudoURL/thumbURL/imgURL) si existe. Las celdas de
+      // Google Sheets tienen un límite de 50.000 caracteres; si la foto
+      // era grande en base64, jsonCompleto pudo guardarse truncado, aunque
+      // el resto de la ficha esté perfectamente bien. La URL de Drive no
       // tiene ese problema porque es un texto corto.
-      if (r.fotoURL)   obj.imgJug = r.fotoURL;
-      if (r.escudoURL) obj.imgEsc = r.escudoURL;
+      if (r.fotoURL)   obj.imgJug = _driveURLViewable(r.fotoURL);
+      if (r.escudoURL) obj.imgEsc = _driveURLViewable(r.escudoURL);
+      if (r.thumbURL)  obj.thumb  = _driveURLViewable(r.thumbURL);
+      if (r.imgURL)    obj.img    = _driveURLViewable(r.imgURL);
+      // Por si el jsonCompleto trae directamente una URL de Drive (sin
+      // columna plana), la arreglamos también aquí.
+      if (obj.imgJug) obj.imgJug = _driveURLViewable(obj.imgJug);
+      if (obj.imgEsc) obj.imgEsc = _driveURLViewable(obj.imgEsc);
+      if (obj.thumb)  obj.thumb  = _driveURLViewable(obj.thumb);
+      if (obj.img)    obj.img    = _driveURLViewable(obj.img);
       // El jsonCompleto ya tiene la estructura correcta (nom, ape, etc.)
       return { ...obj, _sincronizado: true };
     } catch(e) {}
@@ -589,8 +611,8 @@ function _normalizarRegistro(r) {
   if (r.temporada !== undefined && r.temp === undefined) normalizado.temp = r.temporada;
   if (r.nacionalidad !== undefined && r.nac === undefined) normalizado.nac = r.nacionalidad;
   if (r.notaTecnica !== undefined && r.nota === undefined) normalizado.nota = r.notaTecnica;
-  if (r.fotoURL !== undefined && !normalizado.imgJug) normalizado.imgJug = r.fotoURL;
-  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = r.escudoURL;
+  if (r.fotoURL !== undefined && !normalizado.imgJug) normalizado.imgJug = _driveURLViewable(r.fotoURL);
+  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = _driveURLViewable(r.escudoURL);
 
   // Equipo: columnas del Sheet → campos de la app
   if (r.nombre !== undefined && r.nom === undefined) normalizado.nom = r.nombre;
@@ -598,7 +620,11 @@ function _normalizarRegistro(r) {
   if (r.entrenador !== undefined && r.ent === undefined) normalizado.ent = r.entrenador;
   if (r.sistema !== undefined && r.sist === undefined) normalizado.sist = r.sistema;
   if (r.notaTactica !== undefined && r.nota === undefined) normalizado.nota = r.notaTactica;
-  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = r.escudoURL;
+  if (r.escudoURL !== undefined && !normalizado.imgEsc) normalizado.imgEsc = _driveURLViewable(r.escudoURL);
+
+  // PartidoVideo / Anuncio: columnas planas → campos de la app
+  if (r.thumbURL !== undefined && !normalizado.thumb) normalizado.thumb = _driveURLViewable(r.thumbURL);
+  if (r.imgURL !== undefined && !normalizado.img) normalizado.img = _driveURLViewable(r.imgURL);
 
   // Stats del equipo
   if (!normalizado.stats && (r.pj !== undefined)) {
