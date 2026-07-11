@@ -1428,6 +1428,15 @@ body.solo-lectura .ed-panel-form {
   <div class="cards-grid" id="e-grid"></div>
 </div>
 
+<div class="compare-bar" id="compare-bar-eq" style="display:none">
+  <span id="compare-bar-eq-count">0 equipos seleccionados</span>
+  <div class="compare-bar-act">
+    <button class="btn b-ghost b-sm" onclick="limpiarSeleccionCompararE()">✕ Cancelar</button>
+    <button class="btn b-ghost b-sm" data-compare-eq-btn disabled onclick="xComparativaEExcel()">📊 Excel</button>
+    <button class="btn b-azul b-sm" data-compare-eq-btn disabled onclick="xComparativaEPDF()">📄 PDF comparativa</button>
+  </div>
+</div>
+
 <!-- ══ EDITOR EQUIPO ══════════════════════════════════════════════ -->
 <div class="vista ed-layout" id="v-equipo-ed">
 
@@ -2442,6 +2451,12 @@ function navTo(sec,_esVolver){
   else if(sec==='equipos-db'){btnNuevo.textContent='+ Nuevo equipo';btnNuevo.onclick=nuevoE;btnNuevo.style.display='';}
   else{btnNuevo.style.display='none';}
 
+  // currentSection se actualiza ANTES de los render — así, cuando
+  // renderJDB()/renderEDB() llaman a actualizarBarraComparar[E](), esas
+  // funciones ya ven la sección nueva (no la anterior) al decidir si
+  // mostrar su barra flotante de comparación.
+  currentSection=sec;
+
   if(sec==='inicio') renderInicio();
   if(sec==='jugadores-db') renderJDB();
   if(sec==='equipos-db') renderEDB();
@@ -2449,7 +2464,12 @@ function navTo(sec,_esVolver){
   if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
   if(sec==='goles'){ loadPDB(); setTimeout(initGolesView, 50); }
   if(sec==='admin') cargarUsuariosAdmin();
-  currentSection=sec;
+  // Las barras de comparar (jugadores/equipos) viven fuera de sus vistas
+  // para poder quedar fijas abajo del todo — si se navega a una sección
+  // que no sea la suya hay que ocultarlas explícitamente, no solo
+  // cuando se vuelve a pintar su propia lista.
+  actualizarBarraComparar();
+  actualizarBarraCompararE();
   actualizarBotonAtras();
   // El ancho real de las pestañas (y si sobra alguna fuera de pantalla)
   // solo se puede medir una vez que el navegador ha pintado el cambio.
@@ -2603,7 +2623,11 @@ function limpiarSeleccionComparar(){
 function actualizarBarraComparar(){
   const bar=document.getElementById('compare-bar');
   if(!bar) return;
-  const n=jComparar.size;
+  // La barra vive fuera de #v-jugadores-db (para poder quedar fija en la
+  // parte inferior de la pantalla), así que si no se comprobara la
+  // sección activa se quedaría visible al navegar a otra pestaña con
+  // jugadores aún seleccionados.
+  const n=currentSection==='jugadores-db'?jComparar.size:0;
   bar.style.display = n>0 ? 'flex' : 'none';
   const txt=document.getElementById('compare-bar-count');
   if(txt) txt.textContent = n===1 ? '1 jugador seleccionado (elige al menos 2 para comparar)' : `${n} jugadores seleccionados`;
@@ -3025,18 +3049,24 @@ function renderEDB(){
   document.getElementById('est-n').textContent=eDBVisible.length;
   document.getElementById('est-gf').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gf||0),0);
   document.getElementById('est-gc').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gc||0),0);
+  const idsVisiblesE=new Set(eDBVisible.map(e=>e.id));
+  [...eComparar].forEach(id=>{ if(!idsVisiblesE.has(id)) eComparar.delete(id); });
   const q=(G('edb-q')||'').toLowerCase(),filtro=G('edb-filtro')||'';
   let lst=filtro?eDBVisible.filter(e=>e.tipo===filtro):eDBVisible;
   if(q)lst=lst.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q));
   const grid=document.getElementById('e-grid');
-  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;return;}
+  if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;actualizarBarraCompararE();return;}
   grid.innerHTML=lst.map(eq=>{
     const s=eq.stats||{};
     const typeClr=eq.tipo==='propio'?'var(--azul-dk)':'#7d1717';
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
     const eqColor=eq.color||'#30363d';
     const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
-    return `<div class="card" style="border-left:4px solid ${eqColor}"><div class="card-hdr" onclick="editE('${eq.id}')">
+    return `<div class="card" style="border-left:4px solid ${eqColor}">
+      <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
+        <input type="checkbox" ${eComparar.has(eq.id)?'checked':''} onchange="toggleCompararE('${eq.id}',this.checked)">
+      </label>
+      <div class="card-hdr" onclick="editE('${eq.id}')">
       ${av}<div><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>
     </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
@@ -3049,6 +3079,179 @@ function renderEDB(){
       ${esAdminActual()?`<button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" onclick="borrarEquipo(this)">🗑</button>`:''}
     </div></div>`;
   }).join('');
+  actualizarBarraCompararE();
+}
+
+// ── Comparar varios equipos ──────────────────────────────────────────
+let eComparar=new Set();
+function toggleCompararE(id,checked){
+  if(checked) eComparar.add(id); else eComparar.delete(id);
+  actualizarBarraCompararE();
+}
+function limpiarSeleccionCompararE(){
+  eComparar.clear();
+  renderEDB();
+}
+function actualizarBarraCompararE(){
+  const bar=document.getElementById('compare-bar-eq');
+  if(!bar) return;
+  // Misma razón que en actualizarBarraComparar(): esta barra tampoco
+  // está anidada dentro de #v-equipos-db, así que hay que comprobar la
+  // sección activa para que no se quede visible al cambiar de pestaña.
+  const n=currentSection==='equipos-db'?eComparar.size:0;
+  bar.style.display = n>0 ? 'flex' : 'none';
+  const txt=document.getElementById('compare-bar-eq-count');
+  if(txt) txt.textContent = n===1 ? '1 equipo seleccionado (elige al menos 2 para comparar)' : `${n} equipos seleccionados`;
+  const btns=bar.querySelectorAll('[data-compare-eq-btn]');
+  btns.forEach(b=>b.disabled = n<2);
+}
+
+// Filas compartidas por los dos exportadores de comparativa de equipos.
+function _comparativaEFilasBase(){
+  return [
+    {l:'Tipo',v:eq=>eq.tipo==='propio'?'Propio':'Rival'},
+    {l:'Liga',v:eq=>eq.liga||'—'},
+    {l:'Sistema',v:eq=>eq.sist||'—'},
+    {l:'Temporada',v:eq=>eq.temp||'—'},
+    {l:'Entrenador',v:eq=>eq.ent||'—'},
+    {l:'Partidos (PJ)',v:eq=>eq.stats?.pj||0},
+    {l:'Victorias',v:eq=>eq.stats?.v||0},
+    {l:'Empates',v:eq=>eq.stats?.e||0},
+    {l:'Derrotas',v:eq=>eq.stats?.d||0},
+    {l:'Goles a favor',v:eq=>eq.stats?.gf||0},
+    {l:'Goles en contra',v:eq=>eq.stats?.gc||0},
+    {l:'Diferencia de goles',v:eq=>(eq.stats?.gf||0)-(eq.stats?.gc||0)},
+    {l:'Puntos',v:eq=>(eq.stats?.v||0)*3+(eq.stats?.e||0)},
+    {l:'Notas tácticas',v:eq=>eq.nota||'—'},
+  ];
+}
+function _comparativaEFilasOfensivo(){
+  return [
+    {l:'Ataque Organizado',v:eq=>eq.eoatq||0},
+    {l:'ABP Ofensiva',v:eq=>eq.eoabp||0},
+    {l:'Centro Lateral',v:eq=>eq.eocl||0},
+    {l:'Juego Directo',v:eq=>eq.eojd||0},
+    {l:'Transición Ofensiva',v:eq=>eq.eotr||0},
+  ];
+}
+function _comparativaEFilasDefensivo(){
+  return [
+    {l:'Ataque Org. rival',v:eq=>eq.egcatq||0},
+    {l:'ABP rival',v:eq=>eq.egcabp||0},
+    {l:'Transición rival',v:eq=>eq.egctr||0},
+    {l:'Juego Directo rival',v:eq=>eq.egcjd||0},
+  ];
+}
+function _comparativaEEquiposSeleccionados(){
+  return [...eComparar].map(id=>eDB.find(x=>x.id===id)).filter(Boolean);
+}
+
+function xComparativaEExcel(){
+  const equipos=_comparativaEEquiposSeleccionados();
+  if(equipos.length<2){toast('Selecciona al menos 2 equipos para comparar',true);return;}
+  const WB=XLSX.utils.book_new();
+  const rows=[
+    ['COMPARATIVA DE EQUIPOS'],
+    ['Exportado',new Date().toLocaleDateString('es-ES')],[],
+    ['Estadística',...equipos.map(eq=>eq.nom||'Sin nombre')],
+  ];
+  _comparativaEFilasBase().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
+  rows.push([]);
+  rows.push(['PERFIL OFENSIVO · ORIGEN DE GOLES (0-40)']);
+  _comparativaEFilasOfensivo().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
+  rows.push([]);
+  rows.push(['PERFIL DEFENSIVO · ORIGEN DE GOLES RECIBIDOS (0-40)']);
+  _comparativaEFilasDefensivo().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:26},...equipos.map(()=>({wch:18}))];
+  XLSX.utils.book_append_sheet(WB,ws,'Comparativa');
+  XLSX.writeFile(WB,`Scout_Comparativa_Equipos_${equipos.length}eq_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('📊 Excel comparativa de equipos exportado');
+}
+
+function xComparativaEPDF(){
+  const equipos=_comparativaEEquiposSeleccionados();
+  if(equipos.length<2){toast('Selecciona al menos 2 equipos para comparar',true);return;}
+
+  const{jsPDF}=window.jspdf;
+  const doc=new jsPDF({orientation:'l',unit:'mm',format:'a4'});
+  const W=297,H=210,x0=12;
+  const fondo=()=>{doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');};
+
+  const filas=_comparativaEFilasBase();
+  const filasOf=_comparativaEFilasOfensivo();
+  const filasDef=_comparativaEFilasDefensivo();
+
+  // Con muchos equipos seleccionados no caben todas las columnas en una
+  // sola página legible — los repartimos en grupos de hasta 6 por página.
+  const MAX_COLS_PAGINA=6;
+  const bloquesEq=[];
+  for(let i=0;i<equipos.length;i+=MAX_COLS_PAGINA) bloquesEq.push(equipos.slice(i,i+MAX_COLS_PAGINA));
+
+  const labelW=52;
+  let pagCreada=false;
+
+  bloquesEq.forEach((grupo,gi)=>{
+    const colW=(W-2*x0-labelW)/grupo.length;
+    let y;
+
+    // Con muchas filas (14 base + 5 ofensivas + 4 defensivas = 23) el
+    // grupo puede no caber en una sola página vertical — esta función
+    // abre página nueva y repinta cabecera + nombres de columna cada vez
+    // que hace falta, igual que hace cabeceraGrupo() en el PDF de
+    // plantilla de equipo.
+    function nuevaPagina(continua){
+      if(pagCreada) doc.addPage();
+      pagCreada=true;
+      fondo();
+      doc.setFillColor(15,23,42);doc.rect(0,0,W,24,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(230,237,243);
+      doc.text('COMPARATIVA DE EQUIPOS'+(continua?' (cont.)':''),x0,14);
+      doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
+      const rangoTxt=bloquesEq.length>1?`  ·  Grupo ${gi+1}/${bloquesEq.length}`:'';
+      doc.text(`${grupo.length} de ${equipos.length} equipos comparados${rangoTxt}`,x0,20.5);
+
+      y=34;
+      doc.setFillColor(33,38,45);doc.rect(x0,y-4.5,W-2*x0,7.5,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
+      doc.text('Estadística',x0+2,y);
+      grupo.forEach((eq,ci)=>{
+        const nom=(eq.nom||'Sin nombre').slice(0,20);
+        doc.text(nom,x0+labelW+ci*colW+2,y);
+      });
+      y+=8.5;
+    }
+    nuevaPagina(false);
+
+    function pintarFila(f){
+      if(y>H-14) nuevaPagina(true);
+      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
+      doc.text(String(f.l),x0+2,y);
+      grupo.forEach((eq,ci)=>{
+        doc.text(String(f.v(eq)),x0+labelW+ci*colW+2,y);
+      });
+      doc.setDrawColor(48,54,61);doc.line(x0,y+2,W-x0,y+2);
+      y+=6.5;
+    }
+    function pintarSeccion(titulo,filasLista){
+      if(y>H-24) nuevaPagina(true);
+      y+=4;
+      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(139,148,158);
+      doc.text(titulo,x0,y);
+      y+=7;
+      filasLista.forEach(pintarFila);
+    }
+
+    filas.forEach(pintarFila);
+    pintarSeccion('PERFIL OFENSIVO (0-40)',filasOf);
+    pintarSeccion('PERFIL DEFENSIVO (0-40)',filasDef);
+
+    doc.setFontSize(7);doc.setTextColor(72,79,88);
+    doc.text(`${cfg.nombre||'Scoutdrive'} · ${new Date().toLocaleDateString('es-ES')}`,x0,H-6);
+  });
+
+  doc.save(`${cfg.nombre||'Scout'}_Comparativa_Equipos_${equipos.length}eq.pdf`);
+  toast('📄 PDF comparativa de equipos exportado');
 }
 
 function nuevoE(){
