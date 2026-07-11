@@ -1136,7 +1136,11 @@ body.solo-lectura .ed-panel-form {
   <div class="video-modal-box">
     <div class="video-modal-hdr">
       <span id="video-modal-titulo">Clip</span>
-      <button class="video-modal-close" onclick="cerrarVideoModal()">✕</button>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="video-modal-close" id="video-modal-fullscreen" onclick="_pantallaCompletaVideoModal()" title="Pantalla completa (recomendado en móvil)">⛶</button>
+        <button class="video-modal-close" id="video-modal-externo" onclick="_abrirVideoExterno()" title="Abrir en Google Drive / YouTube" style="display:none">↗</button>
+        <button class="video-modal-close" onclick="cerrarVideoModal()">✕</button>
+      </div>
     </div>
     <div class="video-modal-player" id="video-modal-player"></div>
   </div>
@@ -2436,6 +2440,9 @@ function navTo(sec,_esVolver){
   if(sec==='admin') cargarUsuariosAdmin();
   currentSection=sec;
   actualizarBotonAtras();
+  // El ancho real de las pestañas (y si sobra alguna fuera de pantalla)
+  // solo se puede medir una vez que el navegador ha pintado el cambio.
+  if (typeof _actualizarFadesTabs === 'function') requestAnimationFrame(_actualizarFadesTabs);
 }
 
 function volverDB(){
@@ -3974,12 +3981,58 @@ window.addEventListener('resize',()=>{
   if(modal && modal.classList.contains('open')) _ajustarAlturaVideoModal();
 });
 
+/** Google Drive (y YouTube) sirven su reproductor embebido en un <iframe>
+ *  cuyo contenido no controlamos: cuando ese iframe es estrecho (el caso
+ *  típico de un móvil en vertical), Drive/YouTube muestran su propia
+ *  versión "compacta" del reproductor, que se ve peor que en tablet/PC
+ *  donde el iframe es mucho más ancho. No podemos re-estilar ese
+ *  contenido (es de otro dominio), así que la solución es ofrecer un
+ *  botón de pantalla completa: al pedir fullscreen sobre el propio
+ *  iframe, su tamaño real pasa a ser el de toda la pantalla del móvil,
+ *  con lo que Drive/YouTube ya no activan su modo compacto.
+ *  Guardamos también un enlace "de escape" por si el navegador no
+ *  soporta pantalla completa en iframes (algunos WebView de Android e
+ *  iOS Safari son más restrictivos).  */
+let _videoModalUrlExterno = null;
+
+function _setVideoModalExterno(url){
+  const btn = document.getElementById('video-modal-externo');
+  _videoModalUrlExterno = url || null;
+  if (btn) btn.style.display = url ? '' : 'none';
+}
+
+function _pantallaCompletaVideoModal(){
+  const player = document.getElementById('video-modal-player');
+  const el = player && (player.querySelector('iframe,video') || player);
+  if (!el) return;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.webkitEnterFullscreen || el.mozRequestFullScreen;
+  if (req) {
+    Promise.resolve(req.call(el)).catch(() => {
+      // Si el navegador rechaza pantalla completa (frecuente en Safari/iOS
+      // para iframes de otros dominios), ofrecemos el enlace externo.
+      if (_videoModalUrlExterno) _abrirVideoExterno();
+    });
+  } else if (_videoModalUrlExterno) {
+    _abrirVideoExterno();
+  }
+}
+
+function _abrirVideoExterno(){
+  if (_videoModalUrlExterno) window.open(_videoModalUrlExterno, '_blank', 'noopener');
+}
+
 function abrirVideoModal(cl){
+  // Si había otro vídeo en pantalla completa, salimos primero — si no,
+  // al reemplazar el contenido del reproductor con el nuevo vídeo, el
+  // navegador puede lanzar un error interno al intentar restaurar un
+  // elemento que ya no está en el DOM.
+  if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); }
   const player = document.getElementById('video-modal-player');
   const titulo = document.getElementById('video-modal-titulo');
   titulo.textContent = cl.titulo || 'Clip sin título';
 
   let html = '';
+  _setVideoModalExterno(null);
   if (cl.blobURL && cl.srcType === 'blob') {
     html = `<video controls autoplay preload="metadata"><source src="${cl.blobURL}"></video>`;
   } else if (cl.srcType === 'youtube' && cl.src) {
@@ -3987,8 +4040,10 @@ function abrirVideoModal(cl){
     html = yid
       ? `<iframe src="https://www.youtube.com/embed/${yid}?rel=0&autoplay=1" allowfullscreen allow="autoplay;encrypted-media"></iframe>`
       : '';
+    if (yid) _setVideoModalExterno(`https://www.youtube.com/watch?v=${yid}`);
   } else if (cl.srcType === 'gdrive' && cl.src) {
     html = `<iframe src="${cl.src}" allow="autoplay" allowfullscreen></iframe>`;
+    _setVideoModalExterno(cl.src.replace(/\/preview(\?.*)?$/, '/view'));
   } else if (cl.srcType === 'direct' && cl.src) {
     html = `<video controls autoplay preload="metadata"><source src="${cl.src}"></video>`;
   } else if (cl.srcType === 'blob_local') {
@@ -4018,6 +4073,10 @@ function cerrarVideoModal(){
   modal.classList.remove('open');
   // Detener cualquier reproducción (vídeo o iframe de YouTube) al cerrar
   player.innerHTML = '';
+  _setVideoModalExterno(null);
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+  }
 }
 
 // Cerrar con tecla Escape
@@ -4631,6 +4690,57 @@ function guardarEConFeedback(){
   background:var(--bg3);color:var(--gris);border:1px solid var(--border);
   border-radius:7px;padding:10px 18px;font-size:12px;cursor:pointer;}
 
+/* ══ ARREGLOS RESPONSIVE MÓVIL (van al final a propósito: hay reglas
+   duplicadas más arriba en el archivo de cuando se rediseñaron Partidos/
+   Goles, y en CSS con la misma especificidad gana la que aparece última
+   en el documento — así nos aseguramos de que estas reglas manden). ══ */
+
+/* .partidos-stats se usa en Partidos Y en Goles (comparten clases). Sin
+   wrap, en pantallas estrechas las tarjetas de estadísticas se salían
+   del viewport en vez de bajar de línea. */
+.partidos-stats{ flex-wrap:wrap; }
+
+/* Las subpestañas de la ficha de jugador/equipo (Ficha/Editar/Excel/PDF)
+   viven dentro de un contenedor con overflow:hidden y no tenían scroll
+   propio: en móvil, el botón "PDF" quedaba recortado y era imposible de
+   pulsar. Con overflow-x:auto al menos se puede deslizar hasta él. */
+.ed-tabs{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+@media(max-width:680px){
+  .partidos-header{ flex-direction:column; align-items:stretch; }
+  .partidos-stats{ width:100%; }
+  .pstat{ flex:1; }
+  /* En vez de obligar a deslizar el bloque de filtros para ver todos los
+     campos (búsqueda + selects + botón), los apilamos — así se ve todo
+     sin necesidad de descubrir que hay scroll horizontal. */
+  .partidos-filters{ flex-wrap:wrap; overflow-x:visible; }
+  .partidos-filters input,.partidos-filters select{ flex:1 1 auto; min-width:0; }
+  .partidos-filters .btn-add-partido{ width:100%; }
+
+  /* Pista visual de que el menú principal y las subpestañas se pueden
+     deslizar: un degradado pegado al borde derecho, que solo se muestra
+     (vía JS, clase .scroll-r) mientras quede contenido sin ver a la
+     derecha — ver _actualizarFadesTabs() más abajo. */
+  .nav-tabs,.ed-tabs{ position:relative; }
+  .nav-tabs::after,.ed-tabs::after{
+    content:''; display:none;
+    position:absolute; top:0; bottom:0; right:0; width:22px;
+    background:linear-gradient(to right, transparent, var(--bg3) 65%);
+    pointer-events:none;
+  }
+  .ed-tabs::after{ background:linear-gradient(to right, transparent, var(--bg2) 65%); }
+  .nav-tabs.scroll-r::after,.ed-tabs.scroll-r::after{ display:block; }
+
+  /* El aviso "Sin conexión con Google Sheets" (y otros toasts) tapaba
+     botones de guardar/subir al aparecer pegado abajo del todo. En móvil
+     lo subimos justo debajo de la cabecera en vez de sobre el contenido. */
+  .toast{
+    bottom:auto; top:104px; left:12px; right:12px;
+    transform:translateY(-16px);
+  }
+  .toast.show{ transform:translateY(0); }
+}
+
 </style>
 
 
@@ -4994,13 +5104,22 @@ function _actualizarFiltrosPartidos(){
 }
 
 function verPartido(id){
+  if (document.fullscreenElement) { document.exitFullscreen?.().catch(() => {}); }
   const p = pDB.find(x=>x.id===id);
   if(!p) return;
   if(!p.urlNorm){ editarPartido(id); return; }
   const tipo = _tipoVideo(p.urlNorm);
   let playerH = '';
+  _setVideoModalExterno(null);
   if(tipo==='youtube'||tipo==='drive'){
     playerH=`<iframe src="${p.urlNorm}" allowfullscreen allow="autoplay;encrypted-media" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
+    // Enlace de escape: Drive/YouTube muestran su reproductor embebido en
+    // modo "compacto" cuando el iframe es estrecho (típico en móvil
+    // vertical) — el botón de pantalla completa del modal palía esto, y
+    // este enlace es el último recurso si el navegador bloquea el
+    // fullscreen sobre el iframe.
+    if(tipo==='drive') _setVideoModalExterno(p.urlNorm.replace(/\/preview(\?.*)?$/, '/view'));
+    else { const yid=(p.urlNorm.match(/embed\/([a-zA-Z0-9_-]{11})/)||[])[1]; if(yid) _setVideoModalExterno(`https://www.youtube.com/watch?v=${yid}`); }
   } else {
     playerH=`<video controls autoplay preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
   }
@@ -5673,7 +5792,33 @@ function actualizarPanelAdmin() {
       (currentSection === 'config' || currentSection === 'admin')) {
     navTo('jugadores-db');
   }
+
+  // La pestaña Admin/Config puede aparecer u ocultarse aquí, lo que
+  // cambia si el menú principal tiene o no contenido oculto por scroll.
+  _actualizarFadesTabs();
 }
+
+/** Pinta (o quita) el degradado de "hay más pestañas a la derecha" en el
+ *  menú principal y en las subpestañas de ficha/editor, comparando cuánto
+ *  se puede seguir deslizando cada barra. Se llama al cargar, al cambiar
+ *  de tamaño de ventana y cada vez que el usuario desliza una de esas
+ *  barras (el listener de scroll va en el document con "capture" porque
+ *  el evento scroll no hace bubbling en elementos que no sean window). */
+function _actualizarFadesTabs(){
+  document.querySelectorAll('.nav-tabs, .ed-tabs').forEach(el=>{
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const quedaPorVer = maxScroll > 4 && el.scrollLeft < maxScroll - 4;
+    el.classList.toggle('scroll-r', quedaPorVer);
+  });
+}
+window.addEventListener('load', _actualizarFadesTabs);
+window.addEventListener('resize', _actualizarFadesTabs);
+document.addEventListener('scroll', (e)=>{
+  const t = e.target;
+  if (t && t.classList && (t.classList.contains('nav-tabs') || t.classList.contains('ed-tabs'))) {
+    _actualizarFadesTabs();
+  }
+}, true);
 
 /** Devuelve true si el usuario actual es admin */
 function esAdminActual() {
