@@ -3044,13 +3044,23 @@ function _cmpRadarMultiSVG(series,labels,sz=220,maxVal=100){
   const pt=(i,f)=>[cx+f*r*Math.cos(ang(i)),cy+f*r*Math.sin(ang(i))];
   const rings=[.25,.5,.75,1].map(f=>`<polygon points="${Array.from({length:n},(_,i)=>pt(i,f).join(',')).join(' ')}" fill="none" stroke="#30363d" stroke-width="1"/>`).join('');
   const axes=Array.from({length:n},(_,i)=>{const[x2,y2]=pt(i,1);return `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#30363d" stroke-width="1"/>`;}).join('');
-  const polys=series.map(s=>{
+  // Los polígonos se pintan TODOS primero y los puntos identificativos
+  // DESPUÉS (en una segunda pasada) — así, si una serie con valores más
+  // pequeños queda completamente dentro del área de otra serie mayor
+  // (p.ej. un equipo con un estilo de juego menos marcado comparado con
+  // otro), sus puntos siguen visibles por encima en vez de quedar
+  // tapados por el relleno de la serie más grande, que se dibuja después.
+  const rellenos=series.map(s=>{
     const vals=s.vals||[];
     const f=i=>Math.max(0,Math.min(1,(vals[i]||0)/maxVal));
-    const poly=`<polygon points="${Array.from({length:n},(_,i)=>pt(i,f(i)).join(',')).join(' ')}" fill="${s.color}33" stroke="${s.color}" stroke-width="2"/>`;
-    const dots=Array.from({length:n},(_,i)=>{const[x,y]=pt(i,f(i));return `<circle cx="${x}" cy="${y}" r="3.2" fill="${s.color}"/>`;}).join('');
-    return poly+dots;
+    return `<polygon points="${Array.from({length:n},(_,i)=>pt(i,f(i)).join(',')).join(' ')}" fill="${s.color}33" stroke="${s.color}" stroke-width="2"/>`;
   }).join('');
+  const puntos=series.map(s=>{
+    const vals=s.vals||[];
+    const f=i=>Math.max(0,Math.min(1,(vals[i]||0)/maxVal));
+    return Array.from({length:n},(_,i)=>{const[x,y]=pt(i,f(i));return `<circle cx="${x}" cy="${y}" r="3.2" fill="${s.color}" stroke="#0a0d13" stroke-width="1"/>`;}).join('');
+  }).join('');
+  const polys=rellenos+puntos;
   const lbls=labels.map((l,i)=>{
     const[lx,ly]=pt(i,1.32);
     const anch=lx<cx-5?'end':lx>cx+5?'start':'middle';
