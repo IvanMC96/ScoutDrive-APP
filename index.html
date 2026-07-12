@@ -1258,7 +1258,7 @@ body.solo-lectura .ed-panel-form {
         <div class="fg2">
           <div class="fg"><label>Posición</label>
             <select id="jpos" onchange="renderJ()">
-              <option>Delantero centro</option><option>Extremo derecho</option><option>Extremo izquierdo</option>
+              <option>Delantero centro</option><option>Segunda punta</option><option>Extremo derecho</option><option>Extremo izquierdo</option>
               <option>Mediapunta</option><option>Mediocentro ofensivo</option><option>Mediocentro</option>
               <option>Mediocentro defensivo</option><option>Lateral derecho</option><option>Lateral izquierdo</option>
               <option>Central</option><option>Portero</option>
@@ -1508,10 +1508,13 @@ body.solo-lectura .ed-panel-form {
           <div class="fg"><label>Entrenador</label><input id="eent" oninput="renderE()"></div>
         </div>
         <div class="fg"><label>Sistema de juego</label>
-          <select id="esist" onchange="renderE()">
-            <option>4-3-3</option><option>4-4-2</option><option>4-2-3-1</option>
-            <option>3-5-2</option><option>3-4-3</option><option>5-3-2</option>
-            <option>4-1-4-1</option><option>Otro</option>
+          <select id="esist" onchange="renderE(); if(typeof renderCampograma==='function') renderCampograma();">
+            <option value="4-3-3">1-4-3-3</option><option value="4-4-2">1-4-4-2</option>
+            <option value="4-4-2 (rombo)">1-4-4-2 (rombo)</option>
+            <option value="4-2-3-1">1-4-2-3-1</option>
+            <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
+            <option value="5-3-2">1-5-3-2</option>
+            <option value="4-1-4-1">1-4-1-4-1</option><option value="Otro">Otro</option>
           </select>
         </div>
         <div class="fg"><label>Notas tácticas generales</label>
@@ -1605,12 +1608,21 @@ body.solo-lectura .ed-panel-form {
   <!-- ── PANEL CAMPOGRAMA ── -->
   <div class="ed-panel ed-panel-ficha" id="epanel-campograma">
     <div class="campo-toolbar" id="campo-toolbar">
+      <div class="fg campo-sist-fg" id="campo-sist-fg" style="display:none">
+        <label style="font-size:9px">Sistema</label>
+        <select id="campo-sist-sel" onchange="campogramaCambiarSistema(this.value)">
+          <option value="4-3-3">1-4-3-3</option><option value="4-4-2">1-4-4-2</option>
+          <option value="4-4-2 (rombo)">1-4-4-2 (rombo)</option>
+          <option value="4-2-3-1">1-4-2-3-1</option>
+          <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
+        </select>
+      </div>
       <button class="btn b-ghost b-sm" id="campo-btn-editar" onclick="toggleCampogramaEdit()" style="display:none">✏️ Editar campograma</button>
       <button class="btn b-ghost b-sm" id="campo-btn-reset" onclick="campogramaResetTodo()" style="display:none">↺ Restablecer automático</button>
       <button class="btn b-azul b-sm" onclick="descargarCampogramaImagen()">📷 Descargar imagen</button>
     </div>
     <div id="campograma-container"></div>
-    <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">Los jugadores se agrupan automáticamente por posición y el sistema del equipo (pestaña "Editar datos"). Como admin puedes reasignar a cualquiera a otra línea.</p>
+    <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">Los jugadores se colocan automáticamente en el campo según el sistema del equipo y su posición concreta. Como admin puedes cambiar el sistema arriba, y en modo edición arrastrar a cualquier jugador a donde quieras.</p>
   </div>
 </div><!-- /v-equipo-ed -->
 
@@ -2673,6 +2685,225 @@ function _comparativaFilasBase(){
 function _comparativaFilasRadar(){
   return jRadarEjes.map((eje,i)=>({l:eje,v:j=>(j.radar&&j.radar[i])||0}));
 }
+
+// ══════════════════════════════════════════════════════════════════
+// COMPARATIVAS — utilidades visuales compartidas (jugadores y equipos).
+// Los PDF de comparativa se generan renderizando un "dashboard" HTML
+// (con fotos, barras y radar) en un contenedor oculto y capturándolo
+// con html2canvas, igual que ya hace xPDF() con la ficha individual —
+// en vez de dibujar texto suelto con las primitivas de jsPDF, esto deja
+// usar fotos reales y gráficos con curvas/círculos sin reimplementarlos
+// a mano en el sistema de coordenadas del PDF.
+// ══════════════════════════════════════════════════════════════════
+const CMP_PALETA=['#2f81f7','#3fb950','#f85149','#d29922','#bc8cff','#39d3f0','#f778ba','#7ee787'];
+
+/** Espera a que todas las <img> de un contenedor terminen de cargar (o
+ *  fallen) antes de capturarlo — si no, las fotos pueden salir en
+ *  blanco porque html2canvas se dispara antes de que el navegador
+ *  termine de pintarlas. Con timeout de seguridad por si alguna imagen
+ *  se queda colgada (p.ej. una URL externa caída). */
+function _cmpEsperarImagenes(cont,timeoutMs=4000){
+  const imgs=[...cont.querySelectorAll('img')];
+  if(!imgs.length) return Promise.resolve();
+  return Promise.race([
+    Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(res=>{img.onload=img.onerror=res;}))),
+    new Promise(res=>setTimeout(res,timeoutMs))
+  ]);
+}
+
+/** Fila de barras horizontales (una barra por jugador/equipo comparado)
+ *  para una estadística concreta. items: [{nombre,valor,color}] */
+function _cmpFilaBarras(etiqueta,items,opts={}){
+  const max=Math.max(1,...items.map(it=>Math.abs(it.valor)||0));
+  const sufijo=opts.sufijo||'';
+  return `<div class="cmpx-bar-grupo">
+    <div class="cmpx-bar-grupo-tit">${eH(etiqueta)}</div>
+    ${items.map(it=>{
+      const pct=Math.max(2,Math.round(Math.abs(it.valor)/max*100));
+      return `<div class="cmpx-bar-fila">
+        <div class="cmpx-bar-nom" style="color:${it.color}">${eH(it.nombre)}</div>
+        <div class="cmpx-bar-track"><div class="cmpx-bar-fill" style="width:${pct}%;background:${it.color}"></div></div>
+        <div class="cmpx-bar-val">${eH(String(it.valor))}${sufijo}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+/** Radar con varias series superpuestas (una por jugador/equipo), cada
+ *  una con su propio color — a diferencia de radarSVG() (una sola
+ *  serie), aquí se dibujan varios polígonos translúcidos sobre los
+ *  mismos ejes para poder comparar perfiles de un vistazo. maxVal es el
+ *  valor que corresponde al borde exterior del radar (100 para el
+ *  perfil de jugador, 40 para el perfil de estilo de equipo). */
+function _cmpRadarMultiSVG(series,labels,sz=220,maxVal=100){
+  const padX=56,padY=26;
+  const cx=sz/2+padX,cy=sz/2+padY,r=sz*.37,n=labels.length;
+  const totalW=sz+padX*2,totalH=sz+padY*2;
+  const ang=i=>(i/n)*Math.PI*2-Math.PI/2;
+  const pt=(i,f)=>[cx+f*r*Math.cos(ang(i)),cy+f*r*Math.sin(ang(i))];
+  const rings=[.25,.5,.75,1].map(f=>`<polygon points="${Array.from({length:n},(_,i)=>pt(i,f).join(',')).join(' ')}" fill="none" stroke="#30363d" stroke-width="1"/>`).join('');
+  const axes=Array.from({length:n},(_,i)=>{const[x2,y2]=pt(i,1);return `<line x1="${cx}" y1="${cy}" x2="${x2}" y2="${y2}" stroke="#30363d" stroke-width="1"/>`;}).join('');
+  const polys=series.map(s=>{
+    const vals=s.vals||[];
+    const f=i=>Math.max(0,Math.min(1,(vals[i]||0)/maxVal));
+    const poly=`<polygon points="${Array.from({length:n},(_,i)=>pt(i,f(i)).join(',')).join(' ')}" fill="${s.color}33" stroke="${s.color}" stroke-width="2"/>`;
+    const dots=Array.from({length:n},(_,i)=>{const[x,y]=pt(i,f(i));return `<circle cx="${x}" cy="${y}" r="3.2" fill="${s.color}"/>`;}).join('');
+    return poly+dots;
+  }).join('');
+  const lbls=labels.map((l,i)=>{
+    const[lx,ly]=pt(i,1.32);
+    const anch=lx<cx-5?'end':lx>cx+5?'start':'middle';
+    const partes=(l.includes(' ')&&l.length>9)?l.split(' '):[l];
+    if(partes.length===1) return `<text x="${lx}" y="${ly+3}" fill="#8b949e" font-size="9" text-anchor="${anch}" font-family="Arial">${l}</text>`;
+    return `<text x="${lx}" y="${ly-1}" fill="#8b949e" font-size="9" text-anchor="${anch}" font-family="Arial"><tspan x="${lx}" dy="0">${partes[0]}</tspan><tspan x="${lx}" dy="10">${partes.slice(1).join(' ')}</tspan></text>`;
+  }).join('');
+  return `<svg width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">${rings}${axes}${polys}${lbls}</svg>`;
+}
+
+/** Leyenda de colores (jugador/equipo → color) que se coloca bajo el
+ *  radar, para poder identificar qué polígono es cada uno. */
+function _cmpLeyenda(items){
+  return `<div class="cmpx-leyenda">${items.map(it=>`<div class="cmpx-leyenda-it"><span class="cmpx-leyenda-dot" style="background:${it.color}"></span>${eH(it.nombre)}</div>`).join('')}</div>`;
+}
+
+/** Renderiza `html` en un contenedor oculto (fuera de la pantalla, no
+ *  con display:none — html2canvas necesita que el elemento tenga
+ *  layout real), espera a que carguen sus imágenes, lo captura con
+ *  html2canvas y vuelca el resultado en un PDF A4 vertical, partiéndolo
+ *  en tantas páginas como haga falta si el contenido no cabe en una
+ *  sola (mismo mecanismo que usa xPDF() para la ficha individual). Al
+ *  terminar, borra el contenedor temporal se haya conseguido el PDF o
+ *  no. */
+async function _cmpCapturarYExportarPDF(html,anchoPx,nombreArchivo,toastMsg){
+  const cont=document.createElement('div');
+  cont.style.cssText=`position:fixed;top:0;left:-99999px;width:${anchoPx}px;background:#0a0d13;`;
+  cont.innerHTML=html;
+  document.body.appendChild(cont);
+  try{
+    await _cmpEsperarImagenes(cont);
+    await new Promise(r=>setTimeout(r,60)); // deja que el navegador termine de maquetar/pintar
+    const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+    const PW=210,PH=297,iW=PW-10;
+    const imgD=canvas.toDataURL('image/jpeg',.92);
+    const iH=iW*(canvas.height/canvas.width);
+    if(iH<=PH-10){
+      doc.setFillColor(10,13,19);doc.rect(0,0,PW,PH,'F');
+      doc.addImage(imgD,'JPEG',5,5,iW,iH);
+    }else{
+      let y=0;
+      while(y<iH){
+        if(y>0) doc.addPage();
+        doc.setFillColor(10,13,19);doc.rect(0,0,PW,PH,'F');
+        doc.addImage(imgD,'JPEG',5,5-y,iW,iH);
+        y+=PH-10;
+      }
+    }
+    doc.save(nombreArchivo);
+    toast(toastMsg);
+  }catch(err){
+    toast('No se pudo generar el PDF',true);
+  }finally{
+    cont.remove();
+  }
+}
+
+/** Barra de texto tipo "sparkline" para celdas de Excel — el paquete
+ *  community de SheetJS no soporta gráficos nativos ni relleno de celda
+ *  al escribir, así que usamos caracteres de bloque para dar una
+ *  lectura visual instantánea de cada fila sin salir de la celda. */
+function _cmpBarraTexto(valor,max,ancho=10){
+  const v=Math.max(0,Number(valor)||0);
+  const llenas=max>0?Math.round((v/max)*ancho):0;
+  return '█'.repeat(Math.min(ancho,llenas))+'░'.repeat(Math.max(0,ancho-llenas));
+}
+
+function _cmpJugadorAvatarHTML(j,sz){
+  const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'#2f81f7';
+  return j.imgJug
+    ? `<img src="${eH(j.imgJug)}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover">`
+    : `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${eH(avColor)};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:${Math.round(sz*.34)}px">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+}
+
+function _dashboardComparativaJugadoresHTML(jugadores){
+  const colores=jugadores.map((j,i)=>CMP_PALETA[i%CMP_PALETA.length]);
+  const nomCorto=j=>((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre';
+  const items=(campo)=>jugadores.map((j,i)=>({nombre:nomCorto(j),valor:j.stats?.[campo]||0,color:colores[i]}));
+
+  const tarjetasH=jugadores.map((j,i)=>`
+    <div class="cmpx-player-card" style="border-color:${colores[i]}">
+      <div class="cmpx-player-av" style="border-color:${colores[i]}">${_cmpJugadorAvatarHTML(j,64)}</div>
+      <div class="cmpx-player-nom">${eH((j.nom+' '+(j.ape||'')).trim()||'Sin nombre')}</div>
+      <div class="cmpx-player-sub">${j.dor?'#'+eH(String(j.dor))+' · ':''}${eH(j.pos||'—')}</div>
+      <div class="cmpx-player-club">${eH(j.club||'—')}</div>
+    </div>`).join('');
+
+  const barrasH=[
+    _cmpFilaBarras('⚽ Goles',items('g')),
+    _cmpFilaBarras('🎯 Asistencias',items('a')),
+    _cmpFilaBarras('🔥 G+A',jugadores.map((j,i)=>({nombre:nomCorto(j),valor:(j.stats?.g||0)+(j.stats?.a||0),color:colores[i]}))),
+    _cmpFilaBarras('🥅 % Finalización',items('f'),{sufijo:'%'}),
+  ].join('');
+
+  const radarSeries=jugadores.map((j,i)=>({vals:j.radar||[],color:colores[i]}));
+  const radarH=_cmpRadarMultiSVG(radarSeries,jRadarEjes,220,100);
+  const leyendaH=_cmpLeyenda(jugadores.map((j,i)=>({nombre:(j.nom+' '+(j.ape||'')).trim(),color:colores[i]})));
+
+  const maxPor=(campo)=>jugadores.reduce((best,j)=>(!best||(j.stats?.[campo]||0)>(best.stats?.[campo]||0))?j:best,null);
+  const maxGoleador=maxPor('g'),maxAsistente=maxPor('a'),maxFinaliz=maxPor('f');
+  const maxGA=jugadores.reduce((best,j)=>{const v=(j.stats?.g||0)+(j.stats?.a||0);return (!best||v>best.v)?{j,v}:best;},null);
+  const destacado=(tit,j,valorTxt,icono)=>!j?'':`<div class="cmpx-destacado">
+      <div class="cmpx-destacado-tit">${icono} ${tit}</div>
+      <div class="cmpx-destacado-row">
+        ${_cmpJugadorAvatarHTML(j,34)}
+        <div><div class="cmpx-destacado-nom">${eH((j.nom+' '+(j.ape||'')).trim())}</div><div class="cmpx-destacado-val">${valorTxt}</div></div>
+      </div>
+    </div>`;
+  const destacadosH=`<div class="cmpx-destacados">
+    ${destacado('Máximo goleador',maxGoleador,`${maxGoleador?.stats?.g||0} goles`,'⚽')}
+    ${destacado('Máximo asistente',maxAsistente,`${maxAsistente?.stats?.a||0} asistencias`,'🎯')}
+    ${maxGA?destacado('Mejor G+A',maxGA.j,`${maxGA.v} G+A`,'🔥'):''}
+    ${destacado('Mejor % Finalización',maxFinaliz,`${maxFinaliz?.stats?.f||0}%`,'🥅')}
+  </div>`;
+
+  const filasTabla=_comparativaFilasBase();
+  const tablaH=`<table class="cmpx-table"><thead><tr><th>Estadística</th>${jugadores.map((j,i)=>`<th style="color:${colores[i]}">${eH(nomCorto(j))}</th>`).join('')}</tr></thead><tbody>
+    ${filasTabla.map(f=>`<tr><td>${eH(f.l)}</td>${jugadores.map(j=>`<td>${eH(String(f.v(j)))}</td>`).join('')}</tr>`).join('')}
+  </tbody></table>`;
+
+  return `<div class="cmpx-wrap">
+    <div class="cmpx-hdr">
+      <div class="cmpx-hdr-ico">⚔️</div>
+      <div>
+        <div class="cmpx-hdr-tit">COMPARATIVA DE JUGADORES</div>
+        <div class="cmpx-hdr-sub">${eH(cfg.nombre||'Scoutdrive')} · ${jugadores.length} jugadores · ${new Date().toLocaleDateString('es-ES')}</div>
+      </div>
+    </div>
+    <div class="cmpx-players-row">${tarjetasH}</div>
+    <div class="cmpx-section">
+      <div class="cmpx-section-tit">📊 Estadísticas clave</div>
+      <div class="cmpx-bars">${barrasH}</div>
+    </div>
+    <div class="cmpx-section cmpx-section-split">
+      <div class="cmpx-radar-box">
+        <div class="cmpx-section-tit">🕸️ Perfil comparado</div>
+        ${radarH}
+        ${leyendaH}
+      </div>
+      <div class="cmpx-destacados-box">
+        <div class="cmpx-section-tit">🏆 Destacados</div>
+        ${destacadosH}
+      </div>
+    </div>
+    <div class="cmpx-section">
+      <div class="cmpx-section-tit">📋 Tabla completa</div>
+      ${tablaH}
+    </div>
+    <div class="cmpx-footer">${eH(cfg.nombre||'Scoutdrive')} · Generado el ${new Date().toLocaleDateString('es-ES')}</div>
+  </div>`;
+}
+
 function _comparativaJugadoresSeleccionados(){
   return [...jComparar].map(id=>jDB.find(x=>x.id===id)).filter(Boolean);
 }
@@ -2681,88 +2912,55 @@ function xComparativaExcel(){
   const jugadores=_comparativaJugadoresSeleccionados();
   if(jugadores.length<2){toast('Selecciona al menos 2 jugadores para comparar',true);return;}
   const WB=XLSX.utils.book_new();
+
+  // Barras de texto (bloques █░) para las estadísticas clave, de un
+  // vistazo, antes de la tabla detallada — el Excel "plano" de antes
+  // no dejaba ver quién destacaba sin leer número a número.
+  const statBar=(etiqueta,valores,sufijo='')=>{
+    const max=Math.max(1,...valores);
+    return [etiqueta,...valores.map(v=>`${_cmpBarraTexto(v,max)}  ${v}${sufijo}`)];
+  };
+  const goles=jugadores.map(j=>j.stats?.g||0);
+  const asist=jugadores.map(j=>j.stats?.a||0);
+  const ga=jugadores.map(j=>(j.stats?.g||0)+(j.stats?.a||0));
+  const finaliz=jugadores.map(j=>j.stats?.f||0);
+
   const rows=[
     ['COMPARATIVA DE JUGADORES'],
     ['Exportado',new Date().toLocaleDateString('es-ES')],[],
     ['Estadística',...jugadores.map(j=>(j.nom+' '+j.ape).trim()||'Sin nombre')],
+    [],
+    ['PERFIL VISUAL (la barra muestra el valor relativo entre los comparados)'],
+    statBar('⚽ Goles',goles),
+    statBar('🎯 Asistencias',asist),
+    statBar('🔥 G+A',ga),
+    statBar('🥅 % Finalización',finaliz,'%'),
+    [],
   ];
-  _comparativaFilasBase().forEach(f=>rows.push([f.l,...jugadores.map(f.v)]));
+  // Solo tiene sentido marcar con 🏆 al líder en estadísticas donde "más
+  // es mejor" — PJ, Min/gol, etc. no son un mérito en sí mismos.
+  const GANADOR_LABELS=new Set(['Goles','Asistencias','G+A','ABP goles']);
+  _comparativaFilasBase().forEach(f=>{
+    const valores=jugadores.map(f.v);
+    const esNumerica=valores.every(v=>typeof v==='number');
+    const max=esNumerica?Math.max(...valores):null;
+    rows.push([f.l,...valores.map(v=>(esNumerica && GANADOR_LABELS.has(f.l) && v===max && max>0)?`🏆 ${v}`:v)]);
+  });
   rows.push([]);
   rows.push(['PERFIL (0-100)']);
   _comparativaFilasRadar().forEach(f=>rows.push([f.l,...jugadores.map(f.v)]));
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:22},...jugadores.map(()=>({wch:18}))];
+  ws['!cols']=[{wch:28},...jugadores.map(()=>({wch:20}))];
   XLSX.utils.book_append_sheet(WB,ws,'Comparativa');
   XLSX.writeFile(WB,`Scout_Comparativa_${jugadores.length}jug_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('📊 Excel comparativa exportado');
 }
 
-function xComparativaPDF(){
+async function xComparativaPDF(){
   const jugadores=_comparativaJugadoresSeleccionados();
   if(jugadores.length<2){toast('Selecciona al menos 2 jugadores para comparar',true);return;}
-
-  const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'l',unit:'mm',format:'a4'});
-  const W=297,H=210,x0=12;
-  const fondo=()=>{doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');};
-
-  const filas=_comparativaFilasBase();
-  const filasRadar=_comparativaFilasRadar();
-
-  // Con muchos jugadores seleccionados no caben todas las columnas en una
-  // sola página legible — los repartimos en grupos de hasta 6 por página.
-  const MAX_COLS_PAGINA=6;
-  const bloquesJug=[];
-  for(let i=0;i<jugadores.length;i+=MAX_COLS_PAGINA) bloquesJug.push(jugadores.slice(i,i+MAX_COLS_PAGINA));
-
-  const labelW=48;
-
-  bloquesJug.forEach((grupo,gi)=>{
-    if(gi>0) doc.addPage();
-    fondo();
-    doc.setFillColor(15,23,42);doc.rect(0,0,W,24,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(230,237,243);
-    doc.text('COMPARATIVA DE JUGADORES',x0,14);
-    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
-    const rangoTxt=bloquesJug.length>1?`  ·  Grupo ${gi+1}/${bloquesJug.length}`:'';
-    doc.text(`${grupo.length} de ${jugadores.length} jugadores comparados${rangoTxt}`,x0,20.5);
-
-    const colW=(W-2*x0-labelW)/grupo.length;
-    let y=34;
-
-    doc.setFillColor(33,38,45);doc.rect(x0,y-4.5,W-2*x0,7.5,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
-    doc.text('Estadística',x0+2,y);
-    grupo.forEach((j,ci)=>{
-      const nom=((j.nom||'')+' '+(j.ape||'')).trim().slice(0,18)||'Sin nombre';
-      doc.text(nom,x0+labelW+ci*colW+2,y);
-    });
-    y+=8.5;
-
-    function pintarFila(f){
-      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
-      doc.text(String(f.l),x0+2,y);
-      grupo.forEach((j,ci)=>{
-        doc.text(String(f.v(j)),x0+labelW+ci*colW+2,y);
-      });
-      doc.setDrawColor(48,54,61);doc.line(x0,y+2,W-x0,y+2);
-      y+=6.5;
-    }
-
-    filas.forEach(pintarFila);
-
-    y+=4;
-    doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(139,148,158);
-    doc.text('PERFIL (0-100)',x0,y);
-    y+=7;
-    filasRadar.forEach(pintarFila);
-
-    doc.setFontSize(7);doc.setTextColor(72,79,88);
-    doc.text(`${cfg.nombre||'Scoutdrive'} · ${new Date().toLocaleDateString('es-ES')}`,x0,H-6);
-  });
-
-  doc.save(`${cfg.nombre||'Scout'}_Comparativa_${jugadores.length}jug.pdf`);
-  toast('📄 PDF comparativa exportado');
+  const html=_dashboardComparativaJugadoresHTML(jugadores);
+  await _cmpCapturarYExportarPDF(html,900,`${cfg.nombre||'Scout'}_Comparativa_${jugadores.length}jug.pdf`,'📄 PDF comparativa exportado');
 }
 
 function nuevoJ(){
@@ -3162,16 +3360,127 @@ function _comparativaEEquiposSeleccionados(){
   return [...eComparar].map(id=>eDB.find(x=>x.id===id)).filter(Boolean);
 }
 
+function _cmpEquipoEscudoHTML(eq,sz){
+  return eq.imgEsc
+    ? `<img src="${eH(eq.imgEsc)}" style="width:${sz}px;height:${sz}px;border-radius:12px;object-fit:contain;background:#161b22">`
+    : `<div style="width:${sz}px;height:${sz}px;border-radius:12px;background:${eH(eq.color||'#2f81f7')};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:${Math.round(sz*.32)}px">${eH((eq.nom||'?').slice(0,2).toUpperCase())}</div>`;
+}
+
+function _dashboardComparativaEquiposHTML(equipos){
+  const colores=equipos.map((eq,i)=>CMP_PALETA[i%CMP_PALETA.length]);
+  const nombreCorto=eq=>eq.nom||'Sin nombre';
+
+  const tarjetasH=equipos.map((eq,i)=>`
+    <div class="cmpx-player-card" style="border-color:${colores[i]}">
+      <div class="cmpx-player-av" style="border-color:${colores[i]}">${_cmpEquipoEscudoHTML(eq,64)}</div>
+      <div class="cmpx-player-nom">${eH(nombreCorto(eq))}</div>
+      <div class="cmpx-player-sub">${eq.tipo==='propio'?'🔵 Propio':'🔴 Rival'}</div>
+      <div class="cmpx-player-club">${eH(eq.liga||'—')}</div>
+    </div>`).join('');
+
+  const items=(campo)=>equipos.map((eq,i)=>({nombre:nombreCorto(eq),valor:eq.stats?.[campo]||0,color:colores[i]}));
+  const barrasH=[
+    _cmpFilaBarras('🏆 Puntos',equipos.map((eq,i)=>({nombre:nombreCorto(eq),valor:(eq.stats?.v||0)*3+(eq.stats?.e||0),color:colores[i]}))),
+    _cmpFilaBarras('✅ Victorias',items('v')),
+    _cmpFilaBarras('⚽ Goles a favor',items('gf')),
+    _cmpFilaBarras('🥅 Goles en contra (menos es mejor)',items('gc')),
+  ].join('');
+
+  const radarSeries=equipos.map((eq,i)=>({vals:[eq.orig?.eoatq||0,eq.orig?.eoabp||0,eq.orig?.eocl||0,eq.orig?.eojd||0,eq.orig?.eotr||0],color:colores[i]}));
+  const radarLbls=['Ataque Org.','ABP Ofensiva','Centro Lateral','Juego Directo','Transición Of.'];
+  const radarH=_cmpRadarMultiSVG(radarSeries,radarLbls,220,40);
+  const leyendaH=_cmpLeyenda(equipos.map((eq,i)=>({nombre:nombreCorto(eq),color:colores[i]})));
+
+  const maxPor=(fn)=>equipos.reduce((best,eq)=>(!best||fn(eq)>fn(best))?eq:best,null);
+  const minPor=(fn)=>equipos.reduce((best,eq)=>(!best||fn(eq)<fn(best))?eq:best,null);
+  const masVictorias=maxPor(eq=>eq.stats?.v||0);
+  const mejorAtaque=maxPor(eq=>eq.stats?.gf||0);
+  const mejorDefensa=minPor(eq=>eq.stats?.gc||0);
+  const masPuntos=maxPor(eq=>(eq.stats?.v||0)*3+(eq.stats?.e||0));
+  const destacado=(tit,eq,valorTxt,icono)=>!eq?'':`<div class="cmpx-destacado">
+      <div class="cmpx-destacado-tit">${icono} ${tit}</div>
+      <div class="cmpx-destacado-row">
+        ${_cmpEquipoEscudoHTML(eq,34)}
+        <div><div class="cmpx-destacado-nom">${eH(nombreCorto(eq))}</div><div class="cmpx-destacado-val">${valorTxt}</div></div>
+      </div>
+    </div>`;
+  const destacadosH=`<div class="cmpx-destacados">
+    ${destacado('Más puntos',masPuntos,`${(masPuntos?.stats?.v||0)*3+(masPuntos?.stats?.e||0)} pts`,'🏆')}
+    ${destacado('Más victorias',masVictorias,`${masVictorias?.stats?.v||0} victorias`,'✅')}
+    ${destacado('Mejor ataque',mejorAtaque,`${mejorAtaque?.stats?.gf||0} goles a favor`,'⚽')}
+    ${destacado('Mejor defensa',mejorDefensa,`${mejorDefensa?.stats?.gc||0} goles en contra`,'🛡️')}
+  </div>`;
+
+  const filasTabla=_comparativaEFilasBase();
+  const tablaH=`<table class="cmpx-table"><thead><tr><th>Estadística</th>${equipos.map((eq,i)=>`<th style="color:${colores[i]}">${eH(nombreCorto(eq))}</th>`).join('')}</tr></thead><tbody>
+    ${filasTabla.map(f=>`<tr><td>${eH(f.l)}</td>${equipos.map(eq=>`<td>${eH(String(f.v(eq)))}</td>`).join('')}</tr>`).join('')}
+  </tbody></table>`;
+
+  return `<div class="cmpx-wrap">
+    <div class="cmpx-hdr">
+      <div class="cmpx-hdr-ico">🏟️</div>
+      <div>
+        <div class="cmpx-hdr-tit">COMPARATIVA DE EQUIPOS</div>
+        <div class="cmpx-hdr-sub">${eH(cfg.nombre||'Scoutdrive')} · ${equipos.length} equipos · ${new Date().toLocaleDateString('es-ES')}</div>
+      </div>
+    </div>
+    <div class="cmpx-players-row">${tarjetasH}</div>
+    <div class="cmpx-section">
+      <div class="cmpx-section-tit">📊 Estadísticas clave</div>
+      <div class="cmpx-bars">${barrasH}</div>
+    </div>
+    <div class="cmpx-section cmpx-section-split">
+      <div class="cmpx-radar-box">
+        <div class="cmpx-section-tit">🕸️ Estilo ofensivo comparado</div>
+        ${radarH}
+        ${leyendaH}
+      </div>
+      <div class="cmpx-destacados-box">
+        <div class="cmpx-section-tit">🏆 Destacados</div>
+        ${destacadosH}
+      </div>
+    </div>
+    <div class="cmpx-section">
+      <div class="cmpx-section-tit">📋 Tabla completa</div>
+      ${tablaH}
+    </div>
+    <div class="cmpx-footer">${eH(cfg.nombre||'Scoutdrive')} · Generado el ${new Date().toLocaleDateString('es-ES')}</div>
+  </div>`;
+}
+
 function xComparativaEExcel(){
   const equipos=_comparativaEEquiposSeleccionados();
   if(equipos.length<2){toast('Selecciona al menos 2 equipos para comparar',true);return;}
   const WB=XLSX.utils.book_new();
+
+  const statBar=(etiqueta,valores,sufijo='')=>{
+    const max=Math.max(1,...valores);
+    return [etiqueta,...valores.map(v=>`${_cmpBarraTexto(v,max)}  ${v}${sufijo}`)];
+  };
+  const puntos=equipos.map(eq=>(eq.stats?.v||0)*3+(eq.stats?.e||0));
+  const victorias=equipos.map(eq=>eq.stats?.v||0);
+  const gf=equipos.map(eq=>eq.stats?.gf||0);
+  const gc=equipos.map(eq=>eq.stats?.gc||0);
+
   const rows=[
     ['COMPARATIVA DE EQUIPOS'],
     ['Exportado',new Date().toLocaleDateString('es-ES')],[],
     ['Estadística',...equipos.map(eq=>eq.nom||'Sin nombre')],
+    [],
+    ['PERFIL VISUAL (la barra muestra el valor relativo entre los comparados)'],
+    statBar('🏆 Puntos',puntos),
+    statBar('✅ Victorias',victorias),
+    statBar('⚽ Goles a favor',gf),
+    statBar('🥅 Goles en contra (menos es mejor)',gc),
+    [],
   ];
-  _comparativaEFilasBase().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
+  const GANADOR_LABELS=new Set(['Victorias','Goles a favor','Diferencia de goles','Puntos']);
+  _comparativaEFilasBase().forEach(f=>{
+    const valores=equipos.map(f.v);
+    const esNumerica=valores.every(v=>typeof v==='number');
+    const max=esNumerica?Math.max(...valores):null;
+    rows.push([f.l,...valores.map(v=>(esNumerica && GANADOR_LABELS.has(f.l) && v===max && max>0)?`🏆 ${v}`:v)]);
+  });
   rows.push([]);
   rows.push(['PERFIL OFENSIVO · ORIGEN DE GOLES (0-40)']);
   _comparativaEFilasOfensivo().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
@@ -3179,95 +3488,17 @@ function xComparativaEExcel(){
   rows.push(['PERFIL DEFENSIVO · ORIGEN DE GOLES RECIBIDOS (0-40)']);
   _comparativaEFilasDefensivo().forEach(f=>rows.push([f.l,...equipos.map(f.v)]));
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:26},...equipos.map(()=>({wch:18}))];
+  ws['!cols']=[{wch:32},...equipos.map(()=>({wch:20}))];
   XLSX.utils.book_append_sheet(WB,ws,'Comparativa');
   XLSX.writeFile(WB,`Scout_Comparativa_Equipos_${equipos.length}eq_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('📊 Excel comparativa de equipos exportado');
 }
 
-function xComparativaEPDF(){
+async function xComparativaEPDF(){
   const equipos=_comparativaEEquiposSeleccionados();
   if(equipos.length<2){toast('Selecciona al menos 2 equipos para comparar',true);return;}
-
-  const{jsPDF}=window.jspdf;
-  const doc=new jsPDF({orientation:'l',unit:'mm',format:'a4'});
-  const W=297,H=210,x0=12;
-  const fondo=()=>{doc.setFillColor(22,27,34);doc.rect(0,0,W,H,'F');};
-
-  const filas=_comparativaEFilasBase();
-  const filasOf=_comparativaEFilasOfensivo();
-  const filasDef=_comparativaEFilasDefensivo();
-
-  // Con muchos equipos seleccionados no caben todas las columnas en una
-  // sola página legible — los repartimos en grupos de hasta 6 por página.
-  const MAX_COLS_PAGINA=6;
-  const bloquesEq=[];
-  for(let i=0;i<equipos.length;i+=MAX_COLS_PAGINA) bloquesEq.push(equipos.slice(i,i+MAX_COLS_PAGINA));
-
-  const labelW=52;
-  let pagCreada=false;
-
-  bloquesEq.forEach((grupo,gi)=>{
-    const colW=(W-2*x0-labelW)/grupo.length;
-    let y;
-
-    // Con muchas filas (14 base + 5 ofensivas + 4 defensivas = 23) el
-    // grupo puede no caber en una sola página vertical — esta función
-    // abre página nueva y repinta cabecera + nombres de columna cada vez
-    // que hace falta, igual que hace cabeceraGrupo() en el PDF de
-    // plantilla de equipo.
-    function nuevaPagina(continua){
-      if(pagCreada) doc.addPage();
-      pagCreada=true;
-      fondo();
-      doc.setFillColor(15,23,42);doc.rect(0,0,W,24,'F');
-      doc.setFont('helvetica','bold');doc.setFontSize(16);doc.setTextColor(230,237,243);
-      doc.text('COMPARATIVA DE EQUIPOS'+(continua?' (cont.)':''),x0,14);
-      doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(139,148,158);
-      const rangoTxt=bloquesEq.length>1?`  ·  Grupo ${gi+1}/${bloquesEq.length}`:'';
-      doc.text(`${grupo.length} de ${equipos.length} equipos comparados${rangoTxt}`,x0,20.5);
-
-      y=34;
-      doc.setFillColor(33,38,45);doc.rect(x0,y-4.5,W-2*x0,7.5,'F');
-      doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
-      doc.text('Estadística',x0+2,y);
-      grupo.forEach((eq,ci)=>{
-        const nom=(eq.nom||'Sin nombre').slice(0,20);
-        doc.text(nom,x0+labelW+ci*colW+2,y);
-      });
-      y+=8.5;
-    }
-    nuevaPagina(false);
-
-    function pintarFila(f){
-      if(y>H-14) nuevaPagina(true);
-      doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(230,237,243);
-      doc.text(String(f.l),x0+2,y);
-      grupo.forEach((eq,ci)=>{
-        doc.text(String(f.v(eq)),x0+labelW+ci*colW+2,y);
-      });
-      doc.setDrawColor(48,54,61);doc.line(x0,y+2,W-x0,y+2);
-      y+=6.5;
-    }
-    function pintarSeccion(titulo,filasLista){
-      if(y>H-24) nuevaPagina(true);
-      y+=4;
-      doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(139,148,158);
-      doc.text(titulo,x0,y);
-      y+=7;
-      filasLista.forEach(pintarFila);
-    }
-
-    filas.forEach(pintarFila);
-    pintarSeccion('PERFIL OFENSIVO (0-40)',filasOf);
-    pintarSeccion('PERFIL DEFENSIVO (0-40)',filasDef);
-
-    doc.setFontSize(7);doc.setTextColor(72,79,88);
-    doc.text(`${cfg.nombre||'Scoutdrive'} · ${new Date().toLocaleDateString('es-ES')}`,x0,H-6);
-  });
-
-  doc.save(`${cfg.nombre||'Scout'}_Comparativa_Equipos_${equipos.length}eq.pdf`);
-  toast('📄 PDF comparativa de equipos exportado');
+  const html=_dashboardComparativaEquiposHTML(equipos);
+  await _cmpCapturarYExportarPDF(html,900,`${cfg.nombre||'Scout'}_Comparativa_Equipos_${equipos.length}eq.pdf`,'📄 PDF comparativa de equipos exportado');
 }
 
 function nuevoE(){
@@ -3445,7 +3676,7 @@ const POS_GRUPO_MAP={
   'Portero':'Porteros',
   'Central':'Defensas','Lateral derecho':'Defensas','Lateral izquierdo':'Defensas',
   'Mediocentro defensivo':'Centrocampistas','Mediocentro':'Centrocampistas','Mediocentro ofensivo':'Centrocampistas','Mediapunta':'Centrocampistas',
-  'Delantero centro':'Delanteros','Extremo derecho':'Delanteros','Extremo izquierdo':'Delanteros'
+  'Delantero centro':'Delanteros','Segunda punta':'Delanteros','Extremo derecho':'Delanteros','Extremo izquierdo':'Delanteros'
 };
 const POS_GRUPO_ORDEN=['Porteros','Defensas','Centrocampistas','Delanteros'];
 const POS_GRUPO_COLOR={'Porteros':'#d29922','Defensas':'#2f81f7','Centrocampistas':'#3fb950','Delanteros':'#f85149'};
@@ -3466,20 +3697,26 @@ function calcularPlantillaEquipo(nombreEquipo,temporada){
 }
 
 // ══════════════════════════════════════════════════════════════════
-// CAMPOGRAMA — plantilla completa dibujada sobre un campo, agrupada
-// por línea (Porteros/Defensas/Centrocampistas/Delanteros) según el
-// sistema táctico del equipo. Muestra TODOS los jugadores de cada
-// línea (titulares y suplentes juntos), no un once ideal de 11.
+// CAMPOGRAMA — formación táctica exacta sobre el campo, según el
+// sistema del equipo (1-4-3-3, 1-4-4-2, 1-4-4-2 rombo, 1-4-2-3-1,
+// 1-3-4-3, 1-3-5-2...) y la posición concreta de cada jugador.
+// Cada jugador se coloca automáticamente detectando primero su línea
+// (Porteros/Defensas/Centrocampistas/Delanteros) y después su
+// posición exacta dentro de ella (LTD, CTI, MCD, DC, ED...). Los que
+// no encajan en el once del sistema elegido quedan en el banquillo.
+// El admin puede arrastrar a cualquier jugador colocado a cualquier
+// otro punto del campo (por si se estorban o el sistema no encaja
+// bien con la plantilla real).
 // ══════════════════════════════════════════════════════════════════
 let _campogramaEditMode=false;
+let _campogramaDrag=null; // {jugadorId, pitchEl} mientras se arrastra un chip
 
 /** Lee el campo "Sistema" (p.ej. "4-3-3", "4-2-3-1") y devuelve cuántos
  *  jugadores de campo corresponden a cada línea, solo como cifra
- *  orientativa junto al nombre de la línea — no limita cuántos jugadores
- *  reales se muestran ahí (eso lo decide la posición de cada jugador,
- *  o la reasignación manual del admin). Si el sistema no es un patrón
- *  numérico reconocible (p.ej. "Otro"), devuelve null y no se muestra
- *  ninguna cifra. */
+ *  orientativa junto al nombre de la línea. parseInt() ignora el
+ *  sufijo " (rombo)" así que "4-4-2 (rombo)" también se interpreta
+ *  bien. Si el sistema no es un patrón numérico reconocible (p.ej.
+ *  "Otro"), devuelve null. */
 function _sistemaConteos(sist){
   const partes=(sist||'').split('-').map(n=>parseInt(n,10));
   if(!partes.length || partes.some(isNaN)) return null;
@@ -3489,24 +3726,150 @@ function _sistemaConteos(sist){
   return {df,mc,fw};
 }
 
+/** Traduce la posición concreta del jugador (el mismo texto del campo
+ *  "Posición" de su ficha) a un código corto de rol táctico, usado
+ *  para encajarlo en el hueco correcto del sistema elegido. */
+const POS_CODE_MAP={
+  'Portero':'PT',
+  'Central':'CT','Lateral derecho':'LTD','Lateral izquierdo':'LTI',
+  'Mediocentro defensivo':'MCD',
+  'Mediocentro':'MC','Mediocentro ofensivo':'MC','Mediapunta':'MC',
+  'Delantero centro':'DC','Segunda punta':'SD',
+  'Extremo derecho':'ED','Extremo izquierdo':'EI'
+};
+/** A qué línea general pertenece cada código corto — se usa cuando no
+ *  hay ningún jugador con el código exacto de un hueco del sistema,
+ *  para poder rellenarlo igualmente con alguien de la misma línea. */
+const CODIGO_LINEA={
+  PT:'Porteros',
+  CT:'Defensas',CTI:'Defensas',CTD:'Defensas',LTD:'Defensas',LTI:'Defensas',
+  MCD:'Centrocampistas',MC:'Centrocampistas',
+  DC:'Delanteros',SD:'Delanteros',ED:'Delanteros',EI:'Delanteros'
+};
+
+/** Reparte n puntos uniformemente en el eje X entre xMin y xMax
+ *  (si solo hay uno, lo centra). Se usa para generar sistemas
+ *  genéricos a partir de un recuento numérico no reconocido. */
+function _spreadX(n,xMin=14,xMax=86){
+  if(n<=0) return [];
+  if(n===1) return [50];
+  const arr=[];
+  for(let i=0;i<n;i++) arr.push(Math.round(xMin+(xMax-xMin)*i/(n-1)));
+  return arr;
+}
+
+/** Huecos (código + coordenadas % sobre el campo, x:0-100 izq-der,
+ *  y:0-100 arriba(ataque)-abajo(portería propia)) de cada sistema
+ *  reconocido explícitamente. Coordenadas pensadas para una forma
+ *  táctica razonable, no una ciencia exacta — el admin siempre puede
+ *  arrastrar a cualquiera si no le convence del todo. */
+const CAMPO_SISTEMAS={
+  '4-4-2':[
+    {code:'PT',x:50,y:92},
+    {code:'LTI',x:18,y:74},{code:'CTI',x:38,y:76},{code:'CTD',x:62,y:76},{code:'LTD',x:82,y:74},
+    {code:'EI',x:16,y:46},{code:'MC',x:38,y:48},{code:'MC',x:62,y:48},{code:'ED',x:84,y:46},
+    {code:'DC',x:38,y:14},{code:'DC',x:62,y:14}
+  ],
+  '4-4-2 (rombo)':[
+    {code:'PT',x:50,y:92},
+    {code:'LTI',x:18,y:74},{code:'CTI',x:38,y:76},{code:'CTD',x:62,y:76},{code:'LTD',x:82,y:74},
+    {code:'MCD',x:50,y:62},{code:'MC',x:26,y:46},{code:'MC',x:74,y:46},{code:'MC',x:50,y:30},
+    {code:'DC',x:38,y:12},{code:'DC',x:62,y:12}
+  ],
+  '4-2-3-1':[
+    {code:'PT',x:50,y:92},
+    {code:'LTI',x:18,y:76},{code:'CTI',x:38,y:78},{code:'CTD',x:62,y:78},{code:'LTD',x:82,y:76},
+    {code:'MCD',x:38,y:58},{code:'MCD',x:62,y:58},
+    {code:'EI',x:18,y:34},{code:'MC',x:50,y:32},{code:'ED',x:82,y:34},
+    {code:'DC',x:50,y:12}
+  ],
+  '4-3-3':[
+    {code:'PT',x:50,y:92},
+    {code:'LTI',x:18,y:76},{code:'CTI',x:38,y:78},{code:'CTD',x:62,y:78},{code:'LTD',x:82,y:76},
+    {code:'MCD',x:50,y:58},{code:'MC',x:30,y:46},{code:'MC',x:70,y:46},
+    {code:'EI',x:18,y:16},{code:'DC',x:50,y:10},{code:'ED',x:82,y:16}
+  ],
+  '3-4-3':[
+    {code:'PT',x:50,y:92},
+    {code:'CTI',x:30,y:76},{code:'CT',x:50,y:80},{code:'CTD',x:70,y:76},
+    {code:'EI',x:14,y:48},{code:'MC',x:38,y:44},{code:'MC',x:62,y:44},{code:'ED',x:86,y:48},
+    {code:'EI',x:20,y:14},{code:'DC',x:50,y:10},{code:'ED',x:80,y:14}
+  ],
+  '3-5-2':[
+    {code:'PT',x:50,y:92},
+    {code:'CTI',x:30,y:78},{code:'CT',x:50,y:82},{code:'CTD',x:70,y:78},
+    {code:'LTI',x:12,y:50},{code:'MC',x:34,y:46},{code:'MCD',x:50,y:54},{code:'MC',x:66,y:46},{code:'LTD',x:88,y:50},
+    {code:'DC',x:38,y:14},{code:'DC',x:62,y:14}
+  ]
+};
+
+/** Genera huecos "genéricos" a partir del recuento de defensas/
+ *  centrocampistas/delanteros de un sistema no reconocido (p.ej.
+ *  "5-3-2" o "Otro" con recuento propio) — para no dejar el
+ *  campograma vacío aunque el sistema exacto no esté en la lista. */
+function _slotsGenericos(df,mc,fw){
+  const slots=[{code:'PT',x:50,y:92}];
+  const codigosDef = df===4?['LTI','CTI','CTD','LTD'] : df===3?['CTI','CT','CTD'] : df===5?['LTI','CTI','CT','CTD','LTD'] : Array(df).fill('CT');
+  _spreadX(df).forEach((x,i)=>slots.push({code:codigosDef[i]||'CT',x,y:76}));
+  const codigosMc = mc>=3 ? ['MCD',...Array(Math.max(0,mc-2)).fill('MC'),'MC'] : Array(mc).fill('MC');
+  _spreadX(mc).forEach((x,i)=>slots.push({code:codigosMc[i]||'MC',x,y:46}));
+  const codigosFw = fw===1?['DC'] : fw===2?['DC','DC'] : fw===3?['EI','DC','ED'] : Array(fw).fill('DC');
+  _spreadX(fw).forEach((x,i)=>slots.push({code:codigosFw[i]||'DC',x,y:14}));
+  return slots;
+}
+
+/** Devuelve los huecos del sistema indicado — de la tabla explícita
+ *  si lo reconoce, o generados a partir del recuento numérico si no. */
+function _formacionSlots(sist){
+  if(CAMPO_SISTEMAS[sist]) return CAMPO_SISTEMAS[sist];
+  const c=_sistemaConteos(sist);
+  if(c && c.df>0) return _slotsGenericos(c.df,c.mc,c.fw);
+  return CAMPO_SISTEMAS['4-3-3'];
+}
+
 /** Agrupa la plantilla del equipo por línea (Porteros/Defensas/
- *  Centrocampistas/Delanteros), partiendo del mismo agrupado automático
- *  que ya usa la exportación de plantilla (calcularPlantillaEquipo), y
- *  aplicando encima las reasignaciones manuales guardadas en
- *  eq.campoOverrides (jugadorId -> nombre de línea), si las hay. */
+ *  Centrocampistas/Delanteros) — reutiliza el mismo agrupado que la
+ *  ficha y las exportaciones de plantilla, para no duplicar criterio
+ *  de "qué jugadores pertenecen a este equipo". */
 function _campogramaGrupos(eq){
-  const base=calcularPlantillaEquipo(eq.nom,eq.temp);
-  const overrides=eq.campoOverrides||{};
-  const grupos={};
-  POS_GRUPO_ORDEN.forEach(g=>grupos[g]=[]);
-  POS_GRUPO_ORDEN.forEach(g=>{
-    (base[g]||[]).forEach(j=>{
-      const destino=(overrides[j.id] && POS_GRUPO_ORDEN.includes(overrides[j.id])) ? overrides[j.id] : g;
-      grupos[destino].push(j);
-    });
+  return calcularPlantillaEquipo(eq.nom,eq.temp);
+}
+
+/** Coloca la plantilla real del equipo sobre los huecos del sistema
+ *  elegido: para cada hueco intenta primero encontrar un jugador con
+ *  el código de posición exacto, y si no hay ninguno libre, recurre a
+ *  cualquiera de su misma línea general que aún no esté colocado. Los
+ *  jugadores que sobran (no caben en el once del sistema) quedan
+ *  en el banquillo. Devuelve {colocados:[{jugador,slot}], suplentes}. */
+function _campogramaAsignar(eq){
+  const grupos=_campogramaGrupos(eq);
+  const todos=Object.values(grupos).flat();
+  const slots=_formacionSlots(eq.sist);
+
+  const porCodigo={};
+  const porLinea={Porteros:[],Defensas:[],Centrocampistas:[],Delanteros:[]};
+  todos.forEach(j=>{
+    const linea=POS_GRUPO_MAP[j.pos]||'Centrocampistas';
+    (porLinea[linea]=porLinea[linea]||[]).push(j);
+    const codigo=POS_CODE_MAP[j.pos]||'MC';
+    (porCodigo[codigo]=porCodigo[codigo]||[]).push(j);
   });
-  Object.values(grupos).forEach(lista=>lista.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
-  return grupos;
+  Object.values(porCodigo).forEach(l=>l.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
+  Object.values(porLinea).forEach(l=>l.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
+
+  const usados=new Set();
+  const colocados=[];
+  slots.forEach(slot=>{
+    let jugador=(porCodigo[slot.code]||[]).find(j=>!usados.has(j.id));
+    if(!jugador){
+      const linea=CODIGO_LINEA[slot.code]||'Centrocampistas';
+      jugador=(porLinea[linea]||[]).find(j=>!usados.has(j.id));
+    }
+    if(jugador) usados.add(jugador.id);
+    colocados.push({jugador:jugador||null,slot});
+  });
+  const suplentes=todos.filter(j=>!usados.has(j.id)).sort((a,b)=>(+a.dor||99)-(+b.dor||99));
+  return {colocados,suplentes};
 }
 
 /** Aclara/oscurece un color hexadecimal. amt entre -100 (negro) y 100
@@ -3525,32 +3888,36 @@ function _sombraHex(hex,amt){
   return '#'+h(r)+h(g)+h(b);
 }
 
-function _campogramaChipHTML(j,editMode){
-  const s=j.stats||{};
-  const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
-  const av=j.imgJug
+function _campogramaAvatarHTML(j){
+  return j.imgJug
     ?`<img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'">`
     :eH(ini(j.nom,j.ape)||'?');
+}
+
+/** Chip de un jugador colocado en un punto exacto del campo (x,y en %
+ *  — usa la reasignación manual guardada en eq.campoOverrides si
+ *  existe, si no la posición por defecto del hueco del sistema). */
+function _campogramaChipPosHTML(eq,j,slot,editMode){
+  const ov=eq.campoOverrides && eq.campoOverrides[j.id];
+  const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
+  const x=tieneOv?ov.x:slot.x, y=tieneOv?ov.y:slot.y;
+  const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
   const nomCorto=eH(((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre');
-  const selector=editMode?`
-      <select class="campo-chip-sel" onchange="campogramaMoverJugador('${j.id}',this.value)" onclick="event.stopPropagation()">
-        ${POS_GRUPO_ORDEN.map(g=>`<option value="${g}"${_campogramaGrupoActual(j)===g?' selected':''}>${g}</option>`).join('')}
-      </select>`:'';
-  return `<div class="campo-chip" title="${nomCorto} · ${eH(j.pos||'')}">
-    <div class="campo-chip-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${av}</div>
-    <div class="campo-chip-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
-    ${selector}
+  return `<div class="campo-chip-pos${editMode?' editable':''}" data-jid="${eH(j.id)}"
+      style="left:${x}%;top:${y}%" title="${nomCorto} · ${eH(j.pos||'')}"
+      ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+eH(j.id)+'\')"':''}>
+    <div class="campo-chip-pos-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
+    <div class="campo-chip-pos-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
   </div>`;
 }
 
-// Guardamos el último eq calculado para poder resolver el grupo actual
-// de un jugador concreto al construir el <select> del modo edición sin
-// tener que recalcular toda la plantilla otra vez por cada chip.
-let _campogramaUltimosGrupos=null;
-function _campogramaGrupoActual(j){
-  if(!_campogramaUltimosGrupos) return POS_GRUPO_MAP[j.pos]||'Centrocampistas';
-  for(const g of POS_GRUPO_ORDEN){ if(_campogramaUltimosGrupos[g].some(x=>x.id===j.id)) return g; }
-  return POS_GRUPO_MAP[j.pos]||'Centrocampistas';
+function _campogramaBanquilloChipHTML(j){
+  const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre');
+  return `<div class="campo-banq-chip" title="${nomCorto} · ${eH(j.pos||'')}">
+    <div class="campo-banq-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
+    <div class="campo-banq-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
+  </div>`;
 }
 
 function renderCampograma(){
@@ -3559,42 +3926,42 @@ function renderCampograma(){
   const eq=eDB.find(x=>x.id===eId);
   if(!eq){ cont.innerHTML=''; return; }
 
-  const grupos=_campogramaGrupos(eq);
-  _campogramaUltimosGrupos=grupos;
-  const totalJug=Object.values(grupos).reduce((s,l)=>s+l.length,0);
+  const {colocados,suplentes}=_campogramaAsignar(eq);
+  const totalJug=colocados.filter(c=>c.jugador).length+suplentes.length;
 
   const btnEditar=document.getElementById('campo-btn-editar');
   const btnReset=document.getElementById('campo-btn-reset');
+  const sistFg=document.getElementById('campo-sist-fg');
+  const sistSel=document.getElementById('campo-sist-sel');
   const esAdmin=esAdminActual();
   if(btnEditar){
     btnEditar.style.display=esAdmin?'':'none';
     btnEditar.textContent=_campogramaEditMode?'✅ Terminar edición':'✏️ Editar campograma';
   }
   if(btnReset) btnReset.style.display=(esAdmin && eq.campoOverrides && Object.keys(eq.campoOverrides).length)?'':'none';
+  if(sistFg) sistFg.style.display=esAdmin?'':'none';
+  if(sistSel){
+    const valores=[...sistSel.options].map(o=>o.value);
+    sistSel.value=valores.includes(eq.sist)?eq.sist:'4-3-3';
+  }
 
   if(!totalJug){
     cont.innerHTML=`<div class="empty" style="margin:20px 0"><div class="empty-ic">🏟️</div><div style="font-size:14px">Sin jugadores vinculados a ${eH(eq.nom||'este equipo')} en la temporada ${eH(eq.temp||'actual')}</div></div>`;
     return;
   }
 
-  const conteos=_sistemaConteos(eq.sist);
-  const etiqueta=(g)=>{
-    if(!conteos) return g;
-    if(g==='Defensas') return `${g} (${conteos.df})`;
-    if(g==='Centrocampistas') return `${g} (${conteos.mc})`;
-    if(g==='Delanteros') return `${g} (${conteos.fw})`;
-    return g;
-  };
-
   const colorBase=eq.color||'#2f81f7';
   const stripeA=_sombraHex(colorBase,14),stripeB=_sombraHex(colorBase,-4);
   const hdrA=_sombraHex(colorBase,-58),hdrB=_sombraHex(colorBase,-30);
   const escudo=eq.imgEsc?`<img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='🛡️'">`:'🛡️';
+  const editMode=_campogramaEditMode && esAdmin;
 
-  // Orden visual de arriba a abajo: Delanteros primero (ataque, arriba
-  // del todo) y Porteros al final (defendiendo la portería de abajo),
-  // como en un campograma de plantilla al uso.
-  const ordenVisual=[...POS_GRUPO_ORDEN].reverse();
+  const chipsH=colocados.filter(c=>c.jugador).map(c=>_campogramaChipPosHTML(eq,c.jugador,c.slot,editMode)).join('');
+  const banquilloH=suplentes.length?`
+    <div class="campo-banquillo">
+      <div class="campo-banquillo-tit">🪑 Banquillo / Sin hueco en el sistema (${suplentes.length})</div>
+      <div class="campo-banquillo-jugs">${suplentes.map(j=>_campogramaBanquilloChipHTML(j)).join('')}</div>
+    </div>`:'';
 
   cont.innerHTML=`
     <div class="campo-wrap" id="campo-capture">
@@ -3602,10 +3969,10 @@ function renderCampograma(){
         <div class="campo-hdr-badge">${escudo}</div>
         <div class="campo-hdr-txt">
           <div class="campo-hdr-nom">${eH(eq.nom||'Equipo')}</div>
-          <div class="campo-hdr-sub">PLANTILLA · TEMPORADA ${eH(eq.temp||'—')}${eq.sist?' · '+eH(eq.sist):''}</div>
+          <div class="campo-hdr-sub">PLANTILLA · TEMPORADA ${eH(eq.temp||'—')}${eq.sist?' · 1-'+eH(eq.sist):''}</div>
         </div>
       </div>
-      <div class="campo-pitch" style="background:repeating-linear-gradient(180deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
+      <div class="campo-pitch-abs" id="campo-pitch-abs" style="background:repeating-linear-gradient(180deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
         <svg class="campo-marcas" viewBox="0 0 100 140" preserveAspectRatio="none">
           <rect x="2" y="2" width="96" height="136" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
           <line x1="2" y1="71" x2="98" y2="71" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
@@ -3618,14 +3985,9 @@ function renderCampograma(){
           <rect x="38" y="130" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
           <path d="M 38 118 A 12 12 0 0 1 62 118" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
         </svg>
-        ${ordenVisual.map(g=>`
-          <div class="campo-banda" style="border-color:${POS_GRUPO_COLOR[g]}">
-            <div class="campo-banda-lbl" style="background:${POS_GRUPO_COLOR[g]}">${eH(etiqueta(g))}</div>
-            <div class="campo-banda-jugs">
-              ${grupos[g].length?grupos[g].map(j=>_campogramaChipHTML(j,_campogramaEditMode)).join(''):'<div class="campo-banda-vacia">—</div>'}
-            </div>
-          </div>`).join('')}
+        ${chipsH}
       </div>
+      ${banquilloH}
     </div>`;
 }
 
@@ -3635,31 +3997,81 @@ function toggleCampogramaEdit(){
   renderCampograma();
 }
 
-function campogramaMoverJugador(jugadorId,nuevoGrupo){
+function campogramaCambiarSistema(nuevoSist){
   if(!esAdminActual() || !eId) return;
   const eq=eDB.find(x=>x.id===eId);
-  if(!eq || !POS_GRUPO_ORDEN.includes(nuevoGrupo)) return;
-  const j=jDB.find(x=>x.id===jugadorId);
-  eq.campoOverrides=eq.campoOverrides||{};
-  // Si coincide con el grupo automático (por posición) ya no hace falta
-  // guardar una excepción — así no se acumulan overrides "vacíos".
-  const grupoAuto=POS_GRUPO_MAP[j?.pos]||'Centrocampistas';
-  if(nuevoGrupo===grupoAuto) delete eq.campoOverrides[jugadorId];
-  else eq.campoOverrides[jugadorId]=nuevoGrupo;
+  if(!eq) return;
+  eq.sist=nuevoSist;
+  // Mantenemos en sincronía el desplegable de la pestaña "Editar datos"
+  // para que un guardarE() posterior no lo pise con un valor antiguo.
+  const selEditar=document.getElementById('esist');
+  if(selEditar) selEditar.value=nuevoSist;
   saveEDB();
   renderCampograma();
+  toast('⚽ Sistema actualizado: 1-'+nuevoSist);
 }
 
 function campogramaResetTodo(){
   if(!esAdminActual() || !eId) return;
   const eq=eDB.find(x=>x.id===eId);
   if(!eq) return;
-  askDel('¿Quitar todas las reasignaciones manuales del campograma y volver a la agrupación automática por posición?',()=>{
+  askDel('¿Quitar todas las posiciones movidas a mano y volver a la colocación automática según el sistema?',()=>{
     eq.campoOverrides={};
     saveEDB();
     renderCampograma();
     toast('↺ Campograma restablecido');
   });
+}
+
+// ── Arrastrar y soltar jugadores en el campograma (modo edición) ───
+// Usa Pointer Events (unifica ratón y táctil) con setPointerCapture
+// para que el arrastre siga funcionando aunque el puntero salga del
+// chip. La posición se guarda como % relativo a .campo-pitch-abs, y
+// se persiste en eq.campoOverrides[jugadorId]={x,y} al soltar.
+function _campogramaPointerDown(ev,jugadorId){
+  if(!_campogramaEditMode || !esAdminActual()) return;
+  ev.preventDefault();
+  const chip=ev.currentTarget;
+  const pitch=document.getElementById('campo-pitch-abs');
+  if(!chip || !pitch) return;
+  chip.setPointerCapture(ev.pointerId);
+  _campogramaDrag={jugadorId,chip,pitch,pointerId:ev.pointerId};
+  chip.classList.add('dragging');
+  chip.addEventListener('pointermove',_campogramaPointerMove);
+  chip.addEventListener('pointerup',_campogramaPointerUp);
+  chip.addEventListener('pointercancel',_campogramaPointerUp);
+}
+function _campogramaPointerMove(ev){
+  if(!_campogramaDrag) return;
+  const {chip,pitch}=_campogramaDrag;
+  const r=pitch.getBoundingClientRect();
+  if(!r.width || !r.height) return;
+  let x=((ev.clientX-r.left)/r.width)*100;
+  let y=((ev.clientY-r.top)/r.height)*100;
+  x=Math.max(3,Math.min(97,x));
+  y=Math.max(3,Math.min(97,y));
+  chip.style.left=x+'%';
+  chip.style.top=y+'%';
+  chip.dataset.x=x;
+  chip.dataset.y=y;
+}
+function _campogramaPointerUp(ev){
+  if(!_campogramaDrag) return;
+  const {jugadorId,chip}=_campogramaDrag;
+  chip.classList.remove('dragging');
+  chip.removeEventListener('pointermove',_campogramaPointerMove);
+  chip.removeEventListener('pointerup',_campogramaPointerUp);
+  chip.removeEventListener('pointercancel',_campogramaPointerUp);
+  const x=parseFloat(chip.dataset.x), y=parseFloat(chip.dataset.y);
+  _campogramaDrag=null;
+  if(!eId || isNaN(x) || isNaN(y)) return;
+  const eq=eDB.find(x2=>x2.id===eId);
+  if(!eq) return;
+  eq.campoOverrides=eq.campoOverrides||{};
+  eq.campoOverrides[jugadorId]={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
+  saveEDB();
+  const btnReset=document.getElementById('campo-btn-reset');
+  if(btnReset) btnReset.style.display='';
 }
 
 async function descargarCampogramaImagen(){
@@ -3670,6 +4082,7 @@ async function descargarCampogramaImagen(){
   const el=document.getElementById('campo-capture');
   if(!el){ toast('No se pudo generar la imagen',true); if(editabaAntes){_campogramaEditMode=true;renderCampograma();} return; }
   try{
+    await _cmpEsperarImagenes(el);
     const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
     const url=canvas.toDataURL('image/png');
     const a=document.createElement('a');
@@ -4284,6 +4697,12 @@ async function xPDF(){
     try{
       const el=document.getElementById(fichaId);
       if(!el||!el.innerHTML.trim()){toast('Abre primero la pestaña Ficha para generar el PDF',true);if(btn){btn.textContent=orig;btn.disabled=false;}return;}
+      // Esperar a que todas las fotos (jugadores, escudo...) hayan terminado
+      // de cargar antes de capturar — si no, html2canvas puede "fotografiar"
+      // el hueco en blanco de una imagen que aún no ha pintado (p.ej. la
+      // del portero si su foto tarda un poco más en decodificar), aunque en
+      // pantalla sí se vea bien un instante después.
+      await _cmpEsperarImagenes(el);
       const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false});
       const{jsPDF}=window.jspdf;
       const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
@@ -5497,48 +5916,119 @@ function guardarEConFeedback(){
 .campo-hdr-nom{ color:#fff; font-weight:800; font-size:19px; letter-spacing:.3px; }
 .campo-hdr-sub{ color:rgba(255,255,255,.7); font-size:10.5px; font-weight:700; letter-spacing:1px; margin-top:2px; }
 
-.campo-pitch{
-  position:relative; min-height:640px;
-  display:flex; flex-direction:column; justify-content:space-between;
-  padding:18px 10px;
+.campo-toolbar .campo-sist-fg{ display:flex; flex-direction:column; gap:2px; text-align:left; }
+.campo-toolbar .campo-sist-fg select{
+  font-size:12px; padding:5px 8px; border-radius:8px; border:1px solid var(--border2);
+  background:var(--bg2); color:var(--blanco);
+}
+
+.campo-pitch-abs{
+  position:relative; width:100%; aspect-ratio:100/140; min-height:480px;
 }
 .campo-marcas{ position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
 
-.campo-banda{ position:relative; z-index:1; padding:6px 4px 2px; text-align:center; }
-.campo-banda-lbl{
-  display:inline-block; margin:0 auto 10px; padding:3px 12px;
-  border-radius:20px; font-size:10px; font-weight:800; letter-spacing:.5px;
-  color:#0a0d13; text-align:center;
+/* Chip posicionado en un punto exacto del campo (x/y en % vía style inline) */
+.campo-chip-pos{
+  position:absolute; z-index:2; transform:translate(-50%,-50%);
+  display:flex; flex-direction:column; align-items:center; width:64px;
+  touch-action:none; user-select:none;
 }
-.campo-banda-jugs{ display:flex; flex-wrap:wrap; justify-content:center; gap:16px 10px; }
-.campo-banda-vacia{ color:rgba(255,255,255,.55); font-size:11px; padding:8px 0; }
-
-.campo-chip{ display:flex; flex-direction:column; align-items:center; width:96px; }
-.campo-chip-av{
-  width:58px; height:58px; border-radius:50%; overflow:hidden; flex-shrink:0;
-  border:3px solid rgba(255,255,255,.7); box-shadow:0 3px 10px rgba(0,0,0,.35);
+.campo-chip-pos.editable{ cursor:grab; }
+.campo-chip-pos.editable:active,.campo-chip-pos.dragging{ cursor:grabbing; z-index:5; }
+.campo-chip-pos.editable .campo-chip-pos-av{ box-shadow:0 0 0 2px rgba(255,255,255,.9),0 3px 10px rgba(0,0,0,.4); }
+.campo-chip-pos-av{
+  width:40px; height:40px; border-radius:50%; overflow:hidden; flex-shrink:0;
+  border:2.5px solid rgba(255,255,255,.75); box-shadow:0 3px 10px rgba(0,0,0,.4);
   display:flex; align-items:center; justify-content:center;
-  color:#fff; font-weight:800; font-size:16px;
+  color:#fff; font-weight:800; font-size:12px; pointer-events:none;
 }
-.campo-chip-av img{ width:100%; height:100%; object-fit:cover; }
-.campo-chip-nm{
-  margin-top:-8px; background:#fff; color:#0d1117;
-  font-size:9.5px; font-weight:800; text-align:center; line-height:1.25;
-  padding:3px 7px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.3);
+.campo-chip-pos-av img{ width:100%; height:100%; object-fit:cover; }
+.campo-chip-pos-nm{
+  margin-top:-4px; background:#fff; color:#0d1117; pointer-events:none;
+  font-size:8px; font-weight:800; text-align:center; line-height:1.2;
+  padding:2px 5px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,.3);
+  max-width:100%; overflow-wrap:break-word; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+.campo-banquillo{ padding:14px 12px 18px; border-top:1px solid var(--border2); background:rgba(0,0,0,.18); }
+.campo-banquillo-tit{ font-size:10px; font-weight:800; color:rgba(255,255,255,.6); letter-spacing:.4px; margin-bottom:10px; text-align:center; }
+.campo-banquillo-jugs{ display:flex; flex-wrap:wrap; justify-content:center; gap:12px 8px; }
+.campo-banq-chip{ display:flex; flex-direction:column; align-items:center; width:74px; }
+.campo-banq-av{
+  width:42px; height:42px; border-radius:50%; overflow:hidden; flex-shrink:0;
+  border:2px solid rgba(255,255,255,.6); box-shadow:0 2px 8px rgba(0,0,0,.3);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:800; font-size:12px;
+}
+.campo-banq-av img{ width:100%; height:100%; object-fit:cover; }
+.campo-banq-nm{
+  margin-top:-6px; background:#e6edf3; color:#0d1117;
+  font-size:8px; font-weight:800; text-align:center; line-height:1.2;
+  padding:2px 5px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,.3);
   max-width:100%; overflow-wrap:break-word;
-}
-.campo-chip-sel{
-  margin-top:4px; font-size:9px; max-width:96px; padding:2px 3px;
-  border-radius:6px; border:1px solid var(--border2); background:var(--bg2); color:var(--blanco);
 }
 
 @media(max-width:680px){
-  .campo-pitch{ min-height:560px; padding:14px 6px; }
-  .campo-chip{ width:76px; }
-  .campo-chip-av{ width:48px; height:48px; font-size:13px; }
-  .campo-chip-nm{ font-size:9px; }
-  .campo-banda-jugs{ gap:14px 6px; }
+  .campo-pitch-abs{ min-height:400px; }
+  .campo-chip-pos{ width:50px; }
+  .campo-chip-pos-av{ width:32px; height:32px; font-size:10px; }
+  .campo-chip-pos-nm{ font-size:7px; }
+  .campo-banq-chip{ width:62px; }
+  .campo-banq-av{ width:36px; height:36px; font-size:10px; }
 }
+
+/* ── Comparativas: dashboard visual capturado a PDF (fotos + gráficos) ──
+   Este bloque solo lo usa el contenedor oculto que arma
+   _cmpCapturarYExportarPDF() antes de pasarlo por html2canvas — no es
+   parte de ninguna vista visible de la app, así que va con un ancho
+   fijo pensado para esa captura, sin necesidad de media queries. */
+.cmpx-wrap{ font-family:'Segoe UI',system-ui,Arial,sans-serif; color:#e6edf3; padding:28px; }
+.cmpx-hdr{ display:flex; align-items:center; gap:16px; background:linear-gradient(120deg,#0f172a,#1f2937); border-radius:14px; padding:20px 24px; margin-bottom:22px; }
+.cmpx-hdr-ico{ font-size:34px; width:56px; height:56px; border-radius:12px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.cmpx-hdr-tit{ font-size:22px; font-weight:800; letter-spacing:.4px; }
+.cmpx-hdr-sub{ font-size:12px; color:#8b949e; margin-top:4px; font-weight:600; }
+
+.cmpx-players-row{ display:flex; flex-wrap:wrap; gap:14px; margin-bottom:26px; }
+.cmpx-player-card{ flex:1 1 150px; max-width:190px; background:#161b22; border:2px solid #30363d; border-radius:12px; padding:16px 10px; text-align:center; }
+.cmpx-player-av{ width:68px; height:68px; border-radius:50%; margin:0 auto 10px; border:3px solid; padding:2px; display:flex; align-items:center; justify-content:center; }
+.cmpx-player-nom{ font-size:13.5px; font-weight:800; }
+.cmpx-player-sub{ font-size:11px; color:#8b949e; margin-top:2px; font-weight:600; }
+.cmpx-player-club{ font-size:10.5px; color:#6e7681; margin-top:2px; }
+
+.cmpx-section{ margin-bottom:26px; }
+.cmpx-section-tit{ font-size:14px; font-weight:800; color:#e6edf3; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #30363d; }
+.cmpx-section-split{ display:flex; gap:24px; align-items:flex-start; }
+.cmpx-radar-box{ flex:1 1 320px; background:#161b22; border:1px solid #30363d; border-radius:12px; padding:16px; text-align:center; }
+.cmpx-destacados-box{ flex:1 1 260px; }
+
+.cmpx-bars{ background:#161b22; border:1px solid #30363d; border-radius:12px; padding:18px 20px; }
+.cmpx-bar-grupo{ margin-bottom:16px; }
+.cmpx-bar-grupo:last-child{ margin-bottom:0; }
+.cmpx-bar-grupo-tit{ font-size:11.5px; font-weight:800; color:#8b949e; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+.cmpx-bar-fila{ display:flex; align-items:center; gap:10px; margin-bottom:6px; }
+.cmpx-bar-nom{ width:130px; flex-shrink:0; font-size:11.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cmpx-bar-track{ flex:1; height:14px; background:#0d1117; border-radius:7px; overflow:hidden; }
+.cmpx-bar-fill{ height:100%; border-radius:7px; }
+.cmpx-bar-val{ width:44px; flex-shrink:0; text-align:right; font-size:11.5px; font-weight:800; }
+
+.cmpx-leyenda{ display:flex; flex-wrap:wrap; justify-content:center; gap:10px 16px; margin-top:10px; }
+.cmpx-leyenda-it{ font-size:11px; font-weight:700; color:#c9d1d9; display:flex; align-items:center; gap:6px; }
+.cmpx-leyenda-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+
+.cmpx-destacados{ display:flex; flex-direction:column; gap:10px; }
+.cmpx-destacado{ background:#161b22; border:1px solid #30363d; border-radius:10px; padding:12px 14px; }
+.cmpx-destacado-tit{ font-size:10px; font-weight:800; color:#8b949e; text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px; }
+.cmpx-destacado-row{ display:flex; align-items:center; gap:10px; }
+.cmpx-destacado-nom{ font-size:12.5px; font-weight:800; }
+.cmpx-destacado-val{ font-size:11px; color:#3fb950; font-weight:700; margin-top:1px; }
+
+.cmpx-table{ width:100%; border-collapse:collapse; background:#161b22; border-radius:12px; overflow:hidden; }
+.cmpx-table th,.cmpx-table td{ padding:9px 12px; font-size:11.5px; text-align:left; border-bottom:1px solid #21262d; }
+.cmpx-table th{ background:#21262d; font-weight:800; color:#e6edf3; }
+.cmpx-table td:first-child{ color:#8b949e; font-weight:700; }
+.cmpx-table tr:last-child td{ border-bottom:none; }
+
+.cmpx-footer{ text-align:center; font-size:10px; color:#484f58; margin-top:8px; }
 
 </style>
 
