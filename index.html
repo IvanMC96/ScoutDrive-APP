@@ -470,6 +470,20 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .ficha-sponsor img{height:22px;max-width:70px;object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
 .ficha-sponsor-txt{font-size:11px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
+/* Insignia del patrocinador — logo pequeño anclado a la esquina superior
+   derecha de la tarjeta (jugador o equipo), igual de "presente" que el
+   escudo/foto de la propia tarjeta, para que el patrocinio resalte de
+   verdad y no quede escondido como una simple línea de texto. */
+.card-sponsor-badge{
+  position:absolute; top:8px; right:8px; z-index:5;
+  width:28px; height:28px; border-radius:7px; overflow:hidden;
+  background:#fff; border:1px solid var(--border2); box-shadow:0 2px 8px rgba(0,0,0,.4);
+  display:flex; align-items:center; justify-content:center; cursor:pointer;
+  transition:transform .15s,border-color .15s;
+}
+.card-sponsor-badge:hover{ transform:scale(1.1); border-color:var(--azul); }
+.card-sponsor-badge img{ width:100%; height:100%; object-fit:contain; }
+
 /* Banner de publicidad global (fijo abajo, visible en toda la app) */
 .ad-banner-global{
   position:fixed;left:0;right:0;bottom:0;z-index:250;
@@ -2255,6 +2269,16 @@ function _sponsorHTML(ad,cls,lbl){
     <span class="${cls}-lbl">${lbl}</span>${img}${txt}
   </a>`;
 }
+// Insignia compacta (solo el logo) anclada a la esquina de una tarjeta
+// (jugador o equipo) — más visible que la fila de texto de abajo, para
+// que el patrocinio resalte de verdad justo donde se ve la tarjeta.
+function _sponsorBadgeHTML(ad){
+  if(!ad || !ad.img) return '';
+  const abre=ad.link?`href="${eH(ad.link)}" target="_blank" rel="noopener"`:'href="javascript:void(0)"';
+  return `<a class="card-sponsor-badge" ${abre} onclick="event.stopPropagation()" title="Patrocina${ad.texto?': '+eH(ad.texto):''}">
+    <img src="${ad.img}" alt="">
+  </a>`;
+}
 // Pinta (o vacía) el hueco de patrocinio en la cabecera de una ficha
 // (jugador o equipo) — se llama cada vez que esa ficha se sincroniza.
 function _renderFichaSponsor(tipo){
@@ -2547,6 +2571,7 @@ function guardarAnuncio(){
   // tarjeta de jugador o en la cabecera de una ficha abierta — refrescar
   // esas vistas si están activas para que el cambio se note al instante.
   if(currentSection==='jugadores-db') renderJDB();
+  if(currentSection==='equipos-db') renderEDB();
   if(currentSection==='jugador-ed') _renderFichaSponsor('j');
   if(currentSection==='equipo-ed') _renderFichaSponsor('e');
   toast('✅ Anuncio guardado');
@@ -2556,6 +2581,7 @@ function borrarAnuncio(id){
   askDel('¿Borrar este anuncio?', ()=>{
     adsDB=adsDB.filter(x=>x.id!==id); saveAds(); renderAdsList(); renderBannerAdsGlobal();
     if(currentSection==='jugadores-db') renderJDB();
+    if(currentSection==='equipos-db') renderEDB();
     if(currentSection==='jugador-ed') _renderFichaSponsor('j');
     if(currentSection==='equipo-ed') _renderFichaSponsor('e');
     toast('🗑 Anuncio eliminado');
@@ -2841,6 +2867,7 @@ function renderJDB(){
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
+      ${_sponsorBadgeHTML(_adJ)}
       <div class="card-hdr" onclick="editJ('${j.id}')">
       ${av}<div><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>
     </div>${_sponsorHTML(_adJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
@@ -2942,6 +2969,41 @@ function _cmpEsperarImagenes(cont,timeoutMs=4000){
   ]);
 }
 
+// Tras sincronizar con Google Sheets, las fotos/escudos dejan de ser un
+// data: URL local y pasan a ser una URL de Google Drive (dominio externo).
+// Mostrarlas con una <img> normal funciona perfectamente en pantalla, PERO
+// html2canvas necesita LEER los píxeles de esa imagen para "fotografiarla",
+// y eso sí exige que el navegador la haya cargado en modo CORS — si no,
+// html2canvas puede terminar pintando un hueco en blanco justo ahí (aunque
+// la misma foto se vea perfectamente bien en el campograma en pantalla).
+// Este helper, ANTES de capturar, pide cada foto externa otra vez en modo
+// CORS explícito y la convierte a un data: URL propio (dibujándola en un
+// canvas). Si el servidor no admite CORS, sencillamente no se puede leer
+// esa imagen desde JavaScript de ninguna forma — se deja la foto tal cual
+// estaba (no se rompe nada, el resto de la exportación sigue igual).
+function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
+  const imgs=[...cont.querySelectorAll('img')].filter(img=>img.src && !img.src.startsWith('data:'));
+  if(!imgs.length) return Promise.resolve();
+  return Promise.all(imgs.map(img=>new Promise(resolve=>{
+    let listo=false;
+    const acabar=()=>{ if(!listo){ listo=true; resolve(); } };
+    const timer=setTimeout(acabar,timeoutMs);
+    const probeta=new Image();
+    probeta.crossOrigin='anonymous';
+    probeta.onload=()=>{
+      try{
+        const c=document.createElement('canvas');
+        c.width=probeta.naturalWidth||1; c.height=probeta.naturalHeight||1;
+        c.getContext('2d').drawImage(probeta,0,0);
+        img.src=c.toDataURL('image/png');
+      }catch(e){ /* Este servidor en concreto no admite CORS — se deja la foto como estaba. */ }
+      clearTimeout(timer); acabar();
+    };
+    probeta.onerror=()=>{ clearTimeout(timer); acabar(); };
+    probeta.src=img.src;
+  })));
+}
+
 /** Fila de barras horizontales (una barra por jugador/equipo comparado)
  *  para una estadística concreta. items: [{nombre,valor,color}] */
 function _cmpFilaBarras(etiqueta,items,opts={}){
@@ -3011,6 +3073,11 @@ async function _cmpCapturarYExportarPDF(html,anchoPx,nombreArchivo,toastMsg){
   cont.innerHTML=html;
   document.body.appendChild(cont);
   try{
+    await _cmpEsperarImagenes(cont);
+    // Fotos/escudos ya sincronizados con Google Sheets son una URL externa
+    // (Drive) — sin esto, html2canvas podía dejarlas en blanco en el PDF
+    // aunque se vean bien en pantalla (ver _cmpConvertirImagenesADataURL).
+    await _cmpConvertirImagenesADataURL(cont);
     await _cmpEsperarImagenes(cont);
     await new Promise(r=>setTimeout(r,60)); // deja que el navegador termine de maquetar/pintar
 
@@ -3530,13 +3597,15 @@ function renderEDB(){
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
     const eqColor=eq.color||'#30363d';
     const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
+    const _adE=_anuncioClubActivo(eq.id);
     return `<div class="card" style="border-left:4px solid ${eqColor}">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${eComparar.has(eq.id)?'checked':''} onchange="toggleCompararE('${eq.id}',this.checked)">
       </label>
+      ${_sponsorBadgeHTML(_adE)}
       <div class="card-hdr" onclick="editE('${eq.id}')">
       ${av}<div><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>
-    </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+    </div>${_sponsorHTML(_adE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde-cl)">${s.v||0}V</div><div class="ckl">Victorias</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.gf||0}</div><div class="ckl">GF</div></div>
@@ -4158,7 +4227,13 @@ function _campogramaChipPosHTML(eq,j,slot,editMode){
   const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
   const x=tieneOv?ov.x:slot.x, y=tieneOv?ov.y:slot.y;
   const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
-  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre');
+  // Nombre completo (nombre + TODO el apellido) — antes se cortaba al
+  // primer apellido con .split(' ')[0], así que un jugador con apellido
+  // compuesto (p.ej. "LLERA GARCIA") se veía sin la segunda parte y sin
+  // ningún indicio visual de que faltaba algo. El chip ya tiene su propio
+  // ellipsis por CSS (text-overflow:ellipsis) para cuando no cabe, así
+  // que aquí basta con no truncar nosotros mismos.
+  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
   return `<div class="campo-chip-pos${editMode?' editable':''}" data-jid="${eH(j.id)}"
       style="left:${x}%;top:${y}%" title="${nomCorto} · ${eH(j.pos||'')}"
       ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+eH(j.id)+'\')"':''}>
@@ -4169,7 +4244,13 @@ function _campogramaChipPosHTML(eq,j,slot,editMode){
 
 function _campogramaBanquilloChipHTML(j){
   const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
-  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'').split(' ')[0]).trim()||'Sin nombre');
+  // Nombre completo (nombre + TODO el apellido) — antes se cortaba al
+  // primer apellido con .split(' ')[0], así que un jugador con apellido
+  // compuesto (p.ej. "LLERA GARCIA") se veía sin la segunda parte y sin
+  // ningún indicio visual de que faltaba algo. El chip ya tiene su propio
+  // ellipsis por CSS (text-overflow:ellipsis) para cuando no cabe, así
+  // que aquí basta con no truncar nosotros mismos.
+  const nomCorto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
   return `<div class="campo-banq-chip" title="${nomCorto} · ${eH(j.pos||'')}">
     <div class="campo-banq-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
     <div class="campo-banq-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
@@ -4253,6 +4334,20 @@ function toggleCampogramaEdit(){
   renderCampograma();
 }
 
+// Los cambios del campograma (arrastrar un jugador, cambiar el sistema,
+// restablecer) se guardaban SOLO en local (saveEDB → localStorage), a
+// diferencia de guardarE() que además sube el equipo a Google Sheets.
+// Eso hacía que, en cuanto llegaba CUALQUIER sincronización completa con
+// la nube (el botón 🔄, o "tirar para actualizar" en móvil) — que trata
+// el Sheet como fuente de verdad — el equipo remoto (que nunca se enteró
+// del arrastre) pisara otra vez al local y las posiciones movidas a mano
+// "volvían a su sitio inicial" como si nunca se hubieran guardado. La
+// solución es que estos cambios también viajen a la nube igual que hace
+// guardarE(), reutilizando la misma función que ya usa sync-bridge.js.
+function _campogramaSincronizarNube(eq){
+  if(typeof scoutSincronizarEquipo==='function') scoutSincronizarEquipo(eq);
+}
+
 function campogramaCambiarSistema(nuevoSist){
   if(!esAdminActual() || !eId) return;
   const eq=eDB.find(x=>x.id===eId);
@@ -4263,6 +4358,7 @@ function campogramaCambiarSistema(nuevoSist){
   const selEditar=document.getElementById('esist');
   if(selEditar) selEditar.value=nuevoSist;
   saveEDB();
+  _campogramaSincronizarNube(eq);
   renderCampograma();
   toast('⚽ Sistema actualizado: 1-'+nuevoSist);
 }
@@ -4274,6 +4370,7 @@ function campogramaResetTodo(){
   askDel('¿Quitar todas las posiciones movidas a mano y volver a la colocación automática según el sistema?',()=>{
     eq.campoOverrides={};
     saveEDB();
+    _campogramaSincronizarNube(eq);
     renderCampograma();
     toast('↺ Campograma restablecido');
   });
@@ -4326,6 +4423,7 @@ function _campogramaPointerUp(ev){
   eq.campoOverrides=eq.campoOverrides||{};
   eq.campoOverrides[jugadorId]={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
   saveEDB();
+  _campogramaSincronizarNube(eq);
   const btnReset=document.getElementById('campo-btn-reset');
   if(btnReset) btnReset.style.display='';
 }
@@ -4338,6 +4436,13 @@ async function descargarCampogramaImagen(){
   const el=document.getElementById('campo-capture');
   if(!el){ toast('No se pudo generar la imagen',true); if(editabaAntes){_campogramaEditMode=true;renderCampograma();} return; }
   try{
+    await _cmpEsperarImagenes(el);
+    // Las fotos/escudos ya sincronizados con Google Sheets son una URL
+    // externa (Drive), no un data: URL local — sin esto, html2canvas podía
+    // dejar esa foto en blanco en la imagen exportada aunque en el
+    // campograma en pantalla se viera perfectamente (ver comentario de
+    // _cmpConvertirImagenesADataURL más arriba).
+    await _cmpConvertirImagenesADataURL(el);
     await _cmpEsperarImagenes(el);
     const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
     const url=canvas.toDataURL('image/png');
@@ -4958,6 +5063,11 @@ async function xPDF(){
       // el hueco en blanco de una imagen que aún no ha pintado (p.ej. la
       // del portero si su foto tarda un poco más en decodificar), aunque en
       // pantalla sí se vea bien un instante después.
+      await _cmpEsperarImagenes(el);
+      // Fotos/escudos ya sincronizados con Google Sheets son una URL externa
+      // (Drive) — sin esto, html2canvas podía dejarlas en blanco en el PDF
+      // aunque se vean bien en pantalla (ver _cmpConvertirImagenesADataURL).
+      await _cmpConvertirImagenesADataURL(el);
       await _cmpEsperarImagenes(el);
       const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false});
       const{jsPDF}=window.jspdf;
