@@ -54,6 +54,50 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .nav-tab.on{background:var(--azul-dk);color:#fff;}
 .top-right{display:flex;gap:6px;align-items:center;}
 
+.btn-hamburger{background:transparent;border:1px solid var(--border2);border-radius:6px;color:var(--blanco);
+  width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;
+  flex-shrink:0;transition:all .15s;font-family:inherit;}
+.btn-hamburger:hover{border-color:var(--azul);background:var(--bg3);}
+
+/* ── MENÚ LATERAL ("3 rayas") — acceso rápido a secciones y clubes ── */
+.drawer-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:940;
+  opacity:0;pointer-events:none;transition:opacity .2s;}
+.drawer-overlay.on{opacity:1;pointer-events:auto;}
+.drawer-panel{position:fixed;top:0;left:0;bottom:0;width:300px;max-width:85vw;background:var(--bg2);
+  border-right:1px solid var(--border);z-index:950;transform:translateX(-100%);transition:transform .22s ease;
+  display:flex;flex-direction:column;box-shadow:var(--shadow);}
+.drawer-panel.on{transform:translateX(0);}
+.drawer-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;
+  border-bottom:1px solid var(--border);flex-shrink:0;}
+.drawer-hdr h2{font-size:14px;font-weight:800;}
+.drawer-close{background:transparent;border:none;color:var(--gris);font-size:18px;cursor:pointer;
+  padding:4px 8px;border-radius:6px;line-height:1;}
+.drawer-close:hover{color:var(--blanco);background:var(--bg3);}
+.drawer-body{overflow-y:auto;flex:1;padding:12px 0;}
+.drawer-sec{padding:0 10px 12px;border-bottom:1px solid var(--border);margin-bottom:12px;display:flex;
+  flex-direction:column;gap:2px;}
+.drawer-sec-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:transparent;
+  border:none;color:var(--gris);font-size:13px;font-weight:600;padding:9px 10px;border-radius:7px;
+  cursor:pointer;font-family:inherit;transition:all .15s;}
+.drawer-sec-btn:hover{background:var(--bg3);color:var(--blanco);}
+.drawer-sec-btn.on{background:var(--azul-dk);color:#fff;}
+.drawer-clubs{padding:0 12px;}
+.drawer-clubs-tit{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--gris);padding:4px 4px 8px;}
+.drawer-search{width:100%;background:var(--bg3);border:1px solid var(--border2);border-radius:6px;
+  padding:7px 10px;color:var(--blanco);font-size:12px;font-family:inherit;margin-bottom:8px;}
+.drawer-search:focus{outline:none;border-color:var(--azul);}
+.drawer-club-list{display:flex;flex-direction:column;gap:2px;max-height:none;}
+.drawer-club-item{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:7px;cursor:pointer;
+  transition:all .15s;}
+.drawer-club-item:hover{background:var(--bg3);}
+.drawer-club-av{width:26px;height:26px;border-radius:6px;background:var(--bg3);display:flex;
+  align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;overflow:hidden;}
+.drawer-club-av img{width:100%;height:100%;object-fit:contain;}
+.drawer-club-nm{font-size:12px;font-weight:600;color:var(--blanco);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.drawer-club-mt{font-size:10px;color:var(--gris);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.drawer-club-empty{padding:14px 10px;font-size:11.5px;color:var(--gris);text-align:center;}
+
 /* BOTONES */
 .btn{border:none;cursor:pointer;border-radius:6px;font-weight:600;font-size:12px;
   padding:7px 14px;display:inline-flex;align-items:center;gap:5px;
@@ -1068,6 +1112,7 @@ body.solo-lectura .ed-panel-form {
 
 <!-- TOPBAR GLOBAL -->
 <div class="topbar">
+  <button class="btn-hamburger" onclick="toggleDrawer()" title="Menú de acceso rápido">☰</button>
   <button class="btn b-ghost b-sm" id="btn-atras" onclick="volverAtras()" style="display:none;flex-shrink:0" title="Volver atrás">← Atrás</button>
   <div class="brand" onclick="navTo('jugadores-db')">
     <div class="brand-logo" id="brand-logo-wrap">
@@ -1097,6 +1142,23 @@ body.solo-lectura .ed-panel-form {
     <button class="btn b-ghost" id="btn-volver" onclick="volverDB()">← Volver</button>
   </div>
   <button class="btn b-ghost b-sm" onclick="confirmarCerrarSesion()" title="Cerrar sesión" style="flex-shrink:0;margin-left:8px">🚪</button>
+</div>
+
+<!-- ── MENÚ LATERAL ("3 rayas") — acceso rápido a secciones y clubes ── -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="cerrarDrawer()"></div>
+<div class="drawer-panel" id="drawer-panel">
+  <div class="drawer-hdr">
+    <h2>☰ Acceso rápido</h2>
+    <button class="drawer-close" onclick="cerrarDrawer()" title="Cerrar">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-sec" id="drawer-secciones"></div>
+    <div class="drawer-clubs">
+      <div class="drawer-clubs-tit">🏟️ Ir a un club</div>
+      <input type="text" class="drawer-search" id="drawer-club-q" placeholder="Buscar club o liga…" oninput="renderDrawerClubes(this.value)">
+      <div class="drawer-club-list" id="drawer-club-list"></div>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -2500,6 +2562,70 @@ function navTo(sec,_esVolver){
   // El ancho real de las pestañas (y si sobra alguna fuera de pantalla)
   // solo se puede medir una vez que el navegador ha pintado el cambio.
   if (typeof _actualizarFadesTabs === 'function') requestAnimationFrame(_actualizarFadesTabs);
+  // Cualquier cambio de sección (venga del propio menú lateral, de las
+  // pestañas de siempre, de "editE()" al abrir un club, etc.) cierra el
+  // menú lateral si estaba abierto — así "ir a jugadores" o "abrir este
+  // club" desde el menú se sienten como una sola acción, no dos.
+  cerrarDrawer();
+}
+
+// ── MENÚ LATERAL ("3 rayas") — acceso rápido a cualquier sección o club ──
+function toggleDrawer(){
+  const p=document.getElementById('drawer-panel');
+  if(!p) return;
+  if(p.classList.contains('on')) cerrarDrawer(); else abrirDrawer();
+}
+function abrirDrawer(){
+  const ov=document.getElementById('drawer-overlay'),p=document.getElementById('drawer-panel');
+  if(!ov||!p) return;
+  renderDrawerSecciones();
+  renderDrawerClubes();
+  ov.classList.add('on');p.classList.add('on');
+  document.addEventListener('keydown',_drawerEscListener);
+}
+function cerrarDrawer(){
+  const ov=document.getElementById('drawer-overlay'),p=document.getElementById('drawer-panel');
+  if(!ov||!p||!p.classList.contains('on')) return;
+  ov.classList.remove('on');p.classList.remove('on');
+  document.removeEventListener('keydown',_drawerEscListener);
+}
+function _drawerEscListener(ev){ if(ev.key==='Escape') cerrarDrawer(); }
+
+function renderDrawerSecciones(){
+  const wrap=document.getElementById('drawer-secciones');if(!wrap)return;
+  const secciones=[
+    {sec:'inicio',ic:'🏠',lbl:'Inicio'},
+    {sec:'jugadores-db',ic:'👤',lbl:'Jugadores'},
+    {sec:'equipos-db',ic:'🏟️',lbl:'Equipos'},
+    {sec:'partidos',ic:'🎬',lbl:'Partidos'},
+    {sec:'goles',ic:'⚽',lbl:'Goles'},
+    {sec:'config',ic:'⚙️',lbl:'Config.'},
+  ];
+  if(typeof esAdminActual==='function' && esAdminActual()) secciones.push({sec:'admin',ic:'🛡️',lbl:'Admin'});
+  wrap.innerHTML=secciones.map(s=>{
+    const activo=currentSection===s.sec || (s.sec==='jugadores-db'&&currentSection.startsWith('jugador')) || (s.sec==='equipos-db'&&currentSection.startsWith('equipo'));
+    return `<button class="drawer-sec-btn${activo?' on':''}" onclick="navTo('${s.sec}')">${s.ic} ${s.lbl}</button>`;
+  }).join('');
+}
+
+function renderDrawerClubes(q){
+  const wrap=document.getElementById('drawer-club-list');if(!wrap)return;
+  q=(q!==undefined?q:(G('drawer-club-q')||'')).toLowerCase();
+  const visibles=(typeof eDB!=='undefined'?eDB:[]).filter(e=>usuarioPuedeVerLiga(e.liga));
+  let lst=q?visibles.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q)):visibles;
+  lst=[...lst].sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
+  if(!lst.length){wrap.innerHTML=`<div class="drawer-club-empty">${visibles.length?'Sin resultados':'Sin equipos'}</div>`;return;}
+  wrap.innerHTML=lst.map(eq=>{
+    const av=eq.imgEsc?`<img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,'')||'?')}'">`:eH(ini(eq.nom,'')||eq.nom?.slice(0,2)||'?').toUpperCase();
+    const typeTxt=eq.tipo==='propio'?'🔵':'🔴';
+    return `<div class="drawer-club-item" onclick="editE('${eq.id}')">
+      <div class="drawer-club-av">${av}</div>
+      <div style="min-width:0;flex:1">
+        <div class="drawer-club-nm">${eH(eq.nom||'Sin nombre')}</div>
+        <div class="drawer-club-mt">${typeTxt} ${eH(eq.liga||'')}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function volverDB(){
@@ -5664,6 +5790,7 @@ function guardarEConFeedback(){
   .nav-tab{ padding:6px 12px; font-size:11px; white-space:nowrap; flex-shrink:0; }
   .top-right{ margin-left:auto; }
   .top-right .btn{ padding:7px 10px; font-size:11px; }
+  .drawer-panel{ width:86vw; }
 
   .db-hdr{ flex-direction:column; align-items:stretch; }
   .db-stats{ width:100%; }
