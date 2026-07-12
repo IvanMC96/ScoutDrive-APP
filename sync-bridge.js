@@ -481,7 +481,7 @@ async function scoutSincronizarAlAbrir() {
         // Aquí sí protegemos: nunca dejamos que un remoto sin nombre/apellidos
         // borre uno local que sí los tiene — evita que un jugador "se quede
         // sin nombre" por una fila incompleta o mal mapeada en el Sheet.
-        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig'])) huboNovedades = true;
       }
     });
   }
@@ -495,7 +495,7 @@ async function scoutSincronizarAlAbrir() {
       if (idx < 0) {
         eDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
-        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides'])) huboNovedades = true;
       }
     });
   }
@@ -549,8 +549,19 @@ async function scoutSincronizarAlAbrir() {
  *     foto, miniatura...) pero el local SÍ la tenía, conserva la
  *     imagen local — esto es justo lo que evita que un escudo/foto que
  *     ya estaba bien subido se borre al sincronizar con una fila del
- *     Sheet que se guardó a medias (p.ej. por un fallo anterior). */
-function _scoutFusionarSeguro(arr, idx, remoto, camposClave, camposImagen) {
+ *     Sheet que se guardó a medias (p.ej. por un fallo anterior).
+ *  3) si remoto no trae valor en alguno de "camposObjeto" (objetos
+ *     anidados como el "orig" del radar de estilo de juego, o el
+ *     "campoOverrides" del campograma) pero el local sí, conserva el
+ *     del local. Estos campos van dentro de "jsonCompleto" en el
+ *     Sheet, que tiene un límite de 50.000 caracteres por celda —  si
+ *     el registro es grande (p.ej. por un escudo/foto en base64), se
+ *     puede guardar truncado y el JSON.parse falla; en ese caso
+ *     _normalizarRegistro() cae al mapeo manual de columnas planas,
+ *     que no incluye estos campos, y sin esta protección la fila
+ *     remota "vacía" en ese campo borraría silenciosamente el dato
+ *     local en cada sincronización completa. */
+function _scoutFusionarSeguro(arr, idx, remoto, camposClave, camposImagen, camposObjeto) {
   const local = arr[idx];
   const remotoTieneAlgunCampo = camposClave.some(c => remoto[c]);
   const localTieneAlgunCampo = camposClave.some(c => local[c]);
@@ -563,6 +574,14 @@ function _scoutFusionarSeguro(arr, idx, remoto, camposClave, camposImagen) {
     if (!remoto[c] && local[c]) {
       fusionado[c] = local[c];
       console.warn('[Scoutdrive sync] Fila remota sin imagen (' + c + '); se conserva la local para', local.id);
+    }
+  });
+  (camposObjeto || []).forEach(c => {
+    const remotoVacio = !remoto[c] || (typeof remoto[c] === 'object' && Object.keys(remoto[c]).length === 0);
+    const localConValor = local[c] && typeof local[c] === 'object' && Object.keys(local[c]).length > 0;
+    if (remotoVacio && localConValor) {
+      fusionado[c] = local[c];
+      console.warn('[Scoutdrive sync] Fila remota sin ' + c + '; se conserva el local para', local.id);
     }
   });
   arr[idx] = fusionado;
@@ -663,7 +682,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig']); cambios++; }
       else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
   }
@@ -673,7 +692,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides']); cambios++; }
       else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
