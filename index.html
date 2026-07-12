@@ -450,6 +450,25 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .ad-badge-inactivo{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.75);
   color:var(--gris);font-size:9px;font-weight:700;padding:3px 8px;border-radius:10px;}
 .ads-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;}
+.ad-card-club{font-size:9px;color:var(--azul-cl);font-weight:700;padding:0 13px 8px;margin-top:-6px;}
+
+/* Patrocinio de club — el mismo anuncio, integrado según dónde aparece:
+   tarjeta de jugador (compacto, fila inferior) o cabecera de una ficha
+   (jugador o equipo, insignia a la derecha del título). */
+.card-sponsor{display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--bg);
+  border-top:1px solid var(--border);text-decoration:none;overflow:hidden;}
+.card-sponsor:hover{background:var(--bg3);}
+.card-sponsor-lbl{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;}
+.card-sponsor img{height:16px;max-width:56px;object-fit:contain;flex-shrink:0;}
+.card-sponsor-txt{font-size:10px;color:var(--gris);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+.ficha-sponsor{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:20px;padding:6px 14px 6px 6px;text-decoration:none;transition:border-color .15s;
+  max-width:min(280px,100%);flex-shrink:0;}
+.ficha-sponsor:hover{border-color:var(--azul);}
+.ficha-sponsor-lbl{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
+.ficha-sponsor img{height:22px;max-width:70px;object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
+.ficha-sponsor-txt{font-size:11px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Banner de publicidad global (fijo abajo, visible en toda la app) */
 .ad-banner-global{
@@ -1296,6 +1315,7 @@ body.solo-lectura .ed-panel-form {
   <div class="ed-panel ed-panel-ficha show" id="jpanel-ficha">
     <div class="ficha-header-bar">
       <h2 id="j-ficha-titulo-bar">Ficha del Jugador</h2>
+      <div id="j-ficha-sponsor-wrap"></div>
     </div>
     <div class="ficha-full" id="j-ficha-container-full"></div>
     <p style="font-size:10px;color:var(--gris);padding:12px 0 24px">El PDF captura exactamente este informe</p>
@@ -1526,6 +1546,7 @@ body.solo-lectura .ed-panel-form {
   <div class="ed-panel ed-panel-ficha show" id="epanel-ficha">
     <div class="ficha-header-bar">
       <h2 id="e-ficha-titulo-bar">Ficha del Equipo</h2>
+      <div id="e-ficha-sponsor-wrap"></div>
     </div>
     <div class="ficha-full" id="e-ficha-container-full"></div>
     <p style="font-size:10px;color:var(--gris);padding:12px 0 24px">El PDF captura exactamente este informe</p>
@@ -1961,6 +1982,18 @@ body.solo-lectura .ed-panel-form {
         <input id="an-link" placeholder="https://...">
       </div>
       <div class="apf">
+        <label>Club patrocinado</label>
+        <select id="an-club"></select>
+        <p style="font-size:9px;color:var(--gris2);margin-top:4px">
+          Si eliges un club, este anuncio también aparecerá integrado en las
+          tarjetas y fichas de sus jugadores y en la ficha del propio club
+          (además de en Inicio y el banner general). Si dejas "General" solo
+          se ve en Inicio y en el banner de abajo, como hasta ahora. Con
+          varios anuncios activos para el mismo club se muestra el más
+          reciente.
+        </p>
+      </div>
+      <div class="apf">
         <label>Estado</label>
         <select id="an-activo">
           <option value="true">✅ Activo (visible)</option>
@@ -2195,6 +2228,42 @@ function colorDeEquipoPorNombre(nombre){
   const eq=_buscarEquipoPorNombre(nombre);
   return eq?(eq.color||null):null;
 }
+function idDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return eq?eq.id:null;
+}
+
+// ── PUBLICIDAD POR CLUB — patrocinio integrado ────────────────────
+// Un anuncio (adsDB) puede llevar además un "eqId" (equipo al que
+// patrocina). Sin eqId es un anuncio "general" y se comporta como
+// siempre (Inicio + banner de abajo). Con eqId, ADEMÁS se muestra
+// integrado en la tarjeta y la ficha de cada jugador de ese club, y
+// en la ficha del propio club. Si hay varios anuncios activos para
+// el mismo club se usa el más reciente (adsDB.unshift los añade al
+// principio, así que basta con el primer match).
+function _anuncioClubActivo(eqId){
+  if(!eqId) return null;
+  return adsDB.find(a=>a.eqId===eqId && a.activo!==false && (a.img||a.texto))||null;
+}
+function _sponsorHTML(ad,cls,lbl){
+  if(!ad) return '';
+  const abre=ad.link?`href="${eH(ad.link)}" target="_blank" rel="noopener"`:'href="javascript:void(0)"';
+  const img=ad.img?`<img src="${ad.img}" alt="">`:'';
+  const txt=ad.texto?`<span class="${cls}-txt">${eH(ad.texto)}</span>`:'';
+  const stop=cls==='card-sponsor'?'onclick="event.stopPropagation()"':'';
+  return `<a class="${cls}" ${abre} ${stop} title="Publicidad${ad.texto?': '+eH(ad.texto):''}">
+    <span class="${cls}-lbl">${lbl}</span>${img}${txt}
+  </a>`;
+}
+// Pinta (o vacía) el hueco de patrocinio en la cabecera de una ficha
+// (jugador o equipo) — se llama cada vez que esa ficha se sincroniza.
+function _renderFichaSponsor(tipo){
+  const wrap=document.getElementById(tipo==='j'?'j-ficha-sponsor-wrap':'e-ficha-sponsor-wrap');
+  if(!wrap) return;
+  const eqId = tipo==='j' ? idDeEquipoPorNombre(G('jclub')) : eId;
+  const ad = eqId?_anuncioClubActivo(eqId):null;
+  wrap.innerHTML=_sponsorHTML(ad,'ficha-sponsor','Patrocinado por');
+}
 
 // ── GOLEADORES — separados por liga/grupo del club del jugador ────
 function renderGoleadoresInicio(){
@@ -2408,9 +2477,20 @@ function renderAdsList(){
           <button class="btn b-rojo b-sm" onclick="borrarAnuncio('${a.id}')">🗑</button>
         </div>`:''}
       </div>
+      ${a.eqId?`<div class="ad-card-club">🏟️ ${eH(_buscarEquipoPorId(a.eqId)?.nom||'Club eliminado')}</div>`:''}
     </div>`).join('');
 }
+// El helper por nombre ya existe (_buscarEquipoPorNombre); este busca por id,
+// que es lo que guarda cada anuncio en su campo eqId.
+function _buscarEquipoPorId(id){ return eDB.find(e=>e.id===id)||null; }
 
+function _poblarSelectClubAnuncio(valorActual){
+  const sel=document.getElementById('an-club'); if(!sel) return;
+  const opciones=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
+  sel.innerHTML='<option value="">🌐 General (sin club, como hasta ahora)</option>'+
+    opciones.map(eq=>`<option value="${eq.id}">🏟️ ${eH(eq.nom||'Sin nombre')}</option>`).join('');
+  sel.value=valorActual||'';
+}
 function abrirModalAnuncio(){
   if(!esAdminActual()){toast('Solo los administradores pueden añadir anuncios',true);return;}
   document.getElementById('an-texto').value='';
@@ -2421,6 +2501,7 @@ function abrirModalAnuncio(){
   _adImgTmp=null;
   document.getElementById('pv-anuncio').innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';
   document.getElementById('uz-anuncio').classList.remove('has');
+  _poblarSelectClubAnuncio('');
   document.getElementById('modal-anuncio').classList.add('open');
 }
 function editarAnuncio(id){
@@ -2434,6 +2515,7 @@ function editarAnuncio(id){
   const pv=document.getElementById('pv-anuncio');
   if(a.img){pv.innerHTML=`<img src="${a.img}" class="uz-img">`;document.getElementById('uz-anuncio').classList.add('has');}
   else{pv.innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';document.getElementById('uz-anuncio').classList.remove('has');}
+  _poblarSelectClubAnuncio(a.eqId||'');
   document.getElementById('modal-anuncio').classList.add('open');
 }
 function cerrarModalAnuncio(){ document.getElementById('modal-anuncio').classList.remove('open'); }
@@ -2455,17 +2537,28 @@ function guardarAnuncio(){
     img:_adImgTmp||null,
     texto:document.getElementById('an-texto').value.trim(),
     link:document.getElementById('an-link').value.trim(),
-    activo:document.getElementById('an-activo').value==='true'
+    activo:document.getElementById('an-activo').value==='true',
+    eqId:document.getElementById('an-club')?.value||''
   };
   if(editId){ const idx=adsDB.findIndex(x=>x.id===editId); if(idx>=0)adsDB[idx]=anuncio; }
   else adsDB.unshift(anuncio);
   saveAds(); cerrarModalAnuncio(); renderAdsList(); renderBannerAdsGlobal();
+  // El patrocinio de un club puede estar visible ahora mismo en una
+  // tarjeta de jugador o en la cabecera de una ficha abierta — refrescar
+  // esas vistas si están activas para que el cambio se note al instante.
+  if(currentSection==='jugadores-db') renderJDB();
+  if(currentSection==='jugador-ed') _renderFichaSponsor('j');
+  if(currentSection==='equipo-ed') _renderFichaSponsor('e');
   toast('✅ Anuncio guardado');
 }
 function borrarAnuncio(id){
   if(!esAdminActual()){toast('Solo los administradores pueden borrar anuncios',true);return;}
   askDel('¿Borrar este anuncio?', ()=>{
-    adsDB=adsDB.filter(x=>x.id!==id); saveAds(); renderAdsList(); renderBannerAdsGlobal(); toast('🗑 Anuncio eliminado');
+    adsDB=adsDB.filter(x=>x.id!==id); saveAds(); renderAdsList(); renderBannerAdsGlobal();
+    if(currentSection==='jugadores-db') renderJDB();
+    if(currentSection==='jugador-ed') _renderFichaSponsor('j');
+    if(currentSection==='equipo-ed') _renderFichaSponsor('e');
+    toast('🗑 Anuncio eliminado');
   });
 }
 
@@ -2743,13 +2836,14 @@ function renderJDB(){
     const s=j.stats||{};
     const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
     const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+    const _adJ=_anuncioClubActivo(idDeEquipoPorNombre(j.club));
     return `<div class="card">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editJ('${j.id}')">
       ${av}<div><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>
-    </div><div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+    </div>${_sponsorHTML(_adJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
       <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
@@ -7638,6 +7732,7 @@ function sincronizarFichaJFull() {
               (document.getElementById('jape')?.value || '');
   const titulo = document.getElementById('j-ficha-titulo-bar');
   if (titulo) titulo.textContent = nom.trim() || 'Ficha del Jugador';
+  if (typeof _renderFichaSponsor === 'function') _renderFichaSponsor('j');
 
   // Reasignar eventos de clips (onclick de portadas)
   _reasignarEventosClips(dst, 'j');
@@ -7667,6 +7762,7 @@ function sincronizarFichaEFull() {
   const nom = document.getElementById('enom')?.value || '';
   const titulo = document.getElementById('e-ficha-titulo-bar');
   if (titulo) titulo.textContent = nom || 'Ficha del Equipo';
+  if (typeof _renderFichaSponsor === 'function') _renderFichaSponsor('e');
 }
 
 function sincronizarFichaJFull() {
@@ -7690,6 +7786,7 @@ function sincronizarFichaJFull() {
                (document.getElementById('jape')?.value || '')).trim();
   const titulo = document.getElementById('j-ficha-titulo-bar');
   if (titulo) titulo.textContent = nom || 'Ficha del Jugador';
+  if (typeof _renderFichaSponsor === 'function') _renderFichaSponsor('j');
 }
 
 /** Los onclick de clips usan índices numéricos — al copiar innerHTML
