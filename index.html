@@ -1145,6 +1145,23 @@ body.solo-lectura .ed-panel-form {
   opacity: .6;
 }
 
+/* Selector "Ver todo" / "Restringir por liga" del modal de usuarios —
+   dos botones grandes en vez de una casilla fácil de pasar por alto. */
+.mu-acceso-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;}
+.mu-acceso-opt{
+  background:var(--bg3);border:1.5px solid var(--border);border-radius:9px;
+  padding:9px 10px;cursor:pointer;text-align:left;color:var(--blanco);
+  font-size:12px;font-weight:700;transition:border-color .15s,background .15s;
+}
+.mu-acceso-opt span{display:block;font-size:9px;font-weight:400;color:var(--gris);margin-top:2px;}
+.mu-acceso-opt:hover{border-color:var(--azul);}
+.mu-acceso-opt.activa{border-color:var(--azul);background:rgba(47,129,247,.12);}
+.mu-acceso-opt.activa span{color:var(--azul-cl);}
+/* En vez de ocultarse del todo (display:none) cuando se elige "Ver
+   todo", el bloque de ligas se queda visible pero atenuado — así la
+   opción de restringir por liga nunca pasa desapercibida. */
+#mu-ligas-wrap.mu-ligas-deshabilitado{opacity:.4;pointer-events:none;filter:grayscale(.4);}
+
 </style>
 </head>
 <body>
@@ -2053,8 +2070,8 @@ body.solo-lectura .ed-panel-form {
       <div class="apf">
         <label>Rol</label>
         <select id="mu-rol">
-          <option value="usuario">👤 Usuario — solo puede ver y editar datos</option>
-          <option value="admin">🛡️ Administrador — puede gestionar usuarios</option>
+          <option value="usuario">👤 Usuario — solo puede VER, no puede editar ni borrar nada</option>
+          <option value="admin">🛡️ Administrador — acceso completo, puede editar datos y gestionar usuarios</option>
         </select>
       </div>
       <div class="apf" id="mu-activo-wrap">
@@ -2065,13 +2082,18 @@ body.solo-lectura .ed-panel-form {
         </select>
       </div>
       <div class="apf">
-        <label>🔒 Qué puede ver este usuario</label>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--gris);cursor:pointer;margin-bottom:8px">
-          <input type="checkbox" id="mu-ver-todo" style="width:auto" onchange="toggleMuLigas()" checked>
-          Ver todo (sin restricción)
-        </label>
-        <div id="mu-ligas-wrap" style="display:none">
-          <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Marca solo las ligas/grupos que este usuario podrá ver — equipos, jugadores y partidos de otras ligas quedarán ocultos para él.</p>
+        <label>🔒 Acceso por liga/competición — a qué equipos, jugadores y partidos puede acceder</label>
+        <div class="mu-acceso-toggle">
+          <button type="button" class="mu-acceso-opt" id="mu-opt-todo" onclick="_muElegirAcceso(true)">
+            🌐 Ver todo<span>Sin restricción — accede a todas las ligas</span>
+          </button>
+          <button type="button" class="mu-acceso-opt" id="mu-opt-restringido" onclick="_muElegirAcceso(false)">
+            🔒 Restringir por liga<span>Solo verá/editará las ligas que marques abajo</span>
+          </button>
+        </div>
+        <input type="checkbox" id="mu-ver-todo" style="display:none" checked>
+        <div id="mu-ligas-wrap">
+          <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Marca las ligas/grupos que este usuario SÍ podrá ver y editar — los equipos, jugadores y partidos de cualquier otra liga quedarán completamente ocultos para él (no aparecerán en sus listados ni en el buscador).</p>
           <div id="mu-ligas-list" style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px"></div>
           <div style="display:flex;gap:6px;margin-top:6px">
             <input id="mu-liga-nueva" placeholder="Añadir otra liga/grupo..." style="flex:1">
@@ -7594,9 +7616,25 @@ function renderMuLigasCheckboxes(seleccionadas){
       ${eH(l)}
     </label>`).join('');
 }
+/** El bloque de selección de ligas ya NO se oculta por completo cuando
+ *  se elige "Ver todo" — antes usaba display:none y, si el admin no se
+ *  fijaba en la casilla, parecía que la opción de restringir por liga
+ *  directamente no existía. Ahora se queda siempre visible en el modal,
+ *  solo que "deshabilitado" (atenuado, sin poder interactuar) mientras
+ *  "Ver todo" esté activo — así la opción de restringir por liga es
+ *  imposible de pasar por alto. */
 function toggleMuLigas(){
   const verTodo=document.getElementById('mu-ver-todo').checked;
-  document.getElementById('mu-ligas-wrap').style.display=verTodo?'none':'';
+  document.getElementById('mu-ligas-wrap').classList.toggle('mu-ligas-deshabilitado',verTodo);
+  const optTodo=document.getElementById('mu-opt-todo'), optRestr=document.getElementById('mu-opt-restringido');
+  if(optTodo) optTodo.classList.toggle('activa',verTodo);
+  if(optRestr) optRestr.classList.toggle('activa',!verTodo);
+}
+/** Botones del selector "Ver todo" / "Restringir por liga" (sustituyen
+ *  a la antigua casilla única, que era fácil de no ver). */
+function _muElegirAcceso(verTodo){
+  document.getElementById('mu-ver-todo').checked=verTodo;
+  toggleMuLigas();
 }
 function agregarLigaNueva(){
   const inp=document.getElementById('mu-liga-nueva');
