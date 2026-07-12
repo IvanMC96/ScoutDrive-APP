@@ -470,19 +470,25 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .ficha-sponsor img{height:22px;max-width:70px;object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
 .ficha-sponsor-txt{font-size:11px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
-/* Insignia del patrocinador — logo pequeño anclado a la esquina superior
-   derecha de la tarjeta (jugador o equipo), igual de "presente" que el
-   escudo/foto de la propia tarjeta, para que el patrocinio resalte de
-   verdad y no quede escondido como una simple línea de texto. */
+/* Insignia del patrocinador — logo grande integrado en la propia fila de
+   cabecera de la tarjeta (jugador o equipo), a la altura del escudo/foto,
+   en vez de flotar como una miniatura casi invisible en la esquina. Al
+   ser un elemento más de la fila (no absoluto) el nombre se acorta con
+   "…" automáticamente si hace falta sitio, en vez de quedar tapado. */
+.card-hdr-info{ min-width:0; flex:1; }
+.card-nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.card-mt{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .card-sponsor-badge{
-  position:absolute; top:8px; right:8px; z-index:5;
-  width:28px; height:28px; border-radius:7px; overflow:hidden;
+  flex-shrink:0; width:52px; height:52px; padding:5px; border-radius:10px; overflow:hidden;
   background:#fff; border:1px solid var(--border2); box-shadow:0 2px 8px rgba(0,0,0,.4);
   display:flex; align-items:center; justify-content:center; cursor:pointer;
   transition:transform .15s,border-color .15s;
 }
-.card-sponsor-badge:hover{ transform:scale(1.1); border-color:var(--azul); }
+.card-sponsor-badge:hover{ transform:scale(1.06); border-color:var(--azul); }
 .card-sponsor-badge img{ width:100%; height:100%; object-fit:contain; }
+@media(max-width:680px){
+  .card-sponsor-badge{ width:44px; height:44px; }
+}
 
 /* Banner de publicidad global (fijo abajo, visible en toda la app) */
 .ad-banner-global{
@@ -2867,9 +2873,8 @@ function renderJDB(){
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
-      ${_sponsorBadgeHTML(_adJ)}
       <div class="card-hdr" onclick="editJ('${j.id}')">
-      ${av}<div><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>
+      ${av}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTML(_adJ)}
     </div>${_sponsorHTML(_adJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
@@ -3602,9 +3607,8 @@ function renderEDB(){
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${eComparar.has(eq.id)?'checked':''} onchange="toggleCompararE('${eq.id}',this.checked)">
       </label>
-      ${_sponsorBadgeHTML(_adE)}
       <div class="card-hdr" onclick="editE('${eq.id}')">
-      ${av}<div><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>
+      ${av}<div class="card-hdr-info"><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>${_sponsorBadgeHTML(_adE)}
     </div>${_sponsorHTML(_adE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde-cl)">${s.v||0}V</div><div class="ckl">Victorias</div></div>
