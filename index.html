@@ -2705,8 +2705,19 @@ const CMP_PALETA=['#2f81f7','#3fb950','#f85149','#d29922','#bc8cff','#39d3f0','#
 function _cmpEsperarImagenes(cont,timeoutMs=4000){
   const imgs=[...cont.querySelectorAll('img')];
   if(!imgs.length) return Promise.resolve();
+  const esperarUna=img=>{
+    // img.decode() solo resuelve cuando la imagen está COMPLETAMENTE
+    // decodificada y lista para pintar — a diferencia de "complete", que
+    // en fotos data: bastante grandes (como una subida directa desde el
+    // móvil) puede ponerse a true antes de que termine el decode interno
+    // del navegador, dejando a html2canvas "fotografiar" el hueco todavía
+    // en blanco (el fallo de la foto de un jugador que no sale en el PDF
+    // aunque en pantalla sí se vea bien).
+    if(typeof img.decode==='function') return img.decode().catch(()=>{});
+    return img.complete?Promise.resolve():new Promise(res=>{img.onload=img.onerror=res;});
+  };
   return Promise.race([
-    Promise.all(imgs.map(img=>img.complete?Promise.resolve():new Promise(res=>{img.onload=img.onerror=res;}))),
+    Promise.all(imgs.map(esperarUna)),
     new Promise(res=>setTimeout(res,timeoutMs))
   ]);
 }
@@ -2782,6 +2793,16 @@ async function _cmpCapturarYExportarPDF(html,anchoPx,nombreArchivo,toastMsg){
   try{
     await _cmpEsperarImagenes(cont);
     await new Promise(r=>setTimeout(r,60)); // deja que el navegador termine de maquetar/pintar
+
+    // Medimos la tabla de detalle ANTES de capturar/trocear — así, si al
+    // paginar un salto de página caería a mitad de la tabla, empujamos
+    // toda la tabla a la página siguiente en vez de partir una fila por
+    // la mitad (mm ya convertidos al ancho final del PDF).
+    const tablaEl=cont.querySelector('.cmpx-table');
+    const mmPorPx=(210-10)/anchoPx;
+    const tablaTopMm=tablaEl?tablaEl.offsetTop*mmPorPx:null;
+    const tablaAltoMm=tablaEl?tablaEl.offsetHeight*mmPorPx:null;
+
     const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
     const{jsPDF}=window.jspdf;
     const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
@@ -2796,8 +2817,23 @@ async function _cmpCapturarYExportarPDF(html,anchoPx,nombreArchivo,toastMsg){
       while(y<iH){
         if(y>0) doc.addPage();
         doc.setFillColor(10,13,19);doc.rect(0,0,PW,PH,'F');
+        let pageEnd=y+(PH-10);
+        // Solo aplicamos el ajuste si la tabla cabe entera en una página
+        // (siempre debería, son ~14 filas) y el corte "natural" caería
+        // dentro de ella sin llegar a completarla.
+        const evitarCorte=tablaEl && tablaAltoMm<=(PH-10) &&
+          tablaTopMm>y && tablaTopMm<pageEnd && (tablaTopMm+tablaAltoMm)>pageEnd;
+        if(evitarCorte) pageEnd=tablaTopMm;
         doc.addImage(imgD,'JPEG',5,5-y,iW,iH);
-        y+=PH-10;
+        if(evitarCorte){
+          // La imagen se coloca siempre entera (el límite físico de la
+          // página es lo que la "recorta"); si hemos acortado esta página
+          // a propósito, tapamos con el fondo el trocito de tabla que de
+          // otro modo asomaría al final.
+          doc.setFillColor(10,13,19);
+          doc.rect(0,5+(pageEnd-y),PW,PH-5-(pageEnd-y),'F');
+        }
+        y=pageEnd;
       }
     }
     doc.save(nombreArchivo);
