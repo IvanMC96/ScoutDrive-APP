@@ -459,7 +459,10 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   border-top:1px solid var(--border);text-decoration:none;overflow:hidden;}
 .card-sponsor:hover{background:var(--bg3);}
 .card-sponsor-lbl{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;}
-.card-sponsor img{height:16px;max-width:56px;object-fit:contain;flex-shrink:0;}
+/* --patro-escala la fija en línea cada anuncio según lo que se elija al
+   editarlo ("Tamaño del logo"), para poder hacerlo más grande sin tocar
+   este CSS cada vez — por defecto (sin anuncio con escala) vale 1. */
+.card-sponsor img{height:calc(16px * var(--patro-escala,1));max-width:calc(56px * var(--patro-escala,1));object-fit:contain;flex-shrink:0;}
 .card-sponsor-txt{font-size:10px;color:var(--gris);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 .ficha-sponsor{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--border);
@@ -467,7 +470,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   max-width:min(280px,100%);flex-shrink:0;}
 .ficha-sponsor:hover{border-color:var(--azul);}
 .ficha-sponsor-lbl{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
-.ficha-sponsor img{height:22px;max-width:70px;object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
+.ficha-sponsor img{height:calc(22px * var(--patro-escala,1));max-width:calc(70px * var(--patro-escala,1));object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
 .ficha-sponsor-txt{font-size:11px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Insignia del patrocinador — logo grande integrado en la propia fila de
@@ -479,7 +482,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .card-nm{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .card-mt{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .card-sponsor-badge{
-  flex-shrink:0; width:52px; height:52px; padding:5px; border-radius:10px; overflow:hidden;
+  flex-shrink:0; width:calc(52px * var(--patro-escala,1)); height:calc(52px * var(--patro-escala,1)); padding:5px; border-radius:10px; overflow:hidden;
   background:#fff; border:1px solid var(--border2); box-shadow:0 2px 8px rgba(0,0,0,.4);
   display:flex; align-items:center; justify-content:center; cursor:pointer;
   transition:transform .15s,border-color .15s;
@@ -487,7 +490,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .card-sponsor-badge:hover{ transform:scale(1.06); border-color:var(--azul); }
 .card-sponsor-badge img{ width:100%; height:100%; object-fit:contain; }
 @media(max-width:680px){
-  .card-sponsor-badge{ width:44px; height:44px; }
+  .card-sponsor-badge{ width:calc(44px * var(--patro-escala,1)); height:calc(44px * var(--patro-escala,1)); }
 }
 
 /* Banner de publicidad global (fijo abajo, visible en toda la app) */
@@ -500,7 +503,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 }
 .ad-banner-global.show{display:flex;}
 .ad-banner-global .abg-link{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-decoration:none;color:inherit;cursor:pointer;}
-.ad-banner-global .abg-img-wrap{height:50px;width:90px;flex-shrink:0;background:var(--bg);border-radius:6px;
+.ad-banner-global .abg-img-wrap{height:calc(50px * var(--patro-escala,1));width:calc(90px * var(--patro-escala,1));flex-shrink:0;background:var(--bg);border-radius:6px;
   display:flex;align-items:center;justify-content:center;padding:5px;box-sizing:border-box;}
 .ad-banner-global img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
 .ad-banner-global .abg-txt{font-size:11px;color:var(--blanco);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -515,7 +518,7 @@ body.ad-banner-activo .ed-panel-ficha,
 body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 
 @media(max-width:680px){
-  .ad-banner-global .abg-img-wrap{height:38px;width:60px;}
+  .ad-banner-global .abg-img-wrap{height:calc(38px * var(--patro-escala,1));width:calc(60px * var(--patro-escala,1));}
   .ad-banner-global{padding:6px 10px;gap:8px;}
 }
 
@@ -2067,6 +2070,17 @@ body.solo-lectura .ed-panel-form {
         </p>
       </div>
       <div class="apf">
+        <label>🔍 Tamaño del logo</label>
+        <select id="an-escala">
+          <option value="1">Normal</option>
+          <option value="1.4">Grande</option>
+          <option value="1.8">Muy grande</option>
+        </select>
+        <p style="font-size:9px;color:var(--gris2);margin-top:4px">
+          Afecta a cómo de grande se ve el logo en todos los sitios donde aparece: la insignia de las tarjetas, la ficha del club/jugador y el banner de abajo.
+        </p>
+      </div>
+      <div class="apf">
         <label>Estado</label>
         <select id="an-activo">
           <option value="true">✅ Activo (visible)</option>
@@ -2329,7 +2343,10 @@ function _sponsorHTML(ad,cls,lbl){
   const img=ad.img?`<img src="${ad.img}" alt="">`:'';
   const txt=ad.texto?`<span class="${cls}-txt">${eH(ad.texto)}</span>`:'';
   const stop=cls==='card-sponsor'?'onclick="event.stopPropagation()"':'';
-  return `<a class="${cls}" ${abre} ${stop} title="Publicidad${ad.texto?': '+eH(ad.texto):''}">
+  // --patro-escala controla cuánto se agranda el logo (ver "Tamaño del
+  // logo" en el modal de anuncio) — se fija aquí en línea y la leen las
+  // reglas CSS de .card-sponsor img / .ficha-sponsor img.
+  return `<a class="${cls}" ${abre} ${stop} style="--patro-escala:${ad.escala||1}" title="Publicidad${ad.texto?': '+eH(ad.texto):''}">
     <span class="${cls}-lbl">${lbl}</span>${img}${txt}
   </a>`;
 }
@@ -2339,7 +2356,7 @@ function _sponsorHTML(ad,cls,lbl){
 function _sponsorBadgeHTML(ad){
   if(!ad || !ad.img) return '';
   const abre=ad.link?`href="${eH(ad.link)}" target="_blank" rel="noopener"`:'href="javascript:void(0)"';
-  return `<a class="card-sponsor-badge" ${abre} onclick="event.stopPropagation()" title="Patrocina${ad.texto?': '+eH(ad.texto):''}">
+  return `<a class="card-sponsor-badge" ${abre} onclick="event.stopPropagation()" style="--patro-escala:${ad.escala||1}" title="Patrocina${ad.texto?': '+eH(ad.texto):''}">
     <img src="${ad.img}" alt="">
   </a>`;
 }
@@ -2587,6 +2604,7 @@ function abrirModalAnuncio(){
   document.getElementById('an-texto').value='';
   document.getElementById('an-link').value='';
   document.getElementById('an-activo').value='true';
+  document.getElementById('an-escala').value='1';
   document.getElementById('an-edit-id').value='';
   document.getElementById('modal-anuncio-titulo').textContent='➕ Nuevo anuncio';
   _adImgTmp=null;
@@ -2600,6 +2618,7 @@ function editarAnuncio(id){
   document.getElementById('an-texto').value=a.texto||'';
   document.getElementById('an-link').value=a.link||'';
   document.getElementById('an-activo').value=String(a.activo!==false);
+  document.getElementById('an-escala').value=String(a.escala||1);
   document.getElementById('an-edit-id').value=a.id;
   document.getElementById('modal-anuncio-titulo').textContent='✏️ Editar anuncio';
   _adImgTmp=a.img||null;
@@ -2629,6 +2648,7 @@ function guardarAnuncio(){
     texto:document.getElementById('an-texto').value.trim(),
     link:document.getElementById('an-link').value.trim(),
     activo:document.getElementById('an-activo').value==='true',
+    escala:parseFloat(document.getElementById('an-escala')?.value)||1,
     eqId:document.getElementById('an-club')?.value||''
   };
   if(editId){ const idx=adsDB.findIndex(x=>x.id===editId); if(idx>=0)adsDB[idx]=anuncio; }
@@ -2682,6 +2702,7 @@ function renderBannerAdsGlobal(){
 }
 function pintarAdBanner(a){
   const img=document.getElementById('abg-img'), imgWrap=document.getElementById('abg-img-wrap'), txt=document.getElementById('abg-txt'), link=document.getElementById('abg-link');
+  imgWrap.style.setProperty('--patro-escala', a.escala||1);
   if(a.img){ img.src=a.img; imgWrap.style.display=''; } else { imgWrap.style.display='none'; }
   txt.textContent=a.texto||'';
   link.href=a.link||'#';
@@ -4624,8 +4645,14 @@ function renderE(){
   const gcMx=Math.max(gcA,gcAb,gcTr,gcJd,1);
 
   // ── Avatar ───────────────────────────────────────────────────
+  // El fondo alrededor del escudo usaba siempre var(--azul-dk) fijo (ver
+  // .feq-av-v2 en el CSS); ahora usa el color que se edita para ese club
+  // (mismo campo "ecolor" que ya se usa para el borde de la tarjeta, el
+  // acento de la cabecera y el campograma), para que sea coherente con
+  // el resto de la ficha en vez de salir siempre azul.
+  const colorEq = G('ecolor')||'#2f81f7';
   const avH = imgStore.eesc
-    ? `<div class="feq-av-v2"><img src="${imgStore.eesc}"></div>`
+    ? `<div class="feq-av-v2" style="background:${eH(colorEq)}"><img src="${imgStore.eesc}"></div>`
     : `<div class="feq-av-v2" style="${tipo==='propio'?'background:linear-gradient(135deg,#1f6feb,#2f81f7)':'background:linear-gradient(135deg,#b91c1c,#f85149)'}">${eH(nom?.slice(0,2)||'?').toUpperCase()}</div>`;
 
   // ── Barra GF mejorada ────────────────────────────────────────
@@ -5516,12 +5543,21 @@ function initPullToRefresh(){
     if(!activo || startY===null || disparado) return;
     const dy=e.touches[0].clientY-startY;
     if(dy>0){
+      // Sin este preventDefault (que exige que el listener NO sea pasivo),
+      // el gesto de "tirar hacia abajo" propio de la app convivía con el
+      // "pull-to-refresh" NATIVO del navegador/PWA en Android — al soltar,
+      // el navegador a veces recargaba la página entera de verdad, y como
+      // la sesión solo vive en memoria (no en localStorage), esa recarga
+      // te devolvía directamente a la pantalla de usuario/contraseña sin
+      // haber llegado a sincronizar nada. Al frenar aquí el gesto nativo,
+      // el único que actúa es el indicador propio de abajo.
+      e.preventDefault();
       const alto=Math.min(dy*0.5,60);
       ind.style.height=alto+'px';
       if(alto>=UMBRAL*0.5){ icon.textContent='↑'; texto.textContent='Suelta para actualizar'; }
       else { icon.textContent='↓'; texto.textContent='Tira hacia abajo para actualizar'; }
     }
-  },{passive:true});
+  },{passive:false});
 
   window.addEventListener('touchend',async ()=>{
     if(!activo) return;
