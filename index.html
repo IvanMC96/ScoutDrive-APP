@@ -1330,6 +1330,18 @@ body.solo-lectura .ed-panel-form {
   </div>
   <div class="db-bar">
     <input type="search" id="jdb-q" name="jdb-buscar-jugador" autocomplete="off" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
+    <select id="jdb-filtro-cat" onchange="renderJDB()" style="width:150px;padding:7px 10px;font-size:12px">
+      <option value="">Todas las categorías</option>
+    </select>
+    <select id="jdb-filtro-grupo" onchange="renderJDB()" style="width:130px;padding:7px 10px;font-size:12px">
+      <option value="">Todos los grupos</option>
+    </select>
+    <select id="jdb-filtro-equipo" onchange="renderJDB()" style="width:170px;padding:7px 10px;font-size:12px">
+      <option value="">Todos los equipos</option>
+    </select>
+    <select id="jdb-filtro-temp" onchange="renderJDB()" style="width:150px;padding:7px 10px;font-size:12px">
+      <option value="">Todas las temporadas</option>
+    </select>
     <button class="btn b-ghost b-sm" onclick="xBDJExcel()">📊 Exportar BD</button>
     <button class="btn b-rojo b-sm" onclick="askDelAll('j')">🗑 Borrar todo</button>
   </div>
@@ -2327,6 +2339,17 @@ function idDeEquipoPorNombre(nombre){
   const eq=_buscarEquipoPorNombre(nombre);
   return eq?eq.id:null;
 }
+// Un jugador no guarda su propia categoría/grupo — se derivan del equipo
+// al que pertenece (mismo patrón que ligaDeEquipoPorNombre de arriba),
+// para poder filtrar la lista de Jugadores por categoría/grupo del club.
+function categoriaDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return eq?_eCategoria(eq):'';
+}
+function grupoDeEquipoPorNombre(nombre){
+  const eq=_buscarEquipoPorNombre(nombre);
+  return eq?(eq.grupo||'').trim():'';
+}
 
 // ── PUBLICIDAD POR CLUB — patrocinio integrado ────────────────────
 // Un anuncio (adsDB) puede llevar además un "eqId" (equipo al que
@@ -2632,15 +2655,14 @@ function editarAnuncio(id){
   document.getElementById('modal-anuncio').classList.add('open');
 }
 function cerrarModalAnuncio(){ document.getElementById('modal-anuncio').classList.remove('open'); }
-function loadImgAnuncio(e){
+async function loadImgAnuncio(e){
   const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    _adImgTmp=ev.target.result;
-    document.getElementById('pv-anuncio').innerHTML=`<img src="${ev.target.result}" class="uz-img">`;
-    document.getElementById('uz-anuncio').classList.add('has');
-  };
-  r.readAsDataURL(f);
+  // Logo de patrocinador: PNG para conservar transparencia si la lleva.
+  const dataUrl = await _comprimirImagenArchivo(f, {maxDim:500, formato:'image/png'});
+  if(!dataUrl) return;
+  _adImgTmp=dataUrl;
+  document.getElementById('pv-anuncio').innerHTML=`<img src="${dataUrl}" class="uz-img">`;
+  document.getElementById('uz-anuncio').classList.add('has');
 }
 function guardarAnuncio(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar anuncios',true);return;}
@@ -2674,6 +2696,17 @@ function borrarAnuncio(id){
     if(currentSection==='equipos-db') renderEDB();
     if(currentSection==='jugador-ed') _renderFichaSponsor('j');
     if(currentSection==='equipo-ed') _renderFichaSponsor('e');
+    // Aviso importante: el borrado remoto (Sheet) se dispara AQUÍ, dentro
+    // de la confirmación real del modal — no en sync-bridge.js con un
+    // temporizador a ciegas. Ese temporizador comprobaba si el anuncio
+    // seguía en adsDB apenas 300ms después de llamar a esta función, pero
+    // como el modal de confirmación es asíncrono (espera a que el usuario
+    // pulse el botón), esos 300ms casi siempre pasaban ANTES de que el
+    // usuario llegara a confirmar — así que el borrado nunca llegaba al
+    // Sheet, y el anuncio "borrado" volvía a aparecer en la siguiente
+    // sincronización. Llamando aquí, justo cuando de verdad se ha
+    // eliminado, se evita esa carrera.
+    if(typeof scoutEliminarAnuncioRemoto==='function') scoutEliminarAnuncioRemoto(id);
     toast('🗑 Anuncio eliminado');
   });
 }
@@ -2888,12 +2921,63 @@ function cModal(){document.getElementById('modal').classList.remove('open');}
 // IMÁGENES GENERALES
 // ══════════════════════════════════════════════════════════════════
 let imgStore={};
-function loadImg(e,key){
+
+/** Redimensiona y recomprime una imagen antes de guardarla, para que
+ *  pese mucho menos sin perder calidad visible. Por qué hace falta:
+ *  una foto tal cual sale de un móvil puede pesar varios MB, y el
+ *  almacenamiento del dispositivo (localStorage) solo da ~5MB en TOTAL
+ *  para toda la app — una sola foto sin comprimir podía dejarte casi
+ *  sin sitio. Aquí nunca se muestra una imagen a más de un centenar de
+ *  píxeles (fichas, tarjetas, PDF), así que redimensionar a unos
+ *  cientos de píxeles no se nota a simple vista y reduce el peso en
+ *  la práctica a una fracción del original.
+ *  - formato 'image/jpeg': para fotos y miniaturas (mucha mejor
+ *    compresión en imágenes con degradados de color reales).
+ *  - formato 'image/png': para escudos/logos, que suelen llevar fondo
+ *    transparente — JPEG lo destruiría (fondo blanco en vez de
+ *    transparente), así que ahí solo se reduce el tamaño, sin recomprimir
+ *    con pérdida.
+ *  Si algo falla en cualquier paso, se devuelve la imagen original tal
+ *  cual (nunca bloquea la subida por un fallo de compresión). */
+function _comprimirImagenArchivo(file, opts){
+  const {maxDim=640, calidad=0.82, formato='image/jpeg'} = opts||{};
+  return new Promise((resolve)=>{
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const original=ev.target.result;
+      const img=new Image();
+      img.onload=()=>{
+        try{
+          let {width,height}=img;
+          if(width>maxDim || height>maxDim){
+            if(width>=height){ height=Math.round(height*maxDim/width); width=maxDim; }
+            else { width=Math.round(width*maxDim/height); height=maxDim; }
+          }
+          const canvas=document.createElement('canvas');
+          canvas.width=width; canvas.height=height;
+          canvas.getContext('2d').drawImage(img,0,0,width,height);
+          resolve(canvas.toDataURL(formato,calidad));
+        }catch(e){ resolve(original); }
+      };
+      img.onerror=()=>resolve(original);
+      img.src=original;
+    };
+    reader.onerror=()=>resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function loadImg(e,key){
   const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{imgStore[key]=ev.target.result;uzZone(key,ev.target.result);
-    if(key.startsWith('j'))renderJ();else if(key.startsWith('e'))renderE();};
-  r.readAsDataURL(f);
+  // 'jfoto' es una foto de persona (JPEG); 'jesc'/'eesc' son escudos de
+  // club (PNG, para conservar la transparencia del logo).
+  const esFoto = key==='jfoto';
+  const dataUrl = await _comprimirImagenArchivo(f, esFoto
+    ? {maxDim:640, calidad:0.82, formato:'image/jpeg'}
+    : {maxDim:500, formato:'image/png'});
+  if(!dataUrl) return;
+  imgStore[key]=dataUrl;uzZone(key,dataUrl);
+  if(key.startsWith('j'))renderJ();else if(key.startsWith('e'))renderE();
 }
 function loadImgURL(key){
   let u=(document.getElementById('url-'+key)||{}).value?.trim();if(!u)return;
@@ -2932,6 +3016,41 @@ const jRadarEjes=['Goles','Asistencias','ABP','Transición Defensiva','Transici�
 // ── Selección para comparar varios jugadores a la vez ──────────────
 let jComparar=new Set();
 
+// Rellena los desplegables de filtro de Jugadores (categoría/grupo del
+// club, equipo y temporada). La categoría y el grupo no viven en el propio
+// jugador — se sacan del equipo al que pertenece (j.club) — así que se
+// derivan aquí igual que en poblarFiltrosYDatalistsEquipos(), y el grupo
+// se acota en cascada a la categoría ya elegida.
+function poblarFiltrosJugadores(lista){
+  const base=lista||jDB;
+  const cats=[...new Set(base.map(j=>categoriaDeEquipoPorNombre(j.club)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const equipos=[...new Set(base.map(j=>(j.club||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const temps=_valoresUnicos(base,'temp');
+
+  const selCat=document.getElementById('jdb-filtro-cat');
+  const catActual=selCat?selCat.value:'';
+  if(selCat){
+    selCat.innerHTML=`<option value="">Todas las categorías</option>`+cats.map(c=>`<option value="${eH(c)}"${c===catActual?' selected':''}>${eH(c)}</option>`).join('');
+  }
+  const selGrupo=document.getElementById('jdb-filtro-grupo');
+  if(selGrupo){
+    const grupoActual=selGrupo.value;
+    const baseGrupo=catActual?base.filter(j=>categoriaDeEquipoPorNombre(j.club)===catActual):base;
+    const gruposDeCat=[...new Set(baseGrupo.map(j=>grupoDeEquipoPorNombre(j.club)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+    selGrupo.innerHTML=`<option value="">Todos los grupos</option>`+gruposDeCat.map(g=>`<option value="${eH(g)}"${g===grupoActual?' selected':''}>${eH(g)}</option>`).join('');
+  }
+  const selEquipo=document.getElementById('jdb-filtro-equipo');
+  if(selEquipo){
+    const equipoActual=selEquipo.value;
+    selEquipo.innerHTML=`<option value="">Todos los equipos</option>`+equipos.map(e=>`<option value="${eH(e)}"${e===equipoActual?' selected':''}>${eH(e)}</option>`).join('');
+  }
+  const selTemp=document.getElementById('jdb-filtro-temp');
+  if(selTemp){
+    const tempActual=selTemp.value;
+    selTemp.innerHTML=`<option value="">Todas las temporadas</option>`+temps.map(t=>`<option value="${eH(t)}"${t===tempActual?' selected':''}>${eH(t)}</option>`).join('');
+  }
+}
+
 // ── DB ────────────────────────────────────────────────────────────
 function renderJDB(){
   let _huboReparoJ=false;
@@ -2945,8 +3064,15 @@ function renderJDB(){
   // visible para este usuario), lo quitamos de la selección.
   const idsVisibles=new Set(jDBVisible.map(j=>j.id));
   [...jComparar].forEach(id=>{ if(!idsVisibles.has(id)) jComparar.delete(id); });
+  poblarFiltrosJugadores(jDBVisible);
   const q=(G('jdb-q')||'').toLowerCase();
-  const lst=q?jDBVisible.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q)):jDBVisible;
+  const fCat=G('jdb-filtro-cat')||'',fGrupo=G('jdb-filtro-grupo')||'',fEquipo=G('jdb-filtro-equipo')||'',fTemp=G('jdb-filtro-temp')||'';
+  let lst=jDBVisible;
+  if(fCat)lst=lst.filter(j=>categoriaDeEquipoPorNombre(j.club)===fCat);
+  if(fGrupo)lst=lst.filter(j=>grupoDeEquipoPorNombre(j.club)===fGrupo);
+  if(fEquipo)lst=lst.filter(j=>(j.club||'').trim()===fEquipo);
+  if(fTemp)lst=lst.filter(j=>(j.temp||'').trim()===fTemp);
+  if(q)lst=lst.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q));
   const grid=document.getElementById('j-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;actualizarBarraComparar();return;}
   grid.innerHTML=lst.map(j=>{
@@ -3576,7 +3702,7 @@ function buildJClips(){
 }
 function addJClip(){jClips.push({id:jClipCnt++,titulo:'',rival:'',tipo:'Ataque Organizado',srcType:'',src:'',portada:null,blobURL:null});buildJClips();renderJ();}
 function removeJClip(id){const c=jClips.find(x=>x.id===id);if(c?.blobURL)URL.revokeObjectURL(c.blobURL);jClips=jClips.filter(x=>x.id!==id);buildJClips();renderJ();}
-function loadJPortada(e,cid){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=ev.target.result;buildJClips();renderJ();}};r.readAsDataURL(f);}
+async function loadJPortada(e,cid){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl)return;const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=dataUrl;buildJClips();renderJ();}}
 function rmJPortada(cid,e){e.stopPropagation();const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=null;buildJClips();renderJ();}}
 function loadJVideoFile(e,i){const f=e.target.files[0];if(!f)return;if(jClips[i]?.blobURL)URL.revokeObjectURL(jClips[i].blobURL);const url=URL.createObjectURL(f);jClips[i].blobURL=url;jClips[i].src=url;jClips[i].srcType='blob';if(!jClips[i].titulo)jClips[i].titulo=f.name.replace(/\.[^.]+$/,'');buildJClips();renderJ();toast('🎬 Vídeo cargado — ya puedes reproducirlo abajo');}
 function applyJURL(i){let u=(document.getElementById('jcurl-'+jClips[i].id)||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jClips[i].srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jClips[i].srcType='youtube';else jClips[i].srcType='direct';if(jClips[i].blobURL)URL.revokeObjectURL(jClips[i].blobURL);jClips[i].blobURL=null;jClips[i].src=u;buildJClips();renderJ();}
@@ -5194,11 +5320,12 @@ function cfgPreview(){
     document.getElementById('cfg-logo-prev').innerHTML=`<img src="${cfg.logo}" style="width:32px;height:32px;object-fit:contain;border-radius:5px">`;
   }
 }
-function loadImgCfg(e){
+async function loadImgCfg(e){
   const f=e.target.files[0];if(!f)return;
-  const r=new FileReader();
-  r.onload=ev=>{cfg.logo=ev.target.result;cfgPreview();initCfgForm();};
-  r.readAsDataURL(f);
+  // Logo de la plataforma: PNG para conservar transparencia si la lleva.
+  const dataUrl = await _comprimirImagenArchivo(f, {maxDim:400, formato:'image/png'});
+  if(!dataUrl) return;
+  cfg.logo=dataUrl;cfgPreview();initCfgForm();
 }
 function loadLogoURL(){
   let u=G('url-logo').trim();if(!u)return;
@@ -5701,14 +5828,12 @@ function buildEClips(){
   });
 }
 
-function loadEPortada(event,cid){
+async function loadEPortada(event,cid){
   const file=event.target.files[0]; if(!file) return;
-  const r=new FileReader();
-  r.onload=e=>{
-    const idx=eClips.findIndex(c=>c.id===cid);
-    if(idx>=0){ eClips[idx].portada=e.target.result; buildEClips(); renderE(); }
-  };
-  r.readAsDataURL(file);
+  const dataUrl = await _comprimirImagenArchivo(file, {maxDim:480, calidad:0.8, formato:'image/jpeg'});
+  if(!dataUrl) return;
+  const idx=eClips.findIndex(c=>c.id===cid);
+  if(idx>=0){ eClips[idx].portada=dataUrl; buildEClips(); renderE(); }
 }
 function rmEPortada(cid,e){
   e.stopPropagation();
@@ -7264,18 +7389,16 @@ function _resetThumbPreview(){
   window._thumbBase64 = null;
 }
 
-function cargarThumbPartido(e){
+async function cargarThumbPartido(e){
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    window._thumbBase64 = ev.target.result;
-    document.getElementById('ap-thumb-img').src = ev.target.result;
-    document.getElementById('ap-thumb-preview').style.display = 'block';
-    document.getElementById('ap-thumb-placeholder').style.display = 'none';
-    document.getElementById('ap-thumb').value = ''; // limpiar URL si había
-  };
-  reader.readAsDataURL(file);
+  const dataUrl = await _comprimirImagenArchivo(file, {maxDim:640, calidad:0.82, formato:'image/jpeg'});
+  if(!dataUrl) return;
+  window._thumbBase64 = dataUrl;
+  document.getElementById('ap-thumb-img').src = dataUrl;
+  document.getElementById('ap-thumb-preview').style.display = 'block';
+  document.getElementById('ap-thumb-placeholder').style.display = 'none';
+  document.getElementById('ap-thumb').value = ''; // limpiar URL si había
 }
 
 function actualizarThumbPreview(){
@@ -7400,6 +7523,12 @@ function borrarPartido(id){
       recalcularStatsDesdePartidos();
       renderPartidos();
       if(currentSection==='inicio') renderInicio();
+      // Igual que en borrarAnuncio(): el borrado remoto se dispara aquí,
+      // en el momento real de la confirmación, no con un temporizador a
+      // ciegas en sync-bridge.js (esa versión casi nunca llegaba a
+      // ejecutarse a tiempo, porque el modal de confirmación es
+      // asíncrono — ver el comentario en borrarAnuncio para el detalle).
+      if(typeof scoutEliminarPartidoVideoRemoto==='function') scoutEliminarPartidoVideoRemoto(id);
       if(typeof toast==='function') toast('🗑 Partido eliminado');
     });
   }
@@ -7764,17 +7893,15 @@ function buildEClipsGC(){
     </div>`).join('');
 }
 
-function loadGCPortada(e,i){
+async function loadGCPortada(e,i){
   const f=e.target.files[0]; if(!f) return;
-  const r=new FileReader();
-  r.onload=ev=>{
-    eClipsGC[i].portada=ev.target.result;
-    document.getElementById('gcpz-'+i).innerHTML=
-      `<img src="${ev.target.result}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`;
-    document.getElementById('gcpz-'+i).classList.add('has-portada');
-    renderE();
-  };
-  r.readAsDataURL(f);
+  const dataUrl = await _comprimirImagenArchivo(f, {maxDim:480, calidad:0.8, formato:'image/jpeg'});
+  if(!dataUrl) return;
+  eClipsGC[i].portada=dataUrl;
+  document.getElementById('gcpz-'+i).innerHTML=
+    `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`;
+  document.getElementById('gcpz-'+i).classList.add('has-portada');
+  renderE();
 }
 function cargarGCVideoFile(i){ document.getElementById('gcvf-'+i)?.click(); }
 function loadGCVideoFile(e,i){
