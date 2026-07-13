@@ -1170,7 +1170,7 @@ body.solo-lectura .ed-panel-form {
 <div class="topbar">
   <button class="btn-hamburger" onclick="toggleDrawer()" title="Menú de acceso rápido">☰</button>
   <button class="btn b-ghost b-sm" id="btn-atras" onclick="volverAtras()" style="display:none;flex-shrink:0" title="Volver atrás">← Atrás</button>
-  <div class="brand" onclick="navTo('jugadores-db')">
+  <div class="brand" onclick="navTo('inicio')">
     <div class="brand-logo" id="brand-logo-wrap">
       <img src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png" 
            style="width:36px;height:36px;border-radius:7px;object-fit:contain"
@@ -1536,10 +1536,14 @@ body.solo-lectura .ed-panel-form {
   </div>
   <div class="db-bar">
     <input type="search" id="edb-q" name="edb-buscar-equipo" autocomplete="off" placeholder="🔍 Buscar equipo..." oninput="renderEDB()">
-    <select id="edb-filtro" onchange="renderEDB()" style="width:150px;padding:7px 10px;font-size:12px">
-      <option value="">Todos los equipos</option>
-      <option value="propio">Solo propios</option>
-      <option value="rival">Solo rivales</option>
+    <select id="edb-filtro-cat" onchange="renderEDB()" style="width:150px;padding:7px 10px;font-size:12px">
+      <option value="">Todas las categorías</option>
+    </select>
+    <select id="edb-filtro-grupo" onchange="renderEDB()" style="width:130px;padding:7px 10px;font-size:12px">
+      <option value="">Todos los grupos</option>
+    </select>
+    <select id="edb-filtro-temp" onchange="renderEDB()" style="width:150px;padding:7px 10px;font-size:12px">
+      <option value="">Todas las temporadas</option>
     </select>
     <button class="btn b-ghost b-sm" onclick="xBDEExcel()">📊 Exportar BD</button>
     <button class="btn b-rojo b-sm" onclick="askDelAll('e')">🗑 Borrar todo</button>
@@ -1605,9 +1609,8 @@ body.solo-lectura .ed-panel-form {
             </select>
           </div>
           <div class="fg"><label>Temporada</label>
-            <select id="etemp" onchange="renderE()">
-              <option>2025-26</option><option>2024-25</option><option>2024-25 + 2025-26</option>
-            </select>
+            <input id="etemp" list="etemp-list" placeholder="ej: 2025-26" oninput="renderE()">
+            <datalist id="etemp-list"></datalist>
           </div>
         </div>
         <div class="fg2">
@@ -1624,9 +1627,16 @@ body.solo-lectura .ed-panel-form {
           </div>
         </div>
         <div class="fg2">
-          <div class="fg"><label>Liga / Categoría</label><input id="eliga" value="2ª RFEF Grupo IV" oninput="renderE()"></div>
-          <div class="fg"><label>Entrenador</label><input id="eent" oninput="renderE()"></div>
+          <div class="fg"><label>Categoría</label>
+            <input id="ecategoria" list="ecategoria-list" placeholder="ej: 3ª RFEF" value="2ª RFEF" oninput="renderE()">
+            <datalist id="ecategoria-list"></datalist>
+          </div>
+          <div class="fg"><label>Grupo</label>
+            <input id="egrupo" list="egrupo-list" placeholder="ej: G-XIV" value="Grupo IV" oninput="renderE()">
+            <datalist id="egrupo-list"></datalist>
+          </div>
         </div>
+        <div class="fg"><label>Entrenador</label><input id="eent" oninput="renderE()"></div>
         <div class="fg"><label>Sistema de juego</label>
           <select id="esist" onchange="renderE(); if(typeof renderCampograma==='function') renderCampograma();">
             <option value="4-3-3">1-4-3-3</option><option value="4-4-2">1-4-4-2</option>
@@ -1774,7 +1784,13 @@ body.solo-lectura .ed-panel-form {
         <option value="">Todos los equipos</option>
       </select>
       <select id="p-fil-comp" onchange="renderPartidos()" style="min-width:130px">
-        <option value="">Todas las comp.</option>
+        <option value="">Todas las ligas</option>
+      </select>
+      <select id="p-fil-grupo" onchange="renderPartidos()" style="min-width:120px">
+        <option value="">Todos los grupos</option>
+      </select>
+      <select id="p-fil-temp" onchange="renderPartidos()" style="min-width:140px">
+        <option value="">Todas las temporadas</option>
       </select>
       <button class="btn-add-partido" onclick="abrirAddPartido()">+ Añadir partido</button>
     </div>
@@ -1844,11 +1860,19 @@ body.solo-lectura .ed-panel-form {
       </div>
       <div class="apf-row">
         <div class="apf"><label>Fecha</label><input id="ap-fecha" type="date"></div>
-        <div class="apf"><label>Competición</label>
-          <select id="ap-comp">
-            <option>3ª RFEF</option><option>2ª RFEF</option><option>1ª RFEF</option>
-            <option>Copa del Rey</option><option>Amistoso</option><option>Otra</option>
-          </select>
+        <div class="apf"><label>Temporada</label>
+          <input id="ap-temp" list="ap-temp-list" placeholder="ej: 2025-26">
+          <datalist id="ap-temp-list"></datalist>
+        </div>
+      </div>
+      <div class="apf-row">
+        <div class="apf"><label>Liga / Competición</label>
+          <input id="ap-comp" list="ap-comp-list" placeholder="ej: 3ª RFEF">
+          <datalist id="ap-comp-list"></datalist>
+        </div>
+        <div class="apf"><label>Grupo</label>
+          <input id="ap-grupo" list="ap-grupo-list" placeholder="ej: G-XIV">
+          <datalist id="ap-grupo-list"></datalist>
         </div>
       </div>
       <div class="apf">
@@ -3616,6 +3640,53 @@ function renderJ(){
 // ══════════════════════════════════════════════════════════════════
 let eId=null,ePartidos=[],eGC=[],ePartCnt=0;
 
+// Compatibilidad con equipos guardados antes de que existiera el campo
+// "categoria" propio: si no lo tiene, se usa el "liga" de texto libre de
+// siempre como categoría (así ningún equipo antiguo se queda sin filtrar).
+function _eCategoria(e){ return (e.categoria||e.liga||'').trim(); }
+
+function _valoresUnicos(arr,campo){
+  return [...new Set(arr.map(e=>(e[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+}
+
+// Rellena, con lo que el propio usuario ya haya ido escribiendo, tanto los
+// datalists del formulario de ficha de equipo (para poder escribir una
+// temporada/categoría/grupo nuevos y que a partir de ahí queden sugeridos)
+// como los 3 selects de filtro de la sección Equipos.
+function poblarFiltrosYDatalistsEquipos(lista){
+  const base=lista||eDB;
+  const temps=_valoresUnicos(base,'temp');
+  const cats=[...new Set(base.map(_eCategoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const grupos=_valoresUnicos(base,'grupo');
+
+  const dlTemp=document.getElementById('etemp-list');
+  if(dlTemp)dlTemp.innerHTML=temps.map(t=>`<option value="${eH(t)}">`).join('');
+  const dlCat=document.getElementById('ecategoria-list');
+  if(dlCat)dlCat.innerHTML=cats.map(c=>`<option value="${eH(c)}">`).join('');
+  const dlGrupo=document.getElementById('egrupo-list');
+  if(dlGrupo)dlGrupo.innerHTML=grupos.map(g=>`<option value="${eH(g)}">`).join('');
+
+  const selCat=document.getElementById('edb-filtro-cat');
+  const catActual=selCat?selCat.value:'';
+  if(selCat){
+    selCat.innerHTML=`<option value="">Todas las categorías</option>`+cats.map(c=>`<option value="${eH(c)}"${c===catActual?' selected':''}>${eH(c)}</option>`).join('');
+  }
+  const selGrupo=document.getElementById('edb-filtro-grupo');
+  if(selGrupo){
+    const grupoActual=selGrupo.value;
+    // El desplegable de grupo se acota a los grupos que existen dentro de
+    // la categoría ya elegida, para que el filtrado en cascada sea útil de
+    // verdad y no se puedan combinar categoría+grupo que nunca coinciden.
+    const gruposDeCat=catActual?_valoresUnicos(base.filter(e=>_eCategoria(e)===catActual),'grupo'):grupos;
+    selGrupo.innerHTML=`<option value="">Todos los grupos</option>`+gruposDeCat.map(g=>`<option value="${eH(g)}"${g===grupoActual?' selected':''}>${eH(g)}</option>`).join('');
+  }
+  const selTemp=document.getElementById('edb-filtro-temp');
+  if(selTemp){
+    const tempActual=selTemp.value;
+    selTemp.innerHTML=`<option value="">Todas las temporadas</option>`+temps.map(t=>`<option value="${eH(t)}"${t===tempActual?' selected':''}>${eH(t)}</option>`).join('');
+  }
+}
+
 function renderEDB(){
   // Autorreparación: cualquier equipo sin id (puede pasar si llegó de una
   // sincronización antigua o incompleta) se queda "huérfano" y su botón
@@ -3632,8 +3703,13 @@ function renderEDB(){
   document.getElementById('est-gc').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gc||0),0);
   const idsVisiblesE=new Set(eDBVisible.map(e=>e.id));
   [...eComparar].forEach(id=>{ if(!idsVisiblesE.has(id)) eComparar.delete(id); });
-  const q=(G('edb-q')||'').toLowerCase(),filtro=G('edb-filtro')||'';
-  let lst=filtro?eDBVisible.filter(e=>e.tipo===filtro):eDBVisible;
+  poblarFiltrosYDatalistsEquipos(eDBVisible);
+  const q=(G('edb-q')||'').toLowerCase();
+  const fCat=G('edb-filtro-cat')||'',fGrupo=G('edb-filtro-grupo')||'',fTemp=G('edb-filtro-temp')||'';
+  let lst=eDBVisible;
+  if(fCat)lst=lst.filter(e=>_eCategoria(e)===fCat);
+  if(fGrupo)lst=lst.filter(e=>(e.grupo||'').trim()===fGrupo);
+  if(fTemp)lst=lst.filter(e=>(e.temp||'').trim()===fTemp);
   if(q)lst=lst.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q));
   const grid=document.getElementById('e-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;actualizarBarraCompararE();return;}
@@ -3873,16 +3949,22 @@ async function xComparativaEPDF(){
 
 function nuevoE(){
   eId=null;
-  ['enom','eliga','eent','enota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  ['enom','ecategoria','egrupo','etemp','eent','enota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   ['epj','ev','ee','ed','egf','egc'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['eoatq','eoabp','eocl','eojd','eotr','egcatq','egcabp','egctr','egcjd'].forEach(id=>{
     const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}
   });
-  document.getElementById('eliga').value='2ª RFEF Grupo IV';
+  // Se sugiere la categoría/grupo/temporada más recientes que ya existan,
+  // para no partir de cero cada vez que se da de alta un equipo nuevo de
+  // la misma categoría (algo muy habitual al ir metiendo una liga entera).
+  document.getElementById('ecategoria').value=_valoresUnicos(eDB,'categoria')[0]||_eCategoria(eDB[0]||{})||'';
+  document.getElementById('egrupo').value='';
+  document.getElementById('etemp').value=_valoresUnicos(eDB,'temp').slice(-1)[0]||'';
   document.getElementById('ecolor').value='#2f81f7';
   document.getElementById('ecolor-hex').value='#2f81f7';
   imgStore.eesc=null;ePartidos=[];eGC=[];eClips=[];eClipsGC=[];ePartCnt=0;eClipCnt=0;eClipGCCnt=0;
   uzZone('eesc',null);buildEPartidos();buildEGC();buildEClips();buildEClipsGC();buildEClipsGC();
+  poblarFiltrosYDatalistsEquipos();
   navTo('equipo-ed');renderE();
 }
 
@@ -3891,7 +3973,8 @@ function editE(id){
   if(!usuarioPuedeVerLiga(eq.liga)){ toast('No tienes acceso a este equipo',true); return; }
   eId=id;
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
-  S('enom',eq.nom);S('etipo',eq.tipo);S('etemp',eq.temp);S('eliga',eq.liga);S('eent',eq.ent);S('esist',eq.sist);S('enota',eq.nota);
+  poblarFiltrosYDatalistsEquipos();
+  S('enom',eq.nom);S('etipo',eq.tipo);S('etemp',eq.temp);S('ecategoria',_eCategoria(eq));S('egrupo',eq.grupo);S('eent',eq.ent);S('esist',eq.sist);S('enota',eq.nota);
   S('ecolor',eq.color||'#2f81f7');S('ecolor-hex',eq.color||'#2f81f7');
   S('epj',eq.stats?.pj);S('ev',eq.stats?.v);S('ee',eq.stats?.e);S('ed',eq.stats?.d);S('egf',eq.stats?.gf);S('egc',eq.stats?.gc);
   ['eoatq','eoabp','eocl','eojd','eotr','egcatq','egcabp','egctr','egcjd'].forEach(k=>{
@@ -3919,7 +4002,13 @@ function guardarE(){
       if(pg>pcg)v++;else if(pg===pcg)e2++;else d++;
     });
   }
-  const eq={id,nom,tipo:G('etipo'),temp:G('etemp'),liga:G('eliga'),ent:G('eent'),sist:G('esist'),nota:G('enota'),
+  // "liga" se sigue guardando como texto compuesto (categoría + grupo) para
+  // que el permiso de acceso por liga (usuarioPuedeVerLiga/ligasPermitidas)
+  // y la búsqueda de equipos sigan funcionando exactamente igual que antes,
+  // sin tocar esa parte del sistema.
+  const categoria=G('ecategoria').trim(),grupo=G('egrupo').trim();
+  const liga=[categoria,grupo].filter(Boolean).join(' · ');
+  const eq={id,nom,tipo:G('etipo'),temp:G('etemp'),categoria,grupo,liga,ent:G('eent'),sist:G('esist'),nota:G('enota'),
     color:G('ecolor')||'#2f81f7',
     stats:{pj,v,e:e2,d,gf,gc},
     orig:{eoatq:GN('eoatq'),eoabp:GN('eoabp'),eocl:GN('eocl'),eojd:GN('eojd'),eotr:GN('eotr'),
@@ -6695,7 +6784,6 @@ function renderPartidos(){
   const buscar = (document.getElementById('p-buscar')?.value||'').toLowerCase();
   const filJornada = document.getElementById('p-fil-jornada')?.value||'';
   const filEquipo  = document.getElementById('p-fil-equipo')?.value||'';
-  const filComp    = document.getElementById('p-fil-comp')?.value||'';
 
   _actualizarFiltrosPartidos();
 
@@ -6705,12 +6793,22 @@ function renderPartidos(){
     usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local)) || usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante))
   );
 
+  // Los filtros de liga/grupo/temporada se rellenan con lo que ya haya en
+  // los partidos visibles, en cascada igual que en Equipos, así que se leen
+  // DESPUÉS de repoblar los <select> (igual que renderEDB con Equipos).
+  poblarFiltrosYDatalistsPartidos(pDBVisible);
+  const filComp  = document.getElementById('p-fil-comp')?.value||'';
+  const filGrupo = document.getElementById('p-fil-grupo')?.value||'';
+  const filTemp  = document.getElementById('p-fil-temp')?.value||'';
+
   let lista = pDBVisible.filter(p => {
     const txt = `${p.local} ${p.visitante} ${p.comp} ${p.notas}`.toLowerCase();
     if(buscar && !txt.includes(buscar)) return false;
     if(filJornada && p.jornada !== filJornada) return false;
     if(filEquipo  && p.local !== filEquipo && p.visitante !== filEquipo) return false;
-    if(filComp    && p.comp !== filComp) return false;
+    if(filComp    && (p.comp||'').trim() !== filComp) return false;
+    if(filGrupo   && (p.grupo||'').trim() !== filGrupo) return false;
+    if(filTemp    && (p.temp||'').trim() !== filTemp) return false;
     return true;
   });
 
@@ -6782,7 +6880,8 @@ function _cardPartido(p){
         <div class="partido-equipo">${p.visitante||'—'}</div>
       </div>
       <div class="partido-meta">
-        ${p.comp?`<span>${p.comp}</span>`:''}
+        ${p.comp?`<span>${p.comp}${p.grupo?' · '+p.grupo:''}</span>`:''}
+        ${p.temp?`<span>${p.temp}</span>`:''}
         ${fecha?`<span>${fecha}</span>`:''}
         ${!tieneVideo?`<span style="color:var(--gris2)">Sin vídeo</span>`:'<span style="color:var(--verde-cl)">🎬 Vídeo</span>'}
       </div>
@@ -6797,18 +6896,56 @@ function _cardPartido(p){
 function _actualizarFiltrosPartidos(){
   const selJ=document.getElementById('p-fil-jornada');
   const selE=document.getElementById('p-fil-equipo');
-  const selC=document.getElementById('p-fil-comp');
   if(!selJ) return;
-  const curJ=selJ.value, curE=selE.value, curC=selC.value;
+  const curJ=selJ.value, curE=selE.value;
   const jornadas=[...new Set(pDB.map(p=>p.jornada).filter(Boolean))].sort((a,b)=>{
     const na=parseInt(a)||999,nb=parseInt(b)||999;
     return na!==nb?na-nb:a.localeCompare(b);
   });
   const equipos=[...new Set([...pDB.map(p=>p.local),...pDB.map(p=>p.visitante)].filter(Boolean))].sort();
-  const comps=[...new Set(pDB.map(p=>p.comp).filter(Boolean))].sort();
   selJ.innerHTML='<option value="">Todas las jornadas</option>'+jornadas.map(j=>`<option value="${j}" ${j===curJ?'selected':''}>${/^\d+$/.test(j)?'Jornada '+j:j}</option>`).join('');
   selE.innerHTML='<option value="">Todos los equipos</option>'+equipos.map(e=>`<option value="${e}" ${e===curE?'selected':''}>${e}</option>`).join('');
-  selC.innerHTML='<option value="">Todas las competiciones</option>'+comps.map(c=>`<option value="${c}" ${c===curC?'selected':''}>${c}</option>`).join('');
+}
+
+// Rellena, con lo que el propio usuario ya haya ido metiendo en partidos,
+// tanto los datalists del formulario de "Añadir/Editar partido" (para poder
+// escribir una liga/grupo/temporada nuevos y que a partir de ahí queden
+// sugeridos) como los 3 selects de filtro de la sección Partidos —mismo
+// patrón que poblarFiltrosYDatalistsEquipos, para que si mañana añades una
+// nueva liga o grupo, el filtrado los recoja solo con haberlos escrito una
+// vez en un partido.
+function poblarFiltrosYDatalistsPartidos(lista){
+  const base=lista||pDB;
+  const temps=_valoresUnicos(base,'temp');
+  const ligas=_valoresUnicos(base,'comp');
+  const grupos=_valoresUnicos(base,'grupo');
+
+  const dlTemp=document.getElementById('ap-temp-list');
+  if(dlTemp)dlTemp.innerHTML=temps.map(t=>`<option value="${eH(t)}">`).join('');
+  const dlComp=document.getElementById('ap-comp-list');
+  if(dlComp)dlComp.innerHTML=ligas.map(c=>`<option value="${eH(c)}">`).join('');
+  const dlGrupo=document.getElementById('ap-grupo-list');
+  if(dlGrupo)dlGrupo.innerHTML=grupos.map(g=>`<option value="${eH(g)}">`).join('');
+
+  const selComp=document.getElementById('p-fil-comp');
+  const compActual=selComp?selComp.value:'';
+  if(selComp){
+    selComp.innerHTML=`<option value="">Todas las ligas</option>`+ligas.map(c=>`<option value="${eH(c)}"${c===compActual?' selected':''}>${eH(c)}</option>`).join('');
+  }
+  const selGrupo=document.getElementById('p-fil-grupo');
+  if(selGrupo){
+    const grupoActual=selGrupo.value;
+    // El desplegable de grupo se acota a los grupos que existen dentro de
+    // la liga ya elegida, igual que en Equipos, para que el filtrado en
+    // cascada no ofrezca combinaciones liga+grupo que nunca coinciden.
+    const gruposDeLiga=compActual?_valoresUnicos(base.filter(p=>(p.comp||'').trim()===compActual),'grupo'):grupos;
+    selGrupo.innerHTML=`<option value="">Todos los grupos</option>`+gruposDeLiga.map(g=>`<option value="${eH(g)}"${g===grupoActual?' selected':''}>${eH(g)}</option>`).join('');
+  }
+  const selTemp=document.getElementById('p-fil-temp');
+  if(selTemp){
+    const tempActual=selTemp.value;
+    selTemp.innerHTML=`<option value="">Todas las temporadas</option>`+temps.map(t=>`<option value="${eH(t)}"${t===tempActual?' selected':''}>${eH(t)}</option>`).join('');
+  }
 }
 
 function verPartido(id){
@@ -6832,7 +6969,8 @@ function verPartido(id){
     playerH=`<video controls autoplay preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
   }
   const jornadaTxt = p.jornada ? (/^\d+$/.test(p.jornada)?'J'+p.jornada:p.jornada) : '';
-  const titulo=`${p.local||'—'} ${p.gf!=null&&p.gc!=null?p.gf+'-'+p.gc:'vs'} ${p.visitante||'—'}${jornadaTxt?' · '+jornadaTxt:''}${p.comp?' · '+p.comp:''}`;
+  const compTxt=p.comp?(p.comp+(p.grupo?' '+p.grupo:'')):'';
+  const titulo=`${p.local||'—'} ${p.gf!=null&&p.gc!=null?p.gf+'-'+p.gc:'vs'} ${p.visitante||'—'}${jornadaTxt?' · '+jornadaTxt:''}${compTxt?' · '+compTxt:''}${p.temp?' · '+p.temp:''}`;
   const player=document.getElementById('video-modal-player');
   const tituloEl=document.getElementById('video-modal-titulo');
   if(!player||!tituloEl) return;
@@ -6884,7 +7022,13 @@ function abrirAddPartido(){
   document.getElementById('ap-gf').value='0';
   document.getElementById('ap-gc').value='0';
   document.getElementById('ap-edit-id').value='';
-  document.getElementById('ap-comp').value='3ª RFEF';
+  poblarFiltrosYDatalistsPartidos();
+  // Se sugieren la liga/temporada más recientes que ya existan, igual que
+  // al dar de alta un equipo nuevo, para no partir de cero cada vez que se
+  // registra un partido más de la misma liga.
+  document.getElementById('ap-comp').value=_valoresUnicos(pDB,'comp')[0]||'';
+  document.getElementById('ap-grupo').value='';
+  document.getElementById('ap-temp').value=_valoresUnicos(pDB,'temp').slice(-1)[0]||'';
   document.getElementById('ap-fecha').value=new Date().toISOString().slice(0,10);
   document.getElementById('add-partido-titulo').textContent='➕ Añadir partido';
   apGoles=[]; buildApGoles();
@@ -6894,13 +7038,16 @@ function abrirAddPartido(){
 
 function editarPartido(id){
   const p=pDB.find(x=>x.id===id); if(!p) return;
+  poblarFiltrosYDatalistsPartidos();
   document.getElementById('ap-local').value=p.local||'';
   document.getElementById('ap-visitante').value=p.visitante||'';
   document.getElementById('ap-jornada').value=p.jornada||'';
   document.getElementById('ap-gf').value=p.gf??'';
   document.getElementById('ap-gc').value=p.gc??'';
   document.getElementById('ap-fecha').value=p.fecha||'';
-  document.getElementById('ap-comp').value=p.comp||'3ª RFEF';
+  document.getElementById('ap-comp').value=p.comp||'';
+  document.getElementById('ap-grupo').value=p.grupo||'';
+  document.getElementById('ap-temp').value=p.temp||'';
   document.getElementById('ap-url').value=p.urlOrig||'';
   document.getElementById('ap-notas').value=p.notas||'';
   document.getElementById('ap-portero-local').value=p.porteroLocal||'';
@@ -7039,7 +7186,9 @@ function guardarPartido(){
     gf: document.getElementById('ap-gf').value!==''?+document.getElementById('ap-gf').value:null,
     gc: document.getElementById('ap-gc').value!==''?+document.getElementById('ap-gc').value:null,
     fecha: document.getElementById('ap-fecha').value,
-    comp: document.getElementById('ap-comp').value,
+    comp: document.getElementById('ap-comp').value.trim(),
+    grupo: document.getElementById('ap-grupo').value.trim(),
+    temp: document.getElementById('ap-temp').value.trim(),
     urlOrig,
     urlNorm: _normalizarURLPartido(urlOrig),
     thumb: window._thumbBase64 || document.getElementById('ap-thumb').value.trim(),
