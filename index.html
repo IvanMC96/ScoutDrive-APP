@@ -2123,6 +2123,9 @@ body.solo-lectura .ed-panel-form {
           <option value="usuario">👤 Usuario — solo puede VER, no puede editar ni borrar nada</option>
           <option value="admin">🛡️ Administrador — acceso completo, puede editar datos y gestionar usuarios</option>
         </select>
+        <p id="mu-superadmin-aviso" style="display:none;font-size:9px;color:var(--dorado,#c99a2e);margin-top:4px">
+          👑 Cuenta super admin: el rol y el estado quedan bloqueados en Admin, no se pueden cambiar desde aquí.
+        </p>
       </div>
       <div class="apf" id="mu-activo-wrap">
         <label>Estado</label>
@@ -5469,6 +5472,14 @@ function _scoutCargarDatosYAbrirApp(){
   loadAll();loadPDB();recalcularStatsDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
   buildEPartidos();buildEGC();
+  // loadAll() (arriba) es quien realmente lee la config guardada (nombre,
+  // logo, subtítulo) desde localStorage — pero _scoutPrepararLogin() ya
+  // había llamado a applyCfg() ANTES de esto, cuando la variable global
+  // "cfg" todavía tenía los valores por defecto (sin logo). Por eso el
+  // logo personalizado se veía bien en el propio formulario de
+  // configuración pero no en el botón de marca de arriba a la izquierda.
+  // Repetimos applyCfg() aquí, ya con la config real cargada.
+  applyCfg();
 }
 
 async function _scoutComprobarLicenciaYArrancar(){
@@ -7779,6 +7790,20 @@ function loadGCVideoFile(e,i){
 // ════════════════════════════════════════════════════════════════
 const SCOUT_API_ADMIN = 'https://script.google.com/macros/s/AKfycbzd48VqvNICO6KhkFsCCKVQ3HzdAsco4hr4yUu4xYnhua-BMotf2Ra-AKlR7gMZdLNm/exec';
 
+// Cuenta "super admin": ningún otro admin puede eliminarla, bajarle el rol
+// a "usuario" ni desactivarla desde este panel — ni siquiera el propio
+// dueño de la cuenta puede hacerlo por error, ya que los botones/campos
+// correspondientes se bloquean para este email en concreto.
+// IMPORTANTE: esto es solo la mitad de la protección. Cualquiera con la
+// consola del navegador podría saltarse estos bloqueos de interfaz y llamar
+// a la API directamente — la protección real tiene que vivir también en el
+// backend (Apps Script). Ver ScoutDrive_SuperAdmin_AppsScript.md para el
+// código que hay que añadir allí.
+const SCOUT_SUPERADMIN_EMAIL = 'ivanmargallocaballero@gmail.com';
+function _esSuperAdminProtegido(email){
+  return (email||'').trim().toLowerCase() === SCOUT_SUPERADMIN_EMAIL.toLowerCase();
+}
+
 async function _apiAdmin(accion, datos) {
   const sesion = window._scoutSession;
   if (!sesion) return { ok: false, motivo: 'sin_sesion' };
@@ -7898,18 +7923,22 @@ async function cargarUsuariosAdmin() {
     <tbody>
       ${usuarios.map(u => {
         const esMiCuenta = sesion && sesion.email === u.email;
+        const esSuperAdmin = _esSuperAdminProtegido(u.email);
         const fechaAcceso = u.fechaUltimoAcceso
           ? new Date(u.fechaUltimoAcceso).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})
           : '—';
+        // El super admin nunca se puede eliminar (ni siquiera desde su
+        // propia cuenta): el botón de borrar desaparece para esta fila
+        // pase lo que pase, en vez de solo cuando es "mi cuenta".
         return `<tr class="${u.activo?'':'admin-fila-inactiva'}">
-          <td><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}</td>
+          <td><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}${esSuperAdmin?' <span class="admin-yo-badge" style="background:var(--dorado,#c99a2e)" title="Cuenta protegida: nadie puede eliminarla, bajarle el rol ni desactivarla">👑 Super Admin</span>':''}</td>
           <td>${u.nombre||'—'}</td>
           <td><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
           <td><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
           <td style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
           <td>
             <button class="btn b-ghost b-sm" onclick="editarUsuarioAdmin('${u.id}')">✏️</button>
-            ${!esMiCuenta ? `<button class="btn b-rojo b-sm" onclick="eliminarUsuarioAdmin('${u.id}','${u.email}')">🗑</button>` : ''}
+            ${(!esMiCuenta && !esSuperAdmin) ? `<button class="btn b-rojo b-sm" onclick="eliminarUsuarioAdmin('${u.id}','${u.email}')">🗑</button>` : ''}
           </td>
         </tr>`;
       }).join('')}
@@ -7979,7 +8008,10 @@ function abrirModalNuevoUsuario() {
   document.getElementById('mu-nombre').value = '';
   document.getElementById('mu-pass').value = '';
   document.getElementById('mu-rol').value = 'usuario';
+  document.getElementById('mu-rol').disabled = false;
   document.getElementById('mu-activo').value = 'true';
+  document.getElementById('mu-activo').disabled = false;
+  document.getElementById('mu-superadmin-aviso').style.display = 'none';
   document.getElementById('mu-edit-id').value = '';
   document.getElementById('mu-activo-wrap').style.display = 'none';
   document.getElementById('mu-pass-hint').textContent = '';
@@ -8008,6 +8040,14 @@ async function editarUsuarioAdmin(id) {
   document.getElementById('mu-edit-id').value = u.id;
   document.getElementById('mu-activo-wrap').style.display = '';
   document.getElementById('mu-pass-hint').textContent = '(dejar vacío para no cambiar)';
+
+  // Cuenta super admin: se bloquean rol y estado en la interfaz (además
+  // del guardado en guardarUsuario(), que también los fuerza aunque se
+  // manipulen estos campos a mano).
+  const esSuperAdmin = _esSuperAdminProtegido(u.email);
+  document.getElementById('mu-rol').disabled = esSuperAdmin;
+  document.getElementById('mu-activo').disabled = esSuperAdmin;
+  document.getElementById('mu-superadmin-aviso').style.display = esSuperAdmin ? '' : 'none';
   const ligas=u.ligasPermitidas||[];
   document.getElementById('mu-ver-todo').checked = !ligas.length;
   renderMuLigasCheckboxes(ligas);
@@ -8025,13 +8065,25 @@ async function guardarUsuario() {
   const email   = document.getElementById('mu-email').value.trim().toLowerCase();
   const nombre  = document.getElementById('mu-nombre').value.trim();
   const pass    = document.getElementById('mu-pass').value;
-  const rol     = document.getElementById('mu-rol').value;
-  const activo  = document.getElementById('mu-activo').value === 'true';
+  let   rol     = document.getElementById('mu-rol').value;
+  let   activo  = document.getElementById('mu-activo').value === 'true';
   const verTodo = document.getElementById('mu-ver-todo').checked;
   const ligasPermitidas = verTodo ? [] : _ligasSeleccionadasMu();
 
   if (!email) { toast('El email es obligatorio', true); return; }
   if (!verTodo && !ligasPermitidas.length) { toast('Marca al menos una liga, o activa "Ver todo"', true); return; }
+
+  // Cuenta super admin protegida: por mucho que se toquen los selectores
+  // del formulario (o se manipule el DOM), nunca se envía un rol distinto
+  // de "admin" ni un estado "desactivado" para este email. El nombre y la
+  // contraseña sí se pueden seguir editando con normalidad.
+  if (editId && _esSuperAdminProtegido(email)) {
+    if (rol !== 'admin' || !activo) {
+      toast('🔒 Esta cuenta es el super admin: no se le puede quitar el rol de admin ni desactivarla', true);
+    }
+    rol = 'admin';
+    activo = true;
+  }
 
   let hashPass = null;
   if (pass) {
@@ -8067,6 +8119,12 @@ async function guardarUsuario() {
 }
 
 async function eliminarUsuarioAdmin(id, email) {
+  // El botón ya no se pinta para esta cuenta (ver cargarUsuariosAdmin), pero
+  // se comprueba también aquí por si esta función se llamara de otra forma.
+  if (_esSuperAdminProtegido(email)) {
+    toast('🔒 Esta cuenta es el super admin y no se puede eliminar', true);
+    return;
+  }
   askDel(`¿Eliminar el usuario "${email}"? Esta acción no se puede deshacer.`, async () => {
     const resultado = await _apiAdmin('eliminarUsuario', { id });
     if (resultado && resultado.ok) {
