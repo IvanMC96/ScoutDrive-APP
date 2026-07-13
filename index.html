@@ -148,6 +148,11 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .card-av{width:42px;height:42px;border-radius:8px;background:var(--azul-dk);display:flex;
   align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0;overflow:hidden;}
 .card-av img{width:100%;height:100%;object-fit:contain;}
+.card-av-wrap{position:relative;flex-shrink:0;}
+.card-av-badge{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:5px;
+  background:var(--bg2);border:1px solid var(--border);overflow:hidden;display:flex;
+  align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.4);}
+.card-av-badge img{width:100%;height:100%;object-fit:contain;}
 .card-nm{font-size:13px;font-weight:700;}
 .card-mt{font-size:10px;color:var(--gris);margin-top:2px;}
 .card-kpis{display:grid;border-top:1px solid var(--border);}
@@ -570,8 +575,8 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
   justify-content:space-between;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px 16px;}
 .fhdr-l{display:flex;align-items:center;gap:11px;}
 .fav{width:88px;height:88px;border-radius:50%;background:var(--azul-dk);display:flex;
-  align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;flex-shrink:0;}
-.fav img{width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid var(--azul);}
+  align-items:center;justify-content:center;font-size:28px;font-weight:900;color:#fff;flex-shrink:0;overflow:hidden;}
+.fav img{width:88px;height:88px;border-radius:50%;object-fit:contain;border:3px solid var(--azul);}
 .fnm{font-size:19px;font-weight:900;}
 .fmeta{display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap;}
 .badge{padding:2px 8px;border-radius:11px;font-size:9px;font-weight:700;}
@@ -1417,7 +1422,7 @@ body.solo-lectura .ed-panel-form {
           </div>
         </div>
         <div class="fg2">
-          <div class="fg"><label>Club</label><input id="jclub" oninput="renderJ()"></div>
+          <div class="fg"><label>Club</label><input id="jclub" oninput="_autoescudoJugadorDesdeClub();renderJ()"></div>
           <div class="fg"><label>Pie</label>
             <select id="jpie" onchange="renderJ()"><option>Derecho</option><option>Izquierdo</option><option>Ambidiestro</option></select>
           </div>
@@ -1461,10 +1466,9 @@ body.solo-lectura .ed-panel-form {
           <div class="fg"><label>Asist.</label><input class="nbig" id="ka" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>Partidos</label><input class="nbig" id="kp" type="number" value="0" oninput="renderJ()"></div>
         </div>
-        <div class="fg3">
-          <div class="fg"><label>Min/gol</label><input class="nbig" id="km" type="number" value="0" oninput="renderJ()"></div>
+        <div class="fg2">
           <div class="fg"><label>ABP goles</label><input class="nbig" id="kab" type="number" value="0" oninput="renderJ()"></div>
-          <div class="fg"><label>% Finaliz.</label><input class="nbig" id="kf" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>% Min. jugados <span style="opacity:.6;font-weight:400">(auto)</span></label><input class="nbig" id="kf" type="number" value="0" readonly style="opacity:.75;cursor:not-allowed"></div>
         </div>
         <div class="fg">
           <label>Porterías a cero (solo porteros)</label>
@@ -2218,6 +2222,9 @@ function applyCfg(){
 // ══════════════════════════════════════════════════════════════════
 const G=id=>(document.getElementById(id)||{}).value||'';
 const GN=id=>+G(id)||0;
+// % de minutos jugados: minutos totales del jugador sobre los minutos totales
+// posibles (partidos × 90'). Sustituye al antiguo "% Finalización" manual.
+const pctMinutosJugados=(min,p)=>{ min=+min||0; p=+p||0; return p>0 ? Math.max(0,Math.min(100,Math.round((min/(p*90))*100))) : 0; };
 const eH=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const ini=(n,a)=>{const p=(n+' '+a).trim().split(' ');return p.slice(0,2).map(x=>x[0]||'').join('').toUpperCase();};
 const sv=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
@@ -2342,6 +2349,18 @@ function idDeEquipoPorNombre(nombre){
 // Un jugador no guarda su propia categoría/grupo — se derivan del equipo
 // al que pertenece (mismo patrón que ligaDeEquipoPorNombre de arriba),
 // para poder filtrar la lista de Jugadores por categoría/grupo del club.
+// Al escribir/cambiar el club del jugador, si ese nombre coincide con un
+// equipo ya registrado (con escudo propio), se copia su escudo al jugador
+// automáticamente — así no hay que subirlo a mano cada vez. Si el jugador
+// ya tiene puesto justo ese mismo escudo no hace nada (evita re-render de más).
+function _autoescudoJugadorDesdeClub(){
+  const club=G('jclub').trim();if(!club)return;
+  const escudo=escudoDeEquipoPorNombre(club);
+  if(escudo && imgStore.jesc!==escudo){
+    imgStore.jesc=escudo;
+    uzZone('jesc',escudo);
+  }
+}
 function categoriaDeEquipoPorNombre(nombre){
   const eq=_buscarEquipoPorNombre(nombre);
   return eq?_eCategoria(eq):'';
@@ -3012,6 +3031,23 @@ function rmImg(key,e){e.stopPropagation();imgStore[key]=null;uzZone(key,null);if
 // ══════════════════════════════════════════════════════════════════
 let jId=null, jForma=[], jGoles=[], jClips=[], jRadar=[50,50,50,50,50,50,50], jClipCnt=0;
 const jRadarEjes=['Goles','Asistencias','ABP','Transición Defensiva','Transición Ofensiva','Físico','Mentalidad'];
+// Los 3 primeros ejes del radar (Goles/Asistencias/ABP) tienen un dato numérico
+// exacto ya introducido en el formulario, así que se calculan solos en vez de
+// ajustarse a mano con un slider — así "cada dato que se rellena se refleja"
+// automáticamente en el radar y en las barras de la derecha. Los otros 4 ejes
+// (Transición Defensiva/Ofensiva, Físico, Mentalidad) no tienen un número
+// equivalente en el formulario, así que se mantienen como ajuste manual.
+const J_RADAR_AUTO_N=3;
+// Referencias ("un jugador con esto marca 100") usadas para escalar los goles,
+// asistencias y goles de ABP de una temporada a un índice 0-100.
+const J_RADAR_REF={goles:20,asist:15,abp:10};
+function _autoRadarDesdeStats(){
+  const kg=GN('kg'),ka=GN('ka'),kab=GN('kab');
+  jRadar[0]=Math.max(0,Math.min(100,Math.round(kg/J_RADAR_REF.goles*100)));
+  jRadar[1]=Math.max(0,Math.min(100,Math.round(ka/J_RADAR_REF.asist*100)));
+  jRadar[2]=Math.max(0,Math.min(100,Math.round(kab/J_RADAR_REF.abp*100)));
+  for(let i=0;i<J_RADAR_AUTO_N;i++) sv('jrv'+i,jRadar[i]);
+}
 
 // ── Selección para comparar varios jugadores a la vez ──────────────
 let jComparar=new Set();
@@ -3078,19 +3114,22 @@ function renderJDB(){
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
     const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
-    const av=j.imgJug?`<div class="card-av"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+    const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+    const escudoJCard=escudoDeEquipoPorNombre(j.club);
+    const avBadge=escudoJCard?`<div class="card-av-badge"><img src="${eH(escudoJCard)}"></div>`:'';
+    const avWrap=`<div class="card-av-wrap">${av}${avBadge}</div>`;
     const _adJ=_anuncioClubActivo(idDeEquipoPorNombre(j.club));
     return `<div class="card">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editJ('${j.id}')">
-      ${av}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTML(_adJ)}
+      ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTML(_adJ)}
     </div>${_sponsorHTML(_adJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
       <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
-      <div class="ck"><div class="ckv" style="color:var(--naranja-cl)">${s.f||0}%</div><div class="ckl">Finaliz.</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--naranja-cl)">${s.f||0}%</div><div class="ckl">% Min.</div></div>
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editJ('${j.id}')">✏️ Editar</button>
       <button class="btn b-ghost b-sm" onclick="xJExcel('${j.id}')">📊</button>
@@ -3139,9 +3178,8 @@ function _comparativaFilasBase(){
     {l:'Goles',v:j=>j.stats?.g||0},
     {l:'Asistencias',v:j=>j.stats?.a||0},
     {l:'G+A',v:j=>(j.stats?.g||0)+(j.stats?.a||0)},
-    {l:'Min/gol',v:j=>j.stats?.m||0},
     {l:'ABP goles',v:j=>j.stats?.ab||0},
-    {l:'% Finalización',v:j=>(j.stats?.f||0)+'%'},
+    {l:'% Min. jugados',v:j=>(j.stats?.f||0)+'%'},
     {l:'Nota técnica',v:j=>j.nota||'—'},
   ];
 }
@@ -3392,7 +3430,7 @@ function _dashboardComparativaJugadoresHTML(jugadores){
     _cmpFilaBarras('⚽ Goles',items('g')),
     _cmpFilaBarras('🎯 Asistencias',items('a')),
     _cmpFilaBarras('🔥 G+A',jugadores.map((j,i)=>({nombre:nomCorto(j),valor:(j.stats?.g||0)+(j.stats?.a||0),color:colores[i]}))),
-    _cmpFilaBarras('🥅 % Finalización',items('f'),{sufijo:'%'}),
+    _cmpFilaBarras('🥅 % Min. jugados',items('f'),{sufijo:'%'}),
   ].join('');
 
   const radarSeries=jugadores.map((j,i)=>({vals:j.radar||[],color:colores[i]}));
@@ -3413,7 +3451,7 @@ function _dashboardComparativaJugadoresHTML(jugadores){
     ${destacado('Máximo goleador',maxGoleador,`${maxGoleador?.stats?.g||0} goles`,'⚽')}
     ${destacado('Máximo asistente',maxAsistente,`${maxAsistente?.stats?.a||0} asistencias`,'🎯')}
     ${maxGA?destacado('Mejor G+A',maxGA.j,`${maxGA.v} G+A`,'🔥'):''}
-    ${destacado('Mejor % Finalización',maxFinaliz,`${maxFinaliz?.stats?.f||0}%`,'🥅')}
+    ${destacado('Mejor % Min. jugados',maxFinaliz,`${maxFinaliz?.stats?.f||0}%`,'🥅')}
   </div>`;
 
   const filasTabla=_comparativaFilasBase();
@@ -3483,11 +3521,11 @@ function xComparativaExcel(){
     statBar('⚽ Goles',goles),
     statBar('🎯 Asistencias',asist),
     statBar('🔥 G+A',ga),
-    statBar('🥅 % Finalización',finaliz,'%'),
+    statBar('🥅 % Min. jugados',finaliz,'%'),
     [],
   ];
   // Solo tiene sentido marcar con 🏆 al líder en estadísticas donde "más
-  // es mejor" — PJ, Min/gol, etc. no son un mérito en sí mismos.
+  // es mejor" — PJ, % Min. jugados, etc. no son un mérito en sí mismos.
   const GANADOR_LABELS=new Set(['Goles','Asistencias','G+A','ABP goles']);
   _comparativaFilasBase().forEach(f=>{
     const valores=jugadores.map(f.v);
@@ -3515,7 +3553,7 @@ async function xComparativaPDF(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','km','kab','kf','kpz','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','kab','kf','kpz','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   document.getElementById('jdor').value='9';
@@ -3535,7 +3573,8 @@ function editJ(id){
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('km',j.stats?.m);S('kab',j.stats?.ab);S('kf',j.stats?.f);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
+  S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
   S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
     const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd'
@@ -3560,7 +3599,7 @@ function guardarJ(){
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:GN('km'),ab:GN('kab'),f:GN('kf'),pz:GN('kpz'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
@@ -3583,9 +3622,9 @@ function xJExcel(id){
     ['ANÁLISIS JUGADOR · '+nom.toUpperCase()],[],
     ['Nombre',nom,'Club',j.club],['Posición',j.pos,'Dorsal','#'+j.dor],
     ['Temporada',j.temp,'Pie',j.pie],['Nac.',j.nac,'Edad',j.edad],[],
-    ['ESTADÍSTICAS'],['Goles','Asist.','G+A','Partidos','G/PJ','Min/gol','ABP','% Finaliz.'],
+    ['ESTADÍSTICAS'],['Goles','Asist.','G+A','Partidos','G/PJ','ABP','% Min. jugados'],
     [j.stats?.g,j.stats?.a,(j.stats?.g||0)+(j.stats?.a||0),j.stats?.p,
-     j.stats?.p>0?((j.stats?.g||0)/j.stats?.p).toFixed(1):0,j.stats?.m,j.stats?.ab,j.stats?.f+'%'],[],
+     j.stats?.p>0?((j.stats?.g||0)/j.stats?.p).toFixed(1):0,j.stats?.ab,j.stats?.f+'%'],[],
     ['NOTA TÉCNICA'],[j.nota||'—']
   ]);
   ws1['!cols']=[{wch:24},{wch:20},{wch:18},{wch:18}];
@@ -3661,9 +3700,14 @@ function addJGol(){jGoles.push({min:0,rival:'',origen:'Ataque Organizado',subtip
 // ── RADAR ─────────────────────────────────────────────────────────
 function buildJRadar(){
   const c=document.getElementById('j-radar-sliders');if(!c)return;c.innerHTML='';
+  _autoRadarDesdeStats();
   jRadarEjes.forEach((e,i)=>{
     const d=document.createElement('div');d.className='rrow';
-    d.innerHTML=`<span class="rlbl">${e}</span><input type="range" min="0" max="100" value="${jRadar[i]}" oninput="jRadar[${i}]=+this.value;sv('jrv${i}',this.value);renderJ()"><span class="rval" id="jrv${i}">${jRadar[i]}</span>`;
+    if(i<J_RADAR_AUTO_N){
+      d.innerHTML=`<span class="rlbl">${e} <span style="opacity:.6;font-weight:400">(auto)</span></span><input type="range" min="0" max="100" value="${jRadar[i]}" disabled style="opacity:.5;cursor:not-allowed"><span class="rval" id="jrv${i}">${jRadar[i]}</span>`;
+    } else {
+      d.innerHTML=`<span class="rlbl">${e}</span><input type="range" min="0" max="100" value="${jRadar[i]}" oninput="jRadar[${i}]=+this.value;sv('jrv${i}',this.value);renderJ()"><span class="rval" id="jrv${i}">${jRadar[i]}</span>`;
+    }
     c.appendChild(d);
   });
 }
@@ -3739,7 +3783,10 @@ function radarSVG(vals,labels,sz=185){
 
 function renderJ(){
   const nom=(G('jnom')+' '+G('jape')).trim(),dor=G('jdor'),pos=G('jpos'),nac=G('jnac'),temp=G('jtemp'),club=G('jclub'),edad=G('jedad');
-  const[kg,ka,kp,km,kab,kf]=[GN('kg'),GN('ka'),GN('kp'),GN('km'),GN('kab'),GN('kf')];
+  const[kg,ka,kp,kab,kmj]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj')];
+  const kf=pctMinutosJugados(kmj,kp);
+  { const e=document.getElementById('kf'); if(e) e.value=kf; }
+  _autoRadarDesdeStats();
   const kga=kg+ka,kgpj=kp>0?(kg/kp).toFixed(1):'0.0';
   const[oA,oAb,oCl,oJd]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd')];const oMx=Math.max(oA,oAb,oCl,oJd,1);
   const[zA,zAp]=[GN('zag'),GN('zap')];const zMx=Math.max(zA,zAp,1);
@@ -3752,7 +3799,7 @@ function renderJ(){
     ${jGoles.slice(0,10).map(gl=>{const isA=gl.origen==='ABP Ofensiva';const oc=OCSS[isA&&gl.subtipo?gl.subtipo:gl.origen]||'to-atq';return `<tr><td class="tmin">m.${gl.min}</td><td>${eH(gl.rival)||'—'}</td><td><span class="tbdg ${OCSS[gl.origen]||'to-atq'}">${gl.origen}</span></td><td>${isA&&gl.subtipo?`<span class="tbdg ${oc}">${gl.subtipo}</span>`:'—'}</td><td style="font-size:9px;color:var(--gris2)">${eH(gl.fase||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.zona||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.cuerpo||'—')}</td></tr>`;}).join('')}
     </tbody></table>`;
   const avColor=G('javcolor-hex').trim()||colorDeEquipoPorNombre(club)||'#2f81f7';
-  const avH=imgStore.jfoto?`<div class="fav"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
+  const avH=imgStore.jfoto?`<div class="fav" style="background:${eH(avColor)}"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
   // Patrocinio del club: se incrusta dentro de la propia ficha (no solo en
   // la barra de cabecera de la pestaña) para que también salga al
   // exportar el PDF, ya que este es exactamente el HTML que se captura.
@@ -3782,8 +3829,8 @@ function renderJ(){
     <div class="fhdr"><div class="fhdr-l">${avH}<div><div class="fnm">${eH(nom)||'Jugador'}</div><div class="fmeta"><span style="font-size:11px;color:var(--gris)">#${dor}</span><span class="badge bp">${eH(pos)}</span><span class="badge bn">${eH(nac)}</span>${edad?`<span class="badge bt">${eH(edad)} años</span>`:''}<span class="badge bt">${eH(temp)}</span></div></div></div>
     ${jSponsorH}
     <div class="fhdr-r">${escH}<div class="fclub">${eH(club)}</div><div class="fliga">${eH(temp)}</div></div></div>
-    <div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${km}</div><div class="kl">Min/G</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div></div>
-    <div style="display:flex;border-bottom:1px solid var(--border)"><div class="kpi" style="background:var(--bg3)"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">Finaliz.</div></div></div>
+    <div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div></div>
+    <div style="display:flex;border-bottom:1px solid var(--border)"><div class="kpi" style="background:var(--bg3)"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}</div>
     <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
@@ -5501,8 +5548,8 @@ function xBDJExcel(){
   if(!jDB.length){toast('No hay jugadores en la BD',true);return;}
   const WB=XLSX.utils.book_new();
   const rows=[['SCOUTDRIVE · BD JUGADORES'],['Exportado: '+new Date().toLocaleDateString('es-ES')],[],
-    ['Nombre','Apellidos','Dorsal','Posición','Temporada','Club','Nac.','Edad','Pie','Goles','Asist.','G+A','PJ','G/PJ','Min/G','ABP','% Finaliz.','Clips','Nota','Fecha']];
-  jDB.forEach(j=>{const s=j.stats||{};rows.push([j.nom,j.ape,j.dor,j.pos,j.temp,j.club,j.nac,j.edad,j.pie,s.g,s.a,(s.g||0)+(s.a||0),s.p,s.p>0?((s.g||0)/s.p).toFixed(1):0,s.m,s.ab,s.f,(j.clips||[]).length,j.nota||'—',j.fecha]);});
+    ['Nombre','Apellidos','Dorsal','Posición','Temporada','Club','Nac.','Edad','Pie','Goles','Asist.','G+A','PJ','G/PJ','ABP','% Min. jugados','Clips','Nota','Fecha']];
+  jDB.forEach(j=>{const s=j.stats||{};rows.push([j.nom,j.ape,j.dor,j.pos,j.temp,j.club,j.nac,j.edad,j.pie,s.g,s.a,(s.g||0)+(s.a||0),s.p,s.p>0?((s.g||0)/s.p).toFixed(1):0,s.ab,s.f,(j.clips||[]).length,j.nota||'—',j.fecha]);});
   XLSX.utils.book_append_sheet(WB,XLSX.utils.aoa_to_sheet(rows),'Jugadores');
   const gRows=[['TODOS LOS GOLES BD'],[],['Jugador','Min','Rival','Origen','Subtipo','Fase','Zona','Cuerpo']];
   jDB.forEach(j=>(j.goles||[]).forEach(g=>gRows.push([(j.nom+' '+j.ape).trim(),'m.'+g.min,g.rival||'—',g.origen,g.subtipo||'—',g.fase||'—',g.zona||'—',g.cuerpo||'—'])));
