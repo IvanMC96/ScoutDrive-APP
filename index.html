@@ -1166,6 +1166,18 @@ body.solo-lectura .ed-panel-form {
 </head>
 <body>
 
+<!-- ══ CANDADO DE LICENCIA ═══════════════════════════════════════
+     Cubre toda la pantalla (por encima incluso del login) hasta que
+     se confirma que esta instalación tiene una clave de licencia
+     válida contra el backend de Scoutdrive. Ver bloque JS "LICENCIA"
+     más abajo para la lógica completa. -->
+<div id="scout-lic-gate" style="position:fixed;inset:0;z-index:10000;background:#0d1117;display:flex;align-items:center;justify-content:center;font-family:'Segoe UI',system-ui,Arial,sans-serif">
+  <div style="text-align:center;color:#8b949e;font-size:13px">
+    <div style="font-size:28px;margin-bottom:10px">⚽</div>
+    Comprobando licencia…
+  </div>
+</div>
+
 <!-- TOPBAR GLOBAL -->
 <div class="topbar">
   <button class="btn-hamburger" onclick="toggleDrawer()" title="Menú de acceso rápido">☰</button>
@@ -5342,13 +5354,131 @@ function xBDJExcel(){
 }
 
 // ══════════════════════════════════════════════════════════════════
+// LICENCIA — control de instalación/copia no autorizada
+// ══════════════════════════════════════════════════════════════════
+// Cada club que use Scoutdrive corre con su propia clave, dada de alta
+// en la pestaña "Licencias" de TU Google Sheet (la del backend de
+// Scoutdrive, no la del club). Si alguien copia este index.html entero
+// y lo despliega en otro sitio, esta comprobación contra tu backend
+// no la va a superar — verá la pantalla de "Licencia no válida" en vez
+// de la app, y además queda registrado el intento en la pestaña
+// "IntentosAcceso" del Sheet (host + fecha), para que te enteres.
+//
+// ⚠️ INTERRUPTOR DE SEGURIDAD — apagado (false) por defecto a propósito.
+// Actívalo (true) SOLO cuando ya hayas: 1) pegado en tu Apps Script la
+// función "verificarLicencia" (ver ScoutDrive_Licencia_AppsScript.md),
+// 2) creado la pestaña "Licencias" en tu Sheet con esta misma clave
+// marcada como activa. Si lo pones en true antes de eso, tu propia app
+// real se bloqueará (el backend no sabrá responder a esta comprobación
+// todavía). Con false, todo funciona exactamente igual que hasta ahora.
+const SCOUT_LICENSE_ENFORCE = false;
+
+// SCOUT_LICENSE_KEY cambia SOLO cuando instales/vendas una copia nueva
+// para otro club — cada instalación debe tener una clave distinta y
+// dada de alta en el Sheet, o todas comparten la misma "licencia".
+const SCOUT_LICENSE_KEY = 'CDDONBENITO-2026';
+const SCOUT_LIC_CACHE_KEY = 'scout_licencia_cache_v1';
+// Días que la app sigue funcionando sin conexión desde la última
+// comprobación válida — coherente con que Scoutdrive es "offline-first"
+// y no debe dejar de funcionar en el vestuario solo por no tener datos.
+const SCOUT_LIC_GRACIA_DIAS = 7;
+
+function _scoutLicCache(){
+  try{ return JSON.parse(localStorage.getItem(SCOUT_LIC_CACHE_KEY)||'null'); }catch(e){ return null; }
+}
+function _scoutLicGuardar(ok){
+  try{ localStorage.setItem(SCOUT_LIC_CACHE_KEY, JSON.stringify({clave:SCOUT_LICENSE_KEY, ok, ts:Date.now()})); }catch(e){}
+}
+function _scoutLicCacheValida(cache){
+  if(!cache || cache.clave!==SCOUT_LICENSE_KEY || !cache.ok) return false;
+  return (Date.now()-cache.ts) < SCOUT_LIC_GRACIA_DIAS*24*60*60*1000;
+}
+async function _scoutLicPedirBackend(){
+  if(typeof scoutApiGet !== 'function') return {ok:false,offline:true};
+  try{ return await scoutApiGet({accion:'verificarLicencia',clave:SCOUT_LICENSE_KEY,host:(location.hostname||'local')}); }
+  catch(e){ return {ok:false,offline:true}; }
+}
+function _scoutOcultarGate(){
+  const gate=document.getElementById('scout-lic-gate');
+  if(gate) gate.style.display='none';
+}
+function _scoutMostrarBloqueo(){
+  const gate=document.getElementById('scout-lic-gate');
+  if(!gate) return;
+  gate.innerHTML=`
+    <div style="max-width:420px;text-align:center;padding:32px">
+      <div style="font-size:40px;margin-bottom:12px">🔒</div>
+      <h2 style="color:#e6edf3;margin:0 0 10px;font-size:20px">Licencia no válida</h2>
+      <p style="color:#8b949e;font-size:13px;line-height:1.6;margin:0 0 18px">
+        Esta instalación de Scoutdrive no está autorizada o no se ha podido verificar.
+        Si crees que es un error, contacta con nosotros.
+      </p>
+      <p style="color:#3fb950;font-size:13px;font-weight:600;margin:0">691 325 592 · scoutdriveapp@gmail.com</p>
+    </div>`;
+  gate.style.display='flex';
+}
+// Se ejecuta SIEMPRE al cargar la página, incluso antes de cualquier
+// login — por eso solo toca cosas que NO son datos del club (aquí solo
+// la marca/branding que se ve también en la propia pantalla de login).
+//
+// IMPORTANTE — esto es un arreglo de seguridad: antes, esta misma
+// función cargaba y pintaba jDB/eDB/pDB (loadAll/renderInicio/renderJDB)
+// sin comprobar sesión ninguna, y la pantalla de login se limitaba a
+// taparlo todo por encima con un div. Cualquiera con acceso al
+// dispositivo (sin necesitar contraseña) podía abrir las herramientas
+// de desarrollador del navegador y ocultar ese div para ver todos los
+// datos reales ya pintados detrás. Ahora los datos NO se cargan ni se
+// pintan aquí — solo se cargan en _scoutCargarDatosYAbrirApp(), que se
+// llama únicamente tras un login correcto (ver _abrirApp en
+// loginValidar). Así, hasta que no hay sesión válida, no hay nada que
+// ver detrás del login aunque alguien lo intente ocultar.
+function _scoutPrepararLogin(){
+  applyCfg();
+  initPullToRefresh();
+}
+
+// Se ejecuta SOLO después de un login correcto.
+function _scoutCargarDatosYAbrirApp(){
+  loadAll();loadPDB();recalcularStatsDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
+  buildJForma();buildJGoles();buildJRadar();buildJClips();
+  buildEPartidos();buildEGC();
+}
+
+async function _scoutComprobarLicenciaYArrancar(){
+  if(!SCOUT_LICENSE_ENFORCE){
+    // Interruptor apagado: comportamiento idéntico a como estaba la app
+    // antes de este cambio, sin ninguna comprobación ni bloqueo.
+    _scoutOcultarGate();
+    _scoutPrepararLogin();
+    return;
+  }
+  const cache=_scoutLicCache();
+  if(_scoutLicCacheValida(cache)){
+    // Validado hace poco (dentro del periodo de gracia): arranca ya sin
+    // esperar red, y de paso refresca la comprobación en segundo plano.
+    _scoutOcultarGate();
+    _scoutPrepararLogin();
+    _scoutLicPedirBackend().then(res=>{ if(res && res.ok) _scoutLicGuardar(true); });
+    return;
+  }
+  const res=await _scoutLicPedirBackend();
+  if(res && res.ok){
+    _scoutLicGuardar(true);
+    _scoutOcultarGate();
+    _scoutPrepararLogin();
+  } else {
+    // Sin caché válida y sin poder confirmar licencia (rechazada o sin
+    // conexión en el primer arranque): no se arranca la app.
+    if(res && !res.offline) _scoutLicGuardar(false);
+    _scoutMostrarBloqueo();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded',()=>{
-  loadAll();applyCfg();loadPDB();recalcularStatsDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
-  buildJForma();buildJGoles();buildJRadar();buildJClips();
-  buildEPartidos();buildEGC();
-  initPullToRefresh();
+  _scoutComprobarLicenciaYArrancar();
 });
 
 // ── TIRAR HACIA ABAJO PARA ACTUALIZAR (propio, no recarga la página) ──
@@ -6670,13 +6800,20 @@ function guardarEConFeedback(){
 
     const _abrirApp = (sesion) => {
       window._scoutSession = sesion;
+      // Los permisos (admin / ligas permitidas) se fijan ANTES de cargar
+      // y pintar los datos reales, para que el primer renderizado ya
+      // salga bien filtrado según el rol de quien acaba de entrar.
+      if (typeof actualizarPanelAdmin === 'function') actualizarPanelAdmin();
+      // Aquí, y solo aquí (tras un login correcto), se cargan y pintan
+      // los datos reales del club — ver comentario junto a
+      // _scoutPrepararLogin/_scoutCargarDatosYAbrirApp más arriba.
+      _scoutCargarDatosYAbrirApp();
       const overlay = document.getElementById('login-overlay');
       overlay.style.transition = 'opacity .3s ease';
       overlay.style.opacity = '0';
       setTimeout(() => {
         overlay.style.display = 'none';
         loginSyncBrand();
-        if (typeof actualizarPanelAdmin === 'function') actualizarPanelAdmin();
         // La sincronización con Google Sheets arranca AQUÍ, ya con la
         // app abierta — así no compite por la red con el propio login
         // en conexiones móviles lentas.
@@ -6684,22 +6821,15 @@ function guardarEConFeedback(){
       }, 300);
     };
 
-    // ── Cerrar sesión: vuelve a la pantalla de usuario/contraseña ──
+    // ── Cerrar sesión: recarga la app entera ─────────────────────
+    // Antes esto solo volvía a mostrar el overlay de login sin tocar
+    // los datos ya pintados detrás — es decir, los datos de la sesión
+    // anterior seguían en el DOM, solo tapados de nuevo. Recargar la
+    // página entera garantiza que no queda nada en memoria ni en
+    // pantalla: la siguiente carga pasa otra vez por _scoutPrepararLogin
+    // (sin datos) hasta el próximo login correcto.
     window.cerrarSesion = () => {
-      window._scoutSession = null;
-      window._esAdmin = false;
-      window._ligasPermitidas = [];
-      const overlay = document.getElementById('login-overlay');
-      const email = document.getElementById('login-email');
-      const pass = document.getElementById('login-pass');
-      if (email) email.value = '';
-      if (pass) pass.value = '';
-      if (overlay) {
-        overlay.style.display = 'flex';
-        overlay.style.transition = 'none';
-        overlay.style.opacity = '1';
-      }
-      if (email) setTimeout(() => email.focus(), 50);
+      window.location.reload();
     };
 
     const _mostrarError = (msg) => {
@@ -6760,7 +6890,12 @@ let pDB = [];
 function loadPDB(){ try{ pDB=JSON.parse(localStorage.getItem(PDB_KEY)||'[]'); }catch(e){ pDB=[]; } }
 function savePDB(){ try{ localStorage.setItem(PDB_KEY,JSON.stringify(pDB)); }catch(e){} }
 
-loadPDB();
+// OJO: antes había un loadPDB() suelto aquí, que se ejecutaba nada más
+// cargar el script — es decir, ANTES incluso de comprobar sesión, igual
+// que le pasaba a jDB/eDB (ver el arreglo de seguridad junto a
+// _scoutPrepararLogin/_scoutCargarDatosYAbrirApp). Se ha quitado: ahora
+// pDB solo se carga en memoria dentro de _scoutCargarDatosYAbrirApp(),
+// tras un login correcto, igual que jDB y eDB.
 
 function _normalizarURLPartido(url){
   if(!url) return '';
