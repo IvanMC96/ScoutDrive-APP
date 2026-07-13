@@ -214,17 +214,16 @@ setInterval(scoutProcesarCola, 60000);
     if (p) scoutSincronizarPartidoVideo(p);
   };
 
-  const _borrarPartido_original = borrarPartido;
-  borrarPartido = function (id) {
-    _borrarPartido_original(id);
-    // Si se confirmó el borrado (el usuario aceptó el modal), pDB ya no
-    // tendrá ese id. Lo mandamos a borrar también en el Sheet.
-    setTimeout(() => {
-      const sigueExistiendo = (typeof pDB !== 'undefined') && pDB.some(x => String(x.id) === String(id));
-      if (!sigueExistiendo) scoutEliminarPartidoVideoRemoto(id);
-    }, 300);
-  };
-
+  // borrarPartido() NO se envuelve aquí: el borrado es asíncrono (espera
+  // a que el usuario confirme un modal), así que envolverlo con un
+  // "esperar 300ms y comprobar" no funcionaba — esos 300ms casi siempre
+  // pasaban antes de que el usuario llegara a confirmar, y el borrado
+  // nunca llegaba a mandarse al Sheet (el partido "borrado" reaparecía en
+  // la siguiente sincronización). Ahora borrarPartido(), dentro de
+  // index.html, llama directamente a scoutEliminarPartidoVideoRemoto()
+  // en el momento exacto en que el usuario confirma — así no hay carrera
+  // posible. Esta función queda expuesta globalmente para que pueda
+  // llamarla desde allí.
   console.log('[Scoutdrive sync] Conectado: guardarPartido()/borrarPartido() ahora sincronizan con Google Sheets.');
 })();
 
@@ -243,15 +242,13 @@ setInterval(scoutProcesarCola, 60000);
     if (a) scoutSincronizarAnuncio(a);
   };
 
-  const _borrarAnuncio_original = borrarAnuncio;
-  borrarAnuncio = function (id) {
-    _borrarAnuncio_original(id);
-    setTimeout(() => {
-      const sigueExistiendo = (typeof adsDB !== 'undefined') && adsDB.some(x => String(x.id) === String(id));
-      if (!sigueExistiendo) scoutEliminarAnuncioRemoto(id);
-    }, 300);
-  };
-
+  // borrarAnuncio() ya NO se envuelve aquí — mismo motivo que
+  // borrarPartido() arriba: el borrado se confirma en un modal asíncrono,
+  // así que el antiguo "esperar 300ms y comprobar si sigue existiendo"
+  // casi nunca llegaba a tiempo y el anuncio "borrado" volvía a aparecer
+  // al sincronizar. Ahora borrarAnuncio(), en index.html, llama
+  // directamente a scoutEliminarAnuncioRemoto() en el momento real de la
+  // confirmación.
   console.log('[Scoutdrive sync] Conectado: guardarAnuncio()/borrarAnuncio() ahora sincronizan con Google Sheets.');
 })();
 
