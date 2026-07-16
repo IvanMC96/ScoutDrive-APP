@@ -492,7 +492,7 @@ async function scoutSincronizarAlAbrir() {
       if (idx < 0) {
         eDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
-        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones'])) huboNovedades = true;
       }
     });
   }
@@ -689,7 +689,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones']); cambios++; }
       else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
