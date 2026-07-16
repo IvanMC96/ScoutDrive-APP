@@ -507,7 +507,8 @@ input[type=range]{flex:1;accent-color:var(--azul);}
   max-height:64px;
 }
 .ad-banner-global.show{display:flex;}
-.ad-banner-global .abg-link{display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-decoration:none;color:inherit;cursor:pointer;}
+.ad-banner-global .abg-slots{display:flex;align-items:center;gap:16px;flex:1;min-width:0;overflow:hidden;}
+.ad-banner-global .abg-slot{display:flex;align-items:center;gap:10px;flex:1;min-width:0;max-width:220px;text-decoration:none;color:inherit;cursor:pointer;}
 .ad-banner-global .abg-img-wrap{height:calc(50px * var(--patro-escala,1));width:calc(90px * var(--patro-escala,1));flex-shrink:0;background:var(--bg);border-radius:6px;
   display:flex;align-items:center;justify-content:center;padding:5px;box-sizing:border-box;}
 .ad-banner-global img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;}
@@ -525,6 +526,10 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 @media(max-width:680px){
   .ad-banner-global .abg-img-wrap{height:calc(38px * var(--patro-escala,1));width:calc(60px * var(--patro-escala,1));}
   .ad-banner-global{padding:6px 10px;gap:8px;}
+  .ad-banner-global .abg-slots{gap:8px;}
+  .ad-banner-global .abg-slot .abg-tag,
+  .ad-banner-global .abg-slot .abg-txt{display:none;}
+  .ad-banner-global .abg-slot{max-width:none;justify-content:center;}
 }
 
 /* Filas clicables del dashboard de Inicio */
@@ -1248,13 +1253,7 @@ body.solo-lectura .ed-panel-form {
 
 <!-- ── BANNER DE PUBLICIDAD GLOBAL (fijo abajo, visible en toda la app) ── -->
 <div class="ad-banner-global" id="ad-banner-global">
-  <a class="abg-link" id="abg-link" href="#" target="_blank" rel="noopener">
-    <div class="abg-img-wrap" id="abg-img-wrap" style="display:none"><img id="abg-img" src="" alt=""></div>
-    <div style="min-width:0">
-      <div class="abg-tag">Publicidad</div>
-      <div class="abg-txt" id="abg-txt"></div>
-    </div>
-  </a>
+  <div class="abg-slots" id="abg-slots"></div>
   <button class="abg-close" onclick="cerrarBannerAds()" title="Ocultar">✕</button>
 </div>
 <div class="modal-bg" id="modal">
@@ -1277,6 +1276,7 @@ body.solo-lectura .ed-panel-form {
       <div style="display:flex;align-items:center;gap:4px">
         <button class="video-modal-close" id="video-modal-fullscreen" onclick="_pantallaCompletaVideoModal()" title="Pantalla completa (recomendado en móvil)">⛶</button>
         <button class="video-modal-close" id="video-modal-externo" onclick="_abrirVideoExterno()" title="Abrir en Google Drive / YouTube" style="display:none">↗</button>
+        <button class="video-modal-close" id="video-modal-descarga" onclick="_abrirDescargaVideoModal()" title="Descargar vídeo" style="display:none">⬇</button>
         <button class="video-modal-close" onclick="cerrarVideoModal()">✕</button>
       </div>
     </div>
@@ -1416,9 +1416,8 @@ body.solo-lectura .ed-panel-form {
             </select>
           </div>
           <div class="fg"><label>Temporada</label>
-            <select id="jtemp" onchange="renderJ()">
-              <option>2025-26</option><option>2024-25</option><option>2024-25 + 2025-26</option>
-            </select>
+            <input id="jtemp" list="jtemp-list" placeholder="ej: 2026-2027" oninput="renderJ()">
+            <datalist id="jtemp-list"></datalist>
           </div>
         </div>
         <div class="fg2">
@@ -2616,9 +2615,11 @@ function renderAdsList(){
   // Los usuarios normales solo ven los anuncios activos; el admin ve todos
   const lista=esAdmin?adsDB:adsDB.filter(a=>a.activo!==false);
   if(!lista.length){ wrap.innerHTML='<div class="inicio-empty">Sin anuncios todavía'+(esAdmin?'. Pulsa "+ Añadir anuncio".':'.')+'</div>'; return; }
-  const activosIds=new Set(adsDB.filter(a=>a.activo!==false && (a.img||a.texto)).slice(0,5).map(a=>a.id));
-  const avisoExceso=esAdmin && adsDB.filter(a=>a.activo!==false).length>5
-    ? '<div class="inicio-empty" style="text-align:left;padding:0 0 10px">📌 El banner de abajo solo rota los 5 primeros anuncios activos (marcados con 🔄). El resto se ve aquí en Inicio pero no en el banner.</div>' : '';
+  // Ya no hay límite de 5: TODOS los anuncios activos (con imagen o texto)
+  // rotan en el banner de abajo, varios a la vez.
+  const activosIds=new Set(adsDB.filter(a=>a.activo!==false && (a.img||a.texto)).map(a=>a.id));
+  const avisoExceso=esAdmin && activosIds.size>BANNER_SLOTS
+    ? `<div class="inicio-empty" style="text-align:left;padding:0 0 10px">📌 El banner de abajo muestra ${BANNER_SLOTS} anuncios a la vez y va rotando por turnos hasta pasar por los ${activosIds.size} activos (marcados con 🔄).</div>` : '';
   wrap.innerHTML=avisoExceso+lista.map(a=>`
     <div class="ad-card">
       ${a.activo===false?'<div class="ad-badge-inactivo">Oculto</div>':(activosIds.has(a.id)?'<div class="ad-badge-inactivo" style="background:rgba(63,185,80,.85);color:#fff">🔄 En banner</div>':'')}
@@ -2731,38 +2732,50 @@ function borrarAnuncio(id){
 }
 
 // ── BANNER GLOBAL DE PUBLICIDAD (visible en toda la app) ─────────
-let _adBannerIdx=0, _adBannerTimer=null, _adBannerOculto=false;
+// Antes el banner solo mostraba UN anuncio cada vez (rotando cada 7s) y
+// además limitaba a un máximo de 5 anuncios activos. Ahora se ven varios
+// a la vez (BANNER_SLOTS) y rota por turnos hasta pasar por TODOS los
+// anuncios activos que haya, sin límite — así todos tienen visibilidad.
+const BANNER_SLOTS=4;
+let _adBannerOffset=0, _adBannerTimer=null, _adBannerOculto=false, _adBannerActivos=[];
 
 function renderBannerAdsGlobal(){
   const banner=document.getElementById('ad-banner-global');
   if(!banner) return;
-  const MAX_BANNER_ADS=5;
-  const activos=adsDB.filter(a=>a.activo!==false && (a.img||a.texto)).slice(0,MAX_BANNER_ADS);
+  const activos=adsDB.filter(a=>a.activo!==false && (a.img||a.texto));
+  _adBannerActivos=activos;
   clearInterval(_adBannerTimer);
   if(_adBannerOculto || !activos.length){
     banner.classList.remove('show');
     document.body.classList.remove('ad-banner-activo');
     return;
   }
-  _adBannerIdx=0;
-  pintarAdBanner(activos[0]);
+  _adBannerOffset=0;
+  pintarAdBannerSlots();
   document.body.classList.add('ad-banner-activo');
   banner.classList.add('show');
-  if(activos.length>1){
+  if(activos.length>BANNER_SLOTS){
     _adBannerTimer=setInterval(()=>{
-      _adBannerIdx=(_adBannerIdx+1)%activos.length;
-      pintarAdBanner(activos[_adBannerIdx]);
+      _adBannerOffset=(_adBannerOffset+BANNER_SLOTS)%activos.length;
+      pintarAdBannerSlots();
     },7000);
   }
 }
-function pintarAdBanner(a){
-  const img=document.getElementById('abg-img'), imgWrap=document.getElementById('abg-img-wrap'), txt=document.getElementById('abg-txt'), link=document.getElementById('abg-link');
-  imgWrap.style.setProperty('--patro-escala', a.escala||1);
-  if(a.img){ img.src=a.img; imgWrap.style.display=''; } else { imgWrap.style.display='none'; }
-  txt.textContent=a.texto||'';
-  link.href=a.link||'#';
-  if(!a.link) link.removeAttribute('target');
-  else link.setAttribute('target','_blank');
+function pintarAdBannerSlots(){
+  const cont=document.getElementById('abg-slots');
+  if(!cont) return;
+  const activos=_adBannerActivos;
+  const n=Math.min(BANNER_SLOTS, activos.length);
+  const slots=[];
+  for(let i=0;i<n;i++) slots.push(activos[(_adBannerOffset+i)%activos.length]);
+  cont.innerHTML=slots.map(a=>`
+    <a class="abg-slot" href="${a.link?eH(a.link):'#'}" ${a.link?'target="_blank" rel="noopener"':''}>
+      ${a.img?`<div class="abg-img-wrap" style="--patro-escala:${a.escala||1}"><img src="${a.img}" alt=""></div>`:''}
+      <div style="min-width:0">
+        <div class="abg-tag">Publicidad</div>
+        <div class="abg-txt">${eH(a.texto)||''}</div>
+      </div>
+    </a>`).join('');
 }
 function cerrarBannerAds(){
   if(!esAdminActual()){ return; }
@@ -3556,6 +3569,8 @@ function nuevoJ(){
   ['kg','ka','kp','kab','kf','kpz','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
+  poblarDatalistTemporadasJugador();
+  document.getElementById('jtemp').value=_valoresUnicos(jDB,'temp').slice(-1)[0]||'2025-26';
   document.getElementById('jdor').value='9';
   document.getElementById('javcolor').value='#2f81f7';
   document.getElementById('javcolor-hex').value='';
@@ -3571,6 +3586,7 @@ function editJ(id){
   if(!usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club))){ toast('No tienes acceso a este jugador',true); return; }
   jId=id;
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
+  poblarDatalistTemporadasJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
   S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
@@ -3856,6 +3872,20 @@ function _eCategoria(e){ return (e.categoria||e.liga||'').trim(); }
 
 function _valoresUnicos(arr,campo){
   return [...new Set(arr.map(e=>(e[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+}
+
+// El campo "Temporada" del jugador era un desplegable fijo (solo dejaba
+// elegir 2025-26 / 2024-25 / la combinada) — ahora es un campo de texto
+// con sugerencias (datalist), igual que Equipos y Partidos: se puede
+// escribir cualquier temporada nueva (ej. "2026-2027") y a partir de ahí
+// queda sugerida también aquí, sin tener que tocar el código.
+function poblarDatalistTemporadasJugador(){
+  const dl=document.getElementById('jtemp-list');
+  if(!dl) return;
+  const vistas=_valoresUnicos(jDB,'temp');
+  const base=['2024-25','2025-26'];
+  const todas=[...new Set([...base,...vistas])].sort((a,b)=>a.localeCompare(b,'es'));
+  dl.innerHTML=todas.map(t=>`<option value="${eH(t)}">`).join('');
 }
 
 // Rellena, con lo que el propio usuario ya haya ido escribiendo, tanto los
@@ -5643,7 +5673,7 @@ function _scoutPrepararLogin(){
 
 // Se ejecuta SOLO después de un login correcto.
 function _scoutCargarDatosYAbrirApp(){
-  loadAll();loadPDB();recalcularStatsDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
+  loadAll();loadPDB();recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
   buildEPartidos();buildEGC();
   // loadAll() (arriba) es quien realmente lee la config guardada (nombre,
@@ -6005,6 +6035,40 @@ function _pantallaCompletaVideoModal(){
 
 function _abrirVideoExterno(){
   if (_videoModalUrlExterno) window.open(_videoModalUrlExterno, '_blank', 'noopener');
+}
+
+/* ── Descarga directa del vídeo del partido ──────────────────────
+ * Google Drive no deja "forzar" una descarga automática desde una web
+ * de otro dominio (por seguridad del navegador), pero sí expone una
+ * URL de descarga directa (uc?export=download&id=...) que evita tener
+ * que entrar manualmente a Drive y buscar el botón de descarga allí —
+ * al abrirla, Drive empieza la descarga sola (o, en archivos grandes,
+ * muestra un único clic de "Descargar de todos modos" por el aviso de
+ * antivirus de Google, que es cosa de Drive y no se puede saltar).
+ * Para YouTube no existe una descarga directa (va contra sus
+ * condiciones de uso), así que ahí no se muestra el botón. */
+let _videoModalUrlDescarga = null;
+
+function _idDriveDeURL(url){
+  if(!url) return null;
+  const m = url.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+  return m ? m[1] : null;
+}
+
+function _urlDescargaDrivePartido(p){
+  if(!p) return null;
+  const id = _idDriveDeURL(p.urlNorm) || _idDriveDeURL(p.urlOrig);
+  return id ? `https://drive.google.com/uc?export=download&id=${id}` : null;
+}
+
+function _setVideoModalDescarga(url){
+  const btn = document.getElementById('video-modal-descarga');
+  _videoModalUrlDescarga = url || null;
+  if (btn) btn.style.display = url ? '' : 'none';
+}
+
+function _abrirDescargaVideoModal(){
+  if (_videoModalUrlDescarga) window.open(_videoModalUrlDescarga, '_blank', 'noopener');
 }
 
 function abrirVideoModal(cl){
@@ -7216,6 +7280,7 @@ function _cardPartido(p){
   const gf = p.gf ?? '', gc = p.gc ?? '';
   const resultado = (gf!==''&&gc!=='') ? `${gf} - ${gc}` : 'vs';
   const tieneVideo = !!p.urlNorm;
+  const urlDescarga = tieneVideo && _tipoVideo(p.urlNorm)==='drive' ? _urlDescargaDrivePartido(p) : null;
   const fecha = p.fecha ? new Date(p.fecha).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '';
   const thumbH = p.thumb
     ? `<img src="${p.thumb}" onerror="this.style.display='none'">`
@@ -7238,6 +7303,7 @@ function _cardPartido(p){
         ${p.temp?`<span>${p.temp}</span>`:''}
         ${fecha?`<span>${fecha}</span>`:''}
         ${!tieneVideo?`<span style="color:var(--gris2)">Sin vídeo</span>`:'<span style="color:var(--verde-cl)">🎬 Vídeo</span>'}
+        ${urlDescarga?`<span onclick="event.stopPropagation();window.open('${urlDescarga}','_blank','noopener')" style="color:var(--azul-cl);cursor:pointer;text-decoration:underline">⬇ Descargar</span>`:''}
       </div>
     </div>
     ${esAdminActual()?`<div class="partido-card-actions" onclick="event.stopPropagation()">
@@ -7310,6 +7376,7 @@ function verPartido(id){
   const tipo = _tipoVideo(p.urlNorm);
   let playerH = '';
   _setVideoModalExterno(null);
+  _setVideoModalDescarga(tipo==='drive' ? _urlDescargaDrivePartido(p) : null);
   if(tipo==='youtube'||tipo==='drive'){
     playerH=`<iframe src="${p.urlNorm}" allowfullscreen allow="autoplay;encrypted-media" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
     // Enlace de escape: Drive/YouTube muestran su reproductor embebido en
@@ -7343,7 +7410,10 @@ function buildApGoles(){
   const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
   const nomVisit=document.getElementById('ap-visitante').value.trim()||'Visitante';
   if(!apGoles.length){ cont.innerHTML='<p style="font-size:10px;color:var(--gris2);padding:4px 0">Sin goles añadidos todavía</p>'; return; }
-  cont.innerHTML=apGoles.map((g,i)=>`
+  cont.innerHTML=apGoles.map((g,i)=>{
+    const isABP=g.origen==='ABP Ofensiva';
+    const subOpts=(SUB_ABP[g.origen]||[]).map(s=>`<option${g.subtipo===s?' selected':''}>${s}</option>`).join('');
+    return `
     <div class="gr" style="border-left-color:${g.equipo==='visitante'?'var(--rojo)':'var(--verde-dk)'}">
       <div class="g1">
         <input type="number" value="${g.minuto??''}" placeholder="min" style="text-align:center" oninput="apGoles[${i}].minuto=this.value?+this.value:null">
@@ -7357,14 +7427,27 @@ function buildApGoles(){
         <input type="text" placeholder="Jugador (quién marca)" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value">
         <input type="text" placeholder="Asistencia (opcional)" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value">
       </div>
+      <div class="g2">
+        <div class="fg"><label style="font-size:9px">Cómo fue el gol</label>
+          <select onchange="apGoles[${i}].origen=this.value;apGoles[${i}].subtipo='';buildApGoles()">
+            ${ORIGENES.map(o=>`<option${g.origen===o?' selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fg" style="${isABP?'':'opacity:.4;pointer-events:none'}"><label style="font-size:9px">Subtipo ABP</label>
+          <select onchange="apGoles[${i}].subtipo=this.value" ${isABP?'':'disabled'}>
+            <option value="">—</option>${subOpts}
+          </select>
+        </div>
+      </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);margin-top:5px;cursor:pointer">
         <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
       </label>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function addApGol(){
-  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',penalti:false});
+  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false});
   buildApGoles();
 }
 
@@ -7526,6 +7609,88 @@ function recalcularStatsDesdePartidos(){
   if(cambios) saveJDB();
 }
 
+// ── SINCRONIZAR "CÓMO FUE EL GOL" DE PARTIDOS → FICHA JUGADOR Y EQUIPO ──
+// Cuando en "Goles del partido" (Partidos) se elige el origen táctico de
+// un gol, esta función lo copia automáticamente:
+//  - a la ficha del JUGADOR que marcó (j.goles), para que aparezca en su
+//    "Registro Goles · Taxonomía Táctica"
+//  - a la ficha del EQUIPO que marcó (eq.partidos[].golesGF), el mismo
+//    listado que ya usa "⚽ Goles a favor" dentro de la ficha de equipo
+// Es una recomputación completa e idempotente, igual que
+// recalcularStatsDesdePartidos: primero quita todo lo sincronizado la
+// vez anterior (marcado con srcPartido/srcPartidoId) y lo vuelve a
+// generar desde pDB — así nunca duplica ni se desincroniza, y nunca
+// toca lo que el usuario metió a mano en las fichas.
+function sincronizarTacticaDesdePartidos(){
+  let cambiosJ=false, cambiosE=false;
+
+  // 1) Quitar del jugador todo lo sincronizado la vez anterior.
+  jDB.forEach(j=>{
+    if(!j.goles||!j.goles.length) return;
+    const antes=j.goles.length;
+    j.goles=j.goles.filter(g=>!g.srcPartido);
+    if(j.goles.length!==antes) cambiosJ=true;
+  });
+
+  // 2) Quitar del equipo: los goles sincronizados de partidos manuales,
+  // y los partidos que se auto-crearon enteros la vez anterior.
+  eDB.forEach(eq=>{
+    if(!eq.partidos||!eq.partidos.length) return;
+    const antes=eq.partidos.length;
+    eq.partidos.forEach(p=>{
+      if(!p.golesGF||!p.golesGF.length) return;
+      const antesGF=p.golesGF.length;
+      p.golesGF=p.golesGF.filter(g=>!g.srcPartido);
+      if(p.golesGF.length!==antesGF) cambiosE=true;
+    });
+    eq.partidos=eq.partidos.filter(p=>!p.srcPartidoId);
+    if(eq.partidos.length!==antes) cambiosE=true;
+  });
+
+  // 3) Volver a generar desde pDB.
+  pDB.forEach(p=>{
+    if(!p.local || !p.visitante) return;
+    [['local',p.visitante,p.gf,p.gc],['visitante',p.local,p.gc,p.gf]].forEach(([lado,rivalNom,gf,gc])=>{
+      const equipoNom = lado==='local' ? p.local : p.visitante;
+      const golesLado = (p.goles||[]).filter(g=>(g.equipo||'local')===lado);
+
+      // 3a) Ficha del jugador — solo los goles a los que se les puso
+      // origen táctico (si no se especificó, no se inventa uno).
+      golesLado.forEach((g,i)=>{
+        if(!g.jugador || !g.origen) return;
+        const jid=jugadorIdPorNombre(g.jugador);
+        if(!jid) return;
+        const j=jDB.find(x=>x.id===jid); if(!j) return;
+        if(!j.goles) j.goles=[];
+        j.goles.push({min:g.minuto??0,rival:rivalNom,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:'',cuerpo:'',desc:'',srcPartido:p.id+'_'+i});
+        cambiosJ=true;
+      });
+
+      // 3b) Ficha del equipo — se sincroniza el marcador siempre que el
+      // equipo exista en Equipos (aunque a los goles no se les haya
+      // puesto origen todavía), fusionando con un partido ya existente
+      // en su ficha si coincide rival+fecha, o creando uno nuevo si no.
+      const eq=_buscarEquipoPorNombre(equipoNom);
+      if(!eq) return;
+      if(!eq.partidos) eq.partidos=[];
+      let entry=eq.partidos.find(x=>(x.rival||'').trim().toLowerCase()===(rivalNom||'').trim().toLowerCase() && (x.fecha||'')===(p.fecha||''));
+      if(!entry){
+        entry={rival:rivalNom,gf:gf,gc:gc,fecha:p.fecha||'',comp:p.comp||'Liga',golesGF:[],srcPartidoId:p.id+'_'+lado};
+        eq.partidos.push(entry);
+      }
+      if(!entry.golesGF) entry.golesGF=[];
+      golesLado.forEach((g,i)=>{
+        if(!g.jugador || !g.origen) return;
+        entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:'',cuerpo:'',srcPartido:p.id+'_'+i});
+      });
+      cambiosE=true;
+    });
+  });
+
+  if(cambiosJ) saveJDB();
+  if(cambiosE) saveEDB();
+}
+
 function guardarPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
@@ -7554,6 +7719,7 @@ function guardarPartido(){
   else { pDB.unshift(partido); }
   savePDB();
   recalcularStatsDesdePartidos();
+  sincronizarTacticaDesdePartidos();
   cerrarAddPartido(); renderPartidos();
   if(currentSection==='inicio') renderInicio();
   if(typeof toast==='function') toast('✅ Partido guardado');
@@ -7568,6 +7734,7 @@ function borrarPartido(id){
       pDB=pDB.filter(x=>x.id!==id);
       savePDB();
       recalcularStatsDesdePartidos();
+      sincronizarTacticaDesdePartidos();
       renderPartidos();
       if(currentSection==='inicio') renderInicio();
       // Igual que en borrarAnuncio(): el borrado remoto se dispara aquí,
