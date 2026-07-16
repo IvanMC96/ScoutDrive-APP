@@ -3289,22 +3289,39 @@ function _cmpEsperarImagenes(cont,timeoutMs=4000){
 // la misma foto se vea perfectamente bien en el campograma en pantalla).
 // Este helper, ANTES de capturar, pide cada foto externa otra vez en modo
 // CORS explícito y la convierte a un data: URL propio (dibujándola en un
-// canvas). Si el servidor concreto no admite CORS (algunos enlaces de
-// Google Drive, según sus permisos de uso compartido, no lo hacen) no hay
-// ninguna forma de leer esa imagen desde JavaScript — en ese caso, en vez
-// de dejar un hueco en blanco en la imagen exportada, se marca el <img>
-// para que la exportación (ver el onclone de html2canvas en las funciones
-// que llaman a este helper) muestre el mismo aviso de "sin foto" que ya
-// se ve en pantalla cuando la imagen falla de verdad (el escudo 🛡️, las
-// iniciales del jugador, etc.), en vez de un hueco vacío.
-function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
-  const imgs=[...cont.querySelectorAll('img')].filter(img=>img.src && !img.src.startsWith('data:'));
-  if(!imgs.length) return Promise.resolve();
-  return Promise.all(imgs.map(img=>new Promise(resolve=>{
-    delete img.dataset.cmpCorsFail;
+// canvas).
+
+/** Google no sirve todos sus "formatos" de enlace de imagen con las
+ *  mismas cabeceras CORS — según los permisos de uso compartido del
+ *  archivo, uno de estos puede fallar mientras otro con el MISMO id sí
+ *  admite lectura por canvas. En vez de rendirnos con el primer intento
+ *  (que era lo que hacía que el escudo real nunca llegara a salir en la
+ *  imagen exportada), se prueban varios formatos conocidos por turnos
+ *  y se usa el primero que funcione de verdad. */
+function _cmpVariantesDrive(url){
+  if(!url || (!url.includes('drive.google.com') && !url.includes('googleusercontent.com'))) return [url];
+  const m=url.match(/[-\w]{25,}/);
+  if(!m) return [url];
+  const id=m[0];
+  const variantes=[
+    url,
+    `https://lh3.googleusercontent.com/d/${id}=s0`,
+    `https://lh3.googleusercontent.com/d/${id}`,
+    `https://drive.google.com/thumbnail?id=${id}&sz=w1000`,
+    `https://drive.google.com/uc?export=view&id=${id}`,
+  ];
+  return variantes.filter((u,i)=>variantes.indexOf(u)===i);
+}
+
+/** Intenta cargar UNA url en modo CORS y, si lo consigue, la convierte a
+ *  data: URL dibujándola en un canvas — resuelve null (nunca rechaza) si
+ *  esa url concreta falla o no responde a tiempo, para poder probar la
+ *  siguiente variante sin que un fallo tumbe la Promise.all de fuera. */
+function _cmpIntentarDataURL(url,timeoutMs){
+  return new Promise(resolve=>{
     let listo=false;
-    const acabar=()=>{ if(!listo){ listo=true; resolve(); } };
-    const timer=setTimeout(acabar,timeoutMs);
+    const acabar=v=>{ if(!listo){ listo=true; resolve(v||null); } };
+    const timer=setTimeout(()=>acabar(null),timeoutMs);
     const probeta=new Image();
     probeta.crossOrigin='anonymous';
     probeta.onload=()=>{
@@ -3312,17 +3329,41 @@ function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
         const c=document.createElement('canvas');
         c.width=probeta.naturalWidth||1; c.height=probeta.naturalHeight||1;
         c.getContext('2d').drawImage(probeta,0,0);
-        img.src=c.toDataURL('image/png');
+        clearTimeout(timer); acabar(c.toDataURL('image/png'));
       }catch(e){
-        // Este servidor en concreto no admite CORS — se deja la foto tal
-        // cual en pantalla y se marca para el fallback en la exportación.
-        img.dataset.cmpCorsFail='1';
+        // Esta URL/servidor en concreto no admite CORS de verdad (el
+        // canvas queda "manchado" y toDataURL lo rechaza) — se prueba
+        // la siguiente variante.
+        clearTimeout(timer); acabar(null);
       }
-      clearTimeout(timer); acabar();
     };
-    probeta.onerror=()=>{ img.dataset.cmpCorsFail='1'; clearTimeout(timer); acabar(); };
-    probeta.src=img.src;
-  })));
+    probeta.onerror=()=>{ clearTimeout(timer); acabar(null); };
+    probeta.src=url;
+  });
+}
+
+// Si el servidor concreto no admite CORS en NINGUNA de las variantes
+// probadas (algunos enlaces de Google Drive, según sus permisos de uso
+// compartido, no lo hacen) no hay ninguna forma de leer esa imagen desde
+// JavaScript — en ese caso, en vez de dejar un hueco en blanco en la
+// imagen exportada, se marca el <img> para que la exportación (ver el
+// onclone de html2canvas en las funciones que llaman a este helper)
+// muestre el mismo aviso de "sin foto" que ya se ve en pantalla cuando
+// la imagen falla de verdad (el escudo 🛡️, las iniciales del jugador,
+// etc.), en vez de un hueco vacío.
+function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
+  const imgs=[...cont.querySelectorAll('img')].filter(img=>img.src && !img.src.startsWith('data:'));
+  if(!imgs.length) return Promise.resolve();
+  const porURLTimeout=Math.max(1200,Math.min(2500,timeoutMs));
+  return Promise.all(imgs.map(async img=>{
+    delete img.dataset.cmpCorsFail;
+    const variantes=_cmpVariantesDrive(img.src);
+    for(const url of variantes){
+      const dataURL=await _cmpIntentarDataURL(url,porURLTimeout);
+      if(dataURL){ img.src=dataURL; return; }
+    }
+    img.dataset.cmpCorsFail='1';
+  }));
 }
 
 /** Callback onclone para html2canvas: en el documento CLONADO (nunca en
@@ -5072,12 +5113,18 @@ function _campogramaChipPosHTML(eq,j,slot,editMode,horiz,overridesObj,modoAttr){
   // ellipsis por CSS (text-overflow:ellipsis) para cuando no cabe, así
   // que aquí basta con no truncar nosotros mismos.
   const nomCorto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
+  // Código corto de la posición EDITADA del jugador (LTI/LTD/CTI/CTD/
+  // MCD/MC/MCO/DC/SD/ED/EI/PT…) — antes solo se veía en los chips
+  // agrupados; también hace falta en el chip individual para saber de
+  // un vistazo qué puesto tiene cada uno sin abrir su ficha.
+  const {codigo}=_campogramaEtiquetaPos(j);
   const idsStr=eH(j.id);
   return `<div class="campo-chip-pos${editMode?' editable':''}" data-jid="${idsStr}"
       style="left:${x}%;top:${y}%;transform:translate(-50%,-50%) scale(${escala})" title="${nomCorto} · ${eH(j.pos||'')}"
       ${editMode?`data-x-canon="${slot.x}" data-y-canon="${slot.y}" ${modoAttr||''} onpointerdown="_campogramaPointerDown(event,'${idsStr}')"`:''}>
     <div class="campo-chip-pos-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
     <div class="campo-chip-pos-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
+    <div class="campo-chip-pos-cod">${eH(codigo)}</div>
     ${editMode?_campogramaResizeBarHTML(idsStr):''}
   </div>`;
 }
@@ -7647,8 +7694,18 @@ function guardarEConFeedback(){
 .campo-chip-pos-nm{
   margin-top:-4px; background:#fff; color:#0d1117; pointer-events:none;
   font-size:8px; font-weight:800; text-align:center; line-height:1.2;
-  padding:2px 5px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,.3);
+  padding:2px 5px; border-radius:10px 10px 0 0; box-shadow:0 2px 5px rgba(0,0,0,.3);
   max-width:100%; overflow-wrap:break-word; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+/* Código corto de la posición editada del jugador (LTI/CTD/MCO/DC…) —
+   en su propia franja debajo del nombre (no en la misma línea) para que
+   la elipsis del nombre largo nunca se lo coma. */
+.campo-chip-pos-cod{
+  background:#d0d7de; color:#24292f; pointer-events:none;
+  font-size:7px; font-weight:800; text-align:center; letter-spacing:.4px;
+  padding:1px 5px 2px; border-radius:0 0 10px 10px;
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  box-shadow:0 2px 4px rgba(0,0,0,.25);
 }
 
 /* Chip agrupado: varios jugadores comparten un mismo hueco/posición (ej. 4 DC).
@@ -7739,6 +7796,7 @@ function guardarEConFeedback(){
   .campo-chip-pos{ width:50px; }
   .campo-chip-pos-av{ width:32px; height:32px; font-size:10px; }
   .campo-chip-pos-nm{ font-size:7px; }
+  .campo-chip-pos-cod{ font-size:6px; }
   .campo-chip-grupo{ min-width:86px; max-width:132px; padding:3px 4px; }
   .campo-chip-grupo-tit{ font-size:7px; }
   .campo-grupo-fila{ font-size:7px; }
