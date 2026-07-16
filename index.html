@@ -1790,7 +1790,7 @@ body.solo-lectura .ed-panel-form {
       <button class="btn b-azul b-sm" onclick="descargarCampogramaImagen()">📷 Descargar imagen</button>
     </div>
     <div id="campograma-container"></div>
-    <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">Los jugadores se colocan automáticamente en el campo según el sistema del equipo y su posición concreta. Como admin puedes cambiar el sistema arriba, y en modo edición arrastrar a cualquier jugador a donde quieras.</p>
+    <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">Los jugadores se colocan automáticamente en el campo según el sistema del equipo y su posición concreta (también en el once de cada jornada, con cada titular como su propia ficha). Como admin puedes cambiar el sistema arriba, y en modo edición arrastrar a cualquier jugador o al logo del patrocinador a donde quieras, y agrandarlo o encogerlo con los botones － ＋ de su esquina.</p>
   </div>
 </div><!-- /v-equipo-ed -->
 
@@ -4338,9 +4338,16 @@ function guardarE(){
   const idx2=eDB.findIndex(x=>x.id===id);
   // Este guardado reconstruye el equipo entero desde los campos del
   // formulario, así que cualquier dato que viva fuera de ese formulario
-  // (como las reasignaciones manuales del campograma) se perdería si no
-  // se traspasa aquí explícitamente desde el registro anterior.
-  if(idx2>=0){ if(eDB[idx2].campoOverrides) eq.campoOverrides=eDB[idx2].campoOverrides; eDB[idx2]=eq; }
+  // (como las reasignaciones manuales del campograma, el patrocinador
+  // colocado sobre el campo, o las alineaciones guardadas por jornada
+  // —con sus propias posiciones/tamaños ajustados a mano—) se perdería
+  // si no se traspasa aquí explícitamente desde el registro anterior.
+  if(idx2>=0){
+    if(eDB[idx2].campoOverrides) eq.campoOverrides=eDB[idx2].campoOverrides;
+    if(eDB[idx2].campoSponsor) eq.campoSponsor=eDB[idx2].campoSponsor;
+    if(eDB[idx2].alineaciones) eq.alineaciones=eDB[idx2].alineaciones;
+    eDB[idx2]=eq;
+  }
   else eDB.unshift(eq);
   saveEDB();
   if(typeof recalcularStatsDesdePartidos==='function') recalcularStatsDesdePartidos();
@@ -4538,7 +4545,10 @@ const POS_CODE_MAP={
   'Portero':'PT',
   'Central':'CT','Lateral derecho':'LTD','Lateral izquierdo':'LTI',
   'Mediocentro defensivo':'MCD',
-  'Mediocentro':'MC','Mediocentro ofensivo':'MC','Mediapunta':'MC',
+  // "Mediocentro" (interior) se queda con el código corto "MC"; el
+  // mediocentro/mediapunta ofensivo pasa a su propio código "MCO" para
+  // poder distinguirlo en el campograma del interior más retrasado.
+  'Mediocentro':'MC','Mediocentro ofensivo':'MCO','Mediapunta':'MCO',
   'Delantero centro':'DC','Segunda punta':'SD',
   'Extremo derecho':'ED','Extremo izquierdo':'EI'
 };
@@ -4548,12 +4558,13 @@ const POS_CODE_MAP={
 const CODIGO_LINEA={
   PT:'Porteros',
   CT:'Defensas',CTI:'Defensas',CTD:'Defensas',LTD:'Defensas',LTI:'Defensas',
-  MCD:'Centrocampistas',MC:'Centrocampistas',
+  MCD:'Centrocampistas',MC:'Centrocampistas',MCO:'Centrocampistas',
   DC:'Delanteros',SD:'Delanteros',ED:'Delanteros',EI:'Delanteros'
 };
 const POS_NOMBRE_COMPLETO={
   PT:'Portero',LTD:'Lateral derecho',LTI:'Lateral izquierdo',CT:'Central',
   CTD:'Central diestro',CTI:'Central zurdo',MCD:'Mediocentro defensivo',MC:'Mediocentro',
+  MCO:'Mediocentro ofensivo',
   DC:'Delantero centro',SD:'Segunda punta',ED:'Extremo derecho',EI:'Extremo izquierdo'
 };
 /** Código+nombre de posición para MOSTRAR en el campograma cuando se
@@ -4597,14 +4608,14 @@ const CAMPO_SISTEMAS={
   '4-4-2 (rombo)':[
     {code:'PT',x:50,y:92},
     {code:'LTI',x:18,y:74},{code:'CTI',x:38,y:76},{code:'CTD',x:62,y:76},{code:'LTD',x:82,y:74},
-    {code:'MCD',x:50,y:62},{code:'MC',x:26,y:46},{code:'MC',x:74,y:46},{code:'MC',x:50,y:30},
+    {code:'MCD',x:50,y:62},{code:'MC',x:26,y:46},{code:'MC',x:74,y:46},{code:'MCO',x:50,y:30},
     {code:'DC',x:38,y:12},{code:'DC',x:62,y:12}
   ],
   '4-2-3-1':[
     {code:'PT',x:50,y:92},
     {code:'LTI',x:18,y:76},{code:'CTI',x:38,y:78},{code:'CTD',x:62,y:78},{code:'LTD',x:82,y:76},
     {code:'MCD',x:38,y:58},{code:'MCD',x:62,y:58},
-    {code:'EI',x:18,y:34},{code:'MC',x:50,y:32},{code:'ED',x:82,y:34},
+    {code:'EI',x:18,y:34},{code:'MCO',x:50,y:32},{code:'ED',x:82,y:34},
     {code:'DC',x:50,y:12}
   ],
   '4-3-3':[
@@ -4726,6 +4737,49 @@ function _campogramaAsignar(eq){
   const todos=Object.values(grupos).flat();
   const {colocados,suplentesSinHueco}=_campogramaAsignarJugadores(todos,eq.sist);
   return {colocados,suplentes:suplentesSinHueco};
+}
+
+/** Igual que _campogramaAsignarJugadores(), pero SIN colapsar los huecos
+ *  duplicados de un mismo código en uno solo — se usa para el once de una
+ *  jornada concreta, donde cada titular debe verse como su propio chip
+ *  individual en su propio punto del sistema (un dibujo táctico real de
+ *  11 fichas), en vez de agruparse por posición como en la vista de
+ *  plantilla completa (donde agrupar tiene sentido: ahí se está mostrando
+ *  la profundidad de plantilla, no un once concreto ya jugado).
+ *  Reparte cada titular en el primer hueco libre de su código exacto (por
+ *  orden de sistema); si no queda ninguno, en el primer hueco libre de su
+ *  misma línea general. Los titulares que no caben en ningún hueco del
+ *  sistema elegido (por ejemplo, más de los que el sistema define para
+ *  esa línea) se devuelven aparte para que se listen en el banquillo.
+ *  Devuelve {colocados:[{slot,jugador}], sinHueco:[...]}. */
+function _campogramaAsignarIndividual(titulares,sist){
+  const slots=_formacionSlots(sist).map(s=>({...s}));
+  const usado=new Array(slots.length).fill(false);
+  const colocados=[];
+  const restantes=[...titulares];
+
+  const _codigoDe=j=>{
+    const codigoBase=POS_CODE_MAP[j.pos]||'MC';
+    const {codigo}=_campogramaEtiquetaPos(j);
+    return {codigo,codigoBase};
+  };
+
+  // 1ª pasada: código exacto (o el código base sin el pie, ej. "CT" si el
+  // sistema no distingue CTD/CTI).
+  slots.forEach((slot,i)=>{
+    if(usado[i]) return;
+    const idx=restantes.findIndex(j=>{ const {codigo,codigoBase}=_codigoDe(j); return codigo===slot.code || codigoBase===slot.code; });
+    if(idx>=0){ colocados.push({slot,jugador:restantes[idx]}); restantes.splice(idx,1); usado[i]=true; }
+  });
+  // 2ª pasada: cualquiera de la misma línea general (defensa/medio/delantero).
+  slots.forEach((slot,i)=>{
+    if(usado[i]) return;
+    const linea=CODIGO_LINEA[slot.code]||'Centrocampistas';
+    const idx=restantes.findIndex(j=>(POS_GRUPO_MAP[j.pos]||'Centrocampistas')===linea);
+    if(idx>=0){ colocados.push({slot,jugador:restantes[idx]}); restantes.splice(idx,1); usado[i]=true; }
+  });
+
+  return {colocados, sinHueco:restantes};
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -4983,15 +5037,33 @@ function _campogramaAvatarHTML(j){
     :eH(ini(j.nom,j.ape)||'?');
 }
 
+/** Botones "－"/"＋" para agrandar o encoger un chip (jugador o grupo) a
+ *  mano en modo edición — se guardan junto al x/y del override como
+ *  "escala" (1 = tamaño normal). onpointerdown corta la propagación para
+ *  que pulsar el botón no arranque también un arrastre del chip entero. */
+function _campogramaResizeBarHTML(idsStr){
+  return `<div class="campo-resize-bar">
+    <button type="button" class="campo-resize-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();_campogramaResizeChip(event,'${idsStr}',-0.1)" title="Más pequeño">－</button>
+    <button type="button" class="campo-resize-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();_campogramaResizeChip(event,'${idsStr}',0.1)" title="Más grande">＋</button>
+  </div>`;
+}
+
 /** Chip de UN jugador colocado en un punto exacto del campo (x,y en %
- *  — usa la reasignación manual guardada en eq.campoOverrides si
- *  existe, si no la posición por defecto del hueco del sistema). Se usa
- *  cuando el hueco tiene un único jugador — con varios se usa el chip
- *  agrupado de abajo (_campogramaChipGrupoHTML). */
-function _campogramaChipPosHTML(eq,j,slot,editMode,horiz){
-  const ov=eq.campoOverrides && eq.campoOverrides[j.id];
+ *  — usa la reasignación manual guardada en overridesObj si existe, si
+ *  no la posición por defecto del hueco del sistema). Se usa cuando el
+ *  hueco tiene un único jugador — con varios se usa el chip agrupado de
+ *  abajo (_campogramaChipGrupoHTML).
+ *  overridesObj es el mapa {jugadorId:{x,y,escala}} donde se guardan los
+ *  ajustes manuales — eq.campoOverrides para la plantilla automática, o
+ *  las overrides propias de una alineación de jornada concreta; modoAttr
+ *  es el atributo data-modo(+data-jornada) que identifica ese origen para
+ *  que el arrastre/redimensionado sepa dónde persistir el cambio. */
+function _campogramaChipPosHTML(eq,j,slot,editMode,horiz,overridesObj,modoAttr){
+  overridesObj=overridesObj||{};
+  const ov=overridesObj[j.id];
   const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
   const {x,y}=_campogramaAPantalla(tieneOv?ov.x:slot.x, tieneOv?ov.y:slot.y, horiz);
+  const escala=(tieneOv && typeof ov.escala==='number')?ov.escala:1;
   const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
   // Nombre completo (nombre + TODO el apellido) — antes se cortaba al
   // primer apellido con .split(' ')[0], así que un jugador con apellido
@@ -5000,11 +5072,13 @@ function _campogramaChipPosHTML(eq,j,slot,editMode,horiz){
   // ellipsis por CSS (text-overflow:ellipsis) para cuando no cabe, así
   // que aquí basta con no truncar nosotros mismos.
   const nomCorto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
-  return `<div class="campo-chip-pos${editMode?' editable':''}" data-jid="${eH(j.id)}"
-      style="left:${x}%;top:${y}%" title="${nomCorto} · ${eH(j.pos||'')}"
-      ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+eH(j.id)+'\')"':''}>
+  const idsStr=eH(j.id);
+  return `<div class="campo-chip-pos${editMode?' editable':''}" data-jid="${idsStr}"
+      style="left:${x}%;top:${y}%;transform:translate(-50%,-50%) scale(${escala})" title="${nomCorto} · ${eH(j.pos||'')}"
+      ${editMode?`data-x-canon="${slot.x}" data-y-canon="${slot.y}" ${modoAttr||''} onpointerdown="_campogramaPointerDown(event,'${idsStr}')"`:''}>
     <div class="campo-chip-pos-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
     <div class="campo-chip-pos-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
+    ${editMode?_campogramaResizeBarHTML(idsStr):''}
   </div>`;
 }
 
@@ -5016,7 +5090,8 @@ function _campogramaChipPosHTML(eq,j,slot,editMode,horiz){
  *  al soltarlo se guarda la MISMA posición como override para todos los
  *  jugadores del grupo, así que la próxima vez que se agrupen (mismo
  *  código de posición) aparecen juntos en el sitio donde se dejaron. */
-function _campogramaChipGrupoHTML(eq,jugadores,slot,editMode,horiz){
+function _campogramaChipGrupoHTML(eq,jugadores,slot,editMode,horiz,overridesObj,modoAttr){
+  overridesObj=overridesObj||{};
   // El hueco del portero queda muy pegado a la línea defensiva en varios
   // sistemas (pocos puntos de diferencia) — para un chip de foto no se
   // nota, pero la tarjeta de texto de un grupo es bastante más ancha y
@@ -5025,10 +5100,11 @@ function _campogramaChipGrupoHTML(eq,jugadores,slot,editMode,horiz){
   // DEFECTO del sistema (no hay override guardado) se separa un poco
   // más el portero hacia su portería para ganar margen — si el admin ya
   // arrastró el grupo a mano, se respeta el sitio exacto donde lo dejó.
-  const ov=eq.campoOverrides && eq.campoOverrides[jugadores[0].id];
+  const ov=overridesObj[jugadores[0].id];
   const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
   const xCanon=tieneOv?ov.x:slot.x;
   const yCanon=tieneOv?ov.y:(slot.code==='PT'?Math.min(99,slot.y+6):slot.y);
+  const escala=(tieneOv && typeof ov.escala==='number')?ov.escala:1;
   const pantalla=_campogramaAPantalla(xCanon,yCanon,horiz);
   // Al ser una tarjeta bastante más ancha que un chip normal, si el hueco
   // cae muy pegado al borde del campo (típicamente el portero, junto al
@@ -5049,10 +5125,11 @@ function _campogramaChipGrupoHTML(eq,jugadores,slot,editMode,horiz){
   }).join('');
   const idsStr=eH(jugadores.map(j=>j.id).join(','));
   return `<div class="campo-chip-grupo${editMode?' editable':''}" data-jids="${idsStr}"
-      style="left:${x}%;top:${y}%"
-      ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+idsStr+'\')"':''}>
+      style="left:${x}%;top:${y}%;transform:translate(-50%,-50%) scale(${escala})"
+      ${editMode?`data-x-canon="${xCanon}" data-y-canon="${yCanon}" ${modoAttr||''} onpointerdown="_campogramaPointerDown(event,'${idsStr}')"`:''}>
     <div class="campo-chip-grupo-tit">${eH(slot.code)} · ${jugadores.length}</div>
     ${filasH}
+    ${editMode?_campogramaResizeBarHTML(idsStr):''}
   </div>`;
 }
 
@@ -5093,9 +5170,14 @@ function renderCampograma(){
       const porId={}; todos.forEach(j=>{ porId[j.id]=j; });
       const titJugs=(entry.titulares||[]).map(id=>porId[id]).filter(Boolean);
       const supJugs=(entry.suplentes||[]).map(id=>porId[id]).filter(Boolean);
-      const asign=_campogramaAsignarJugadores(titJugs,eq.sist);
-      colocados=asign.colocados;
-      suplentes=[...supJugs,...asign.suplentesSinHueco];
+      // A diferencia de la plantilla completa (donde agrupar por código
+      // tiene sentido), el once de una jornada concreta se coloca UNO A
+      // UNO: cada titular es su propio chip individual y arrastrable en
+      // su propio hueco del sistema, para poder dibujar la alineación
+      // real jugada en vez de una agrupación por posición.
+      const asign=_campogramaAsignarIndividual(titJugs,eq.sist);
+      colocados=asign.colocados.map(c=>({slot:c.slot,jugadores:[c.jugador]}));
+      suplentes=[...supJugs,...asign.sinHueco];
     } else {
       colocados=[]; suplentes=[];
     }
@@ -5109,13 +5191,17 @@ function renderCampograma(){
   const sistFg=document.getElementById('campo-sist-fg');
   const sistSel=document.getElementById('campo-sist-sel');
   const btnAlineacion=document.getElementById('campo-btn-alineacion');
-  // El arrastre libre y el cambio de sistema son para la plantilla
-  // automática; una alineación de jornada guardada es un dato fijo del
-  // pasado, así que en esa vista se ocultan y en su lugar se ofrece el
-  // botón para crear/editar esa alineación concreta.
-  if(btnEditar) btnEditar.style.display=(esAdmin && !jornadaActiva)?'':'none';
+  // El botón de editar (arrastrar/redimensionar) ya funciona tanto para
+  // la plantilla automática (guarda en eq.campoOverrides) como para una
+  // alineación de jornada concreta (guarda dentro de esa propia
+  // alineación, en alineacion.overrides, para no mezclar los ajustes
+  // manuales de una jornada con los de otra ni con la plantilla).
+  const overridesActivos=jornadaActiva
+    ? ((_campogramaAlineacionPorJornada(eq,jornadaActiva)||{}).overrides||{})
+    : (eq.campoOverrides||{});
+  if(btnEditar) btnEditar.style.display=esAdmin?'':'none';
   if(btnEditar) btnEditar.textContent=_campogramaEditMode?'✅ Terminar edición':'✏️ Editar campograma';
-  if(btnReset) btnReset.style.display=(esAdmin && !jornadaActiva && eq.campoOverrides && Object.keys(eq.campoOverrides).length)?'':'none';
+  if(btnReset) btnReset.style.display=(esAdmin && Object.keys(overridesActivos).length)?'':'none';
   if(sistFg) sistFg.style.display=(esAdmin && !jornadaActiva)?'':'none';
   if(btnAlineacion){
     btnAlineacion.style.display=(esAdmin && jornadaActiva)?'':'none';
@@ -5137,20 +5223,26 @@ function renderCampograma(){
   const stripeA=_sombraHex(colorBase,14),stripeB=_sombraHex(colorBase,-4);
   const hdrA=_sombraHex(colorBase,-58),hdrB=_sombraHex(colorBase,-30);
   const escudo=eq.imgEsc?`<img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='🛡️'">`:'🛡️';
-  const editMode=!jornadaActiva && _campogramaEditMode && esAdmin;
+  const editMode=_campogramaEditMode && esAdmin;
   const horiz=_campogramaEsHoriz();
   const btnOrient=document.getElementById('campo-btn-orient');
   if(btnOrient) btnOrient.textContent=horiz?'↕️ Ver en vertical':'↔️ Ver en horizontal';
 
+  // Atributo que identifica dónde debe persistirse un arrastre/resize:
+  // en la propia alineación de jornada, o en la plantilla del equipo.
+  const modoAttr=jornadaActiva?`data-modo="jornada" data-jornada="${eH(jornadaActiva)}"`:'data-modo="equipo"';
+
   const chipsH=colocados.map(c=>c.jugadores.length===1
-    ? _campogramaChipPosHTML(eq,c.jugadores[0],c.slot,editMode,horiz)
-    : _campogramaChipGrupoHTML(eq,c.jugadores,c.slot,editMode,horiz)
+    ? _campogramaChipPosHTML(eq,c.jugadores[0],c.slot,editMode,horiz,overridesActivos,modoAttr)
+    : _campogramaChipGrupoHTML(eq,c.jugadores,c.slot,editMode,horiz,overridesActivos,modoAttr)
   ).join('');
   const banquilloH=suplentes.length?`
     <div class="campo-banquillo">
       <div class="campo-banquillo-tit">🪑 Banquillo / Sin hueco en el sistema (${suplentes.length})</div>
       <div class="campo-banquillo-jugs">${suplentes.map(j=>_campogramaBanquilloChipHTML(j)).join('')}</div>
     </div>`:'';
+  const anuncioClub=_anuncioClubActivo(eq.id);
+  const sponsorH=_campogramaSponsorHTML(eq,anuncioClub,editMode,horiz);
 
   const marcasH = horiz ? `
         <svg class="campo-marcas" viewBox="0 0 140 100" preserveAspectRatio="none">
@@ -5189,6 +5281,7 @@ function renderCampograma(){
       </div>
       <div class="campo-pitch-abs${horiz?' horiz':''}" id="campo-pitch-abs" style="background:repeating-linear-gradient(${horiz?90:180}deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
         ${marcasH}
+        ${sponsorH}
         ${chipsH}
       </div>
       ${banquilloH}
@@ -5234,8 +5327,17 @@ function campogramaResetTodo(){
   if(!esAdminActual() || !eId) return;
   const eq=eDB.find(x=>x.id===eId);
   if(!eq) return;
-  askDel('¿Quitar todas las posiciones movidas a mano y volver a la colocación automática según el sistema?',()=>{
-    eq.campoOverrides={};
+  const jornadaActiva=_campogramaJornadaActiva;
+  const msg=jornadaActiva
+    ? '¿Quitar las posiciones y tamaños movidos a mano en ESTA alineación de jornada y volver a la colocación automática del sistema?'
+    : '¿Quitar todas las posiciones movidas a mano y volver a la colocación automática según el sistema?';
+  askDel(msg,()=>{
+    if(jornadaActiva){
+      const entry=_campogramaAlineacionPorJornada(eq,jornadaActiva);
+      if(entry) entry.overrides={};
+    } else {
+      eq.campoOverrides={};
+    }
     saveEDB();
     _campogramaSincronizarNube(eq);
     renderCampograma();
@@ -5260,7 +5362,14 @@ function _campogramaPointerDown(ev,idsStr){
   // que uno normal — se limita más el recorrido para que no se salga del
   // recuadro visible del campo, igual que al renderizarlo ya recortado.
   const esGrupo=jugadorIds.length>1;
-  _campogramaDrag={jugadorIds,esGrupo,chip,pitch,pointerId:ev.pointerId};
+  // "modo" identifica dónde hay que guardar el resultado del arrastre:
+  // en la plantilla del equipo (eq.campoOverrides) o en la alineación de
+  // jornada activa (alineacion.overrides) — viene del data-modo/
+  // data-jornada que puso _campogramaChipPosHTML/_campogramaChipGrupoHTML
+  // al pintar el chip en modo edición.
+  const modo=chip.dataset.modo||'equipo';
+  const jornada=chip.dataset.jornada||'';
+  _campogramaDrag={jugadorIds,esGrupo,chip,pitch,pointerId:ev.pointerId,modo,jornada};
   chip.classList.add('dragging');
   chip.addEventListener('pointermove',_campogramaPointerMove);
   chip.addEventListener('pointerup',_campogramaPointerUp);
@@ -5280,9 +5389,25 @@ function _campogramaPointerMove(ev){
   chip.dataset.x=x;
   chip.dataset.y=y;
 }
+/** Da acceso al mapa de overrides {jugadorId:{x,y,escala}} correcto según
+ *  el "modo" de un chip — el de la plantilla del equipo, o el propio de
+ *  una alineación de jornada concreta (creando el objeto si hace falta).
+ *  Se usa tanto al soltar un arrastre como al pulsar －/＋ de tamaño. */
+function _campogramaOverridesDestino(eq,modo,jornada){
+  if(modo==='jornada' && jornada){
+    eq.alineaciones=eq.alineaciones||[];
+    let entry=eq.alineaciones.find(a=>a.jornada===jornada);
+    if(!entry){ entry={jornada}; eq.alineaciones.push(entry); }
+    entry.overrides=entry.overrides||{};
+    return entry.overrides;
+  }
+  eq.campoOverrides=eq.campoOverrides||{};
+  return eq.campoOverrides;
+}
+
 function _campogramaPointerUp(ev){
   if(!_campogramaDrag) return;
-  const {jugadorIds,chip}=_campogramaDrag;
+  const {jugadorIds,chip,modo,jornada}=_campogramaDrag;
   chip.classList.remove('dragging');
   chip.removeEventListener('pointermove',_campogramaPointerMove);
   chip.removeEventListener('pointerup',_campogramaPointerUp);
@@ -5297,16 +5422,136 @@ function _campogramaPointerUp(ev){
   // antes de guardarlas, si no al arrastrar en horizontal se guardaría
   // la posición equivocada.
   const {x,y}=_campogramaDePantalla(xPant,yPant,_campogramaEsHoriz());
-  eq.campoOverrides=eq.campoOverrides||{};
-  const ovGuardado={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
+  const overridesObj=_campogramaOverridesDestino(eq,modo,jornada);
   // Si es un grupo, TODOS sus jugadores comparten la misma posición
   // guardada — así el bloque entero se mueve junto la próxima vez que
   // se agrupen (mismo código de posición), en vez de solo el primero.
-  jugadorIds.forEach(jid=>{ eq.campoOverrides[jid]=ovGuardado; });
+  // Se conserva la escala que ya tuviera cada jugador (el arrastre solo
+  // cambia la posición, no el tamaño).
+  jugadorIds.forEach(jid=>{
+    const prevEscala=(overridesObj[jid] && typeof overridesObj[jid].escala==='number')?overridesObj[jid].escala:1;
+    overridesObj[jid]={x:Math.round(x*10)/10,y:Math.round(y*10)/10,escala:prevEscala};
+  });
   saveEDB();
   _campogramaSincronizarNube(eq);
   const btnReset=document.getElementById('campo-btn-reset');
   if(btnReset) btnReset.style.display='';
+}
+
+/** Agranda o encoge (según delta, ej. +0.1/-0.1) un chip (jugador o
+ *  grupo) en modo edición — guarda la escala junto al x/y en el mismo
+ *  sitio donde vive ese override (plantilla o alineación de jornada),
+ *  usando la posición actual (override ya guardado, o la del hueco por
+ *  defecto vía data-x-canon/data-y-canon) para no desplazar el chip al
+ *  cambiarle solo el tamaño. */
+function _campogramaResizeChip(ev,idsStr,delta){
+  if(!esAdminActual() || !eId) return;
+  const btn=ev.currentTarget;
+  const chip=btn.closest('.campo-chip-pos,.campo-chip-grupo');
+  if(!chip) return;
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq) return;
+  const jugadorIds=String(idsStr).split(',').filter(Boolean);
+  if(!jugadorIds.length) return;
+  const modo=chip.dataset.modo||'equipo';
+  const jornada=chip.dataset.jornada||'';
+  const overridesObj=_campogramaOverridesDestino(eq,modo,jornada);
+  const xDef=parseFloat(chip.dataset.xCanon), yDef=parseFloat(chip.dataset.yCanon);
+  jugadorIds.forEach(jid=>{
+    const prev=overridesObj[jid];
+    const x=(prev && typeof prev.x==='number')?prev.x:xDef;
+    const y=(prev && typeof prev.y==='number')?prev.y:yDef;
+    const escalaPrev=(prev && typeof prev.escala==='number')?prev.escala:1;
+    const escala=Math.max(0.6,Math.min(1.8,Math.round((escalaPrev+delta)*100)/100));
+    overridesObj[jid]={x,y,escala};
+  });
+  saveEDB();
+  _campogramaSincronizarNube(eq);
+  renderCampograma();
+}
+
+// ── Patrocinio del club sobre el propio campograma ──────────────────
+// Además de en la ficha, el logo del patrocinador del club puede
+// incrustarse directamente sobre el dibujo del campo (p.ej. en el
+// círculo central) para que también salga así en la imagen exportada.
+// Su posición y tamaño se guardan en eq.campoSponsor={x,y,escala} (mismo
+// sistema de coordenadas canónico vertical que eq.campoOverrides) y son
+// independientes de la jornada activa: es branding del equipo, no de un
+// partido concreto, así que se ve y se puede mover/agrandar igual en la
+// plantilla automática y en cualquier alineación de jornada.
+let _campoSponsorDrag=null; // {badge,pitch,pointerId} mientras se arrastra el logo
+
+function _campogramaSponsorHTML(eq,ad,editMode,horiz){
+  if(!ad || !ad.img) return '';
+  const ov=eq.campoSponsor;
+  const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
+  const {x,y}=_campogramaAPantalla(tieneOv?ov.x:50, tieneOv?ov.y:50, horiz);
+  const escala=(tieneOv && typeof ov.escala==='number')?ov.escala:1;
+  return `<div class="campo-sponsor-badge${editMode?' editable':''}" style="left:${x}%;top:${y}%;--sp-escala:${escala}" title="Patrocinador del club"
+      ${editMode?'onpointerdown="_campoSponsorPointerDown(event)"':''}>
+    <img src="${eH(ad.img)}" alt="Patrocinador">
+    ${editMode?`<div class="campo-resize-bar">
+      <button type="button" class="campo-resize-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();_campoSponsorResize(-0.1)" title="Más pequeño">－</button>
+      <button type="button" class="campo-resize-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();_campoSponsorResize(0.1)" title="Más grande">＋</button>
+    </div>`:''}
+  </div>`;
+}
+
+function _campoSponsorPointerDown(ev){
+  if(!_campogramaEditMode || !esAdminActual()) return;
+  ev.preventDefault();
+  const badge=ev.currentTarget;
+  const pitch=document.getElementById('campo-pitch-abs');
+  if(!badge || !pitch) return;
+  badge.setPointerCapture(ev.pointerId);
+  _campoSponsorDrag={badge,pitch,pointerId:ev.pointerId};
+  badge.classList.add('dragging');
+  badge.addEventListener('pointermove',_campoSponsorPointerMove);
+  badge.addEventListener('pointerup',_campoSponsorPointerUp);
+  badge.addEventListener('pointercancel',_campoSponsorPointerUp);
+}
+function _campoSponsorPointerMove(ev){
+  if(!_campoSponsorDrag) return;
+  const {badge,pitch}=_campoSponsorDrag;
+  const r=pitch.getBoundingClientRect();
+  if(!r.width || !r.height) return;
+  let x=((ev.clientX-r.left)/r.width)*100;
+  let y=((ev.clientY-r.top)/r.height)*100;
+  x=Math.max(6,Math.min(94,x));
+  y=Math.max(6,Math.min(94,y));
+  badge.style.left=x+'%';
+  badge.style.top=y+'%';
+  badge.dataset.x=x;
+  badge.dataset.y=y;
+}
+function _campoSponsorPointerUp(ev){
+  if(!_campoSponsorDrag) return;
+  const {badge}=_campoSponsorDrag;
+  badge.classList.remove('dragging');
+  badge.removeEventListener('pointermove',_campoSponsorPointerMove);
+  badge.removeEventListener('pointerup',_campoSponsorPointerUp);
+  badge.removeEventListener('pointercancel',_campoSponsorPointerUp);
+  const xPant=parseFloat(badge.dataset.x), yPant=parseFloat(badge.dataset.y);
+  _campoSponsorDrag=null;
+  if(!eId || isNaN(xPant) || isNaN(yPant)) return;
+  const eq=eDB.find(x2=>x2.id===eId);
+  if(!eq) return;
+  const {x,y}=_campogramaDePantalla(xPant,yPant,_campogramaEsHoriz());
+  const escalaPrev=(eq.campoSponsor && typeof eq.campoSponsor.escala==='number')?eq.campoSponsor.escala:1;
+  eq.campoSponsor={x:Math.round(x*10)/10,y:Math.round(y*10)/10,escala:escalaPrev};
+  saveEDB();
+  _campogramaSincronizarNube(eq);
+}
+function _campoSponsorResize(delta){
+  if(!esAdminActual() || !eId) return;
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq) return;
+  const prev=(eq.campoSponsor && typeof eq.campoSponsor.x==='number')?eq.campoSponsor:{x:50,y:50,escala:1};
+  const escala=Math.max(0.5,Math.min(2.2,Math.round(((prev.escala||1)+delta)*100)/100));
+  eq.campoSponsor={x:prev.x,y:prev.y,escala};
+  saveEDB();
+  _campogramaSincronizarNube(eq);
+  renderCampograma();
 }
 
 async function descargarCampogramaImagen(){
@@ -7461,6 +7706,33 @@ function guardarEConFeedback(){
   max-width:100%; overflow-wrap:break-word;
 }
 
+/* Botones －/＋ de redimensionado a mano de un chip (jugador, grupo o
+   patrocinador) en modo edición — anclados a la esquina superior derecha,
+   por encima del propio chip para que no interfiera con el arrastre. */
+.campo-resize-bar{ position:absolute; top:-9px; right:-9px; display:flex; gap:3px; z-index:6; }
+.campo-resize-btn{
+  width:17px; height:17px; border-radius:50%; border:1px solid rgba(255,255,255,.75);
+  background:rgba(13,17,23,.94); color:#fff; font-size:11px; font-weight:800;
+  display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; line-height:1;
+  box-shadow:0 2px 6px rgba(0,0,0,.4);
+}
+.campo-resize-btn:active{ transform:scale(.9); }
+
+/* Logo del patrocinador incrustado sobre el propio campograma (p.ej. en
+   el círculo central) — decorativo y no interactivo fuera de modo
+   edición (pointer-events:none) para no interferir con los chips. */
+.campo-sponsor-badge{
+  position:absolute; z-index:1; transform:translate(-50%,-50%);
+  width:calc(80px * var(--sp-escala,1)); height:calc(80px * var(--sp-escala,1));
+  background:rgba(255,255,255,.95); border-radius:12px; padding:7px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 4px 14px rgba(0,0,0,.45); border:2px solid rgba(255,255,255,.85);
+  pointer-events:none;
+}
+.campo-sponsor-badge img{ width:100%; height:100%; object-fit:contain; }
+.campo-sponsor-badge.editable{ pointer-events:auto; cursor:grab; touch-action:none; }
+.campo-sponsor-badge.editable:active,.campo-sponsor-badge.dragging{ cursor:grabbing; z-index:6; }
+
 @media(max-width:680px){
   .campo-pitch-abs{ min-height:400px; }
   .campo-pitch-abs.horiz{ min-height:280px; }
@@ -7474,6 +7746,8 @@ function guardarEConFeedback(){
   .campo-grupo-fila-larga{ font-size:6px; }
   .campo-banq-chip{ width:62px; }
   .campo-banq-av{ width:36px; height:36px; font-size:10px; }
+  .campo-sponsor-badge{ width:calc(56px * var(--sp-escala,1)); height:calc(56px * var(--sp-escala,1)); }
+  .campo-resize-btn{ width:15px; height:15px; font-size:10px; }
 }
 
 /* ── Comparativas: dashboard visual capturado a PDF (fotos + gráficos) ──
