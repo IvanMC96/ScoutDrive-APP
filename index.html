@@ -4515,7 +4515,7 @@ function _campogramaAPantalla(x,y,horiz){
 function _campogramaDePantalla(xPant,yPant,horiz){
   return horiz ? {x:yPant, y:100-xPant} : {x:xPant, y:yPant};
 }
-let _campogramaDrag=null; // {jugadorId, pitchEl} mientras se arrastra un chip
+let _campogramaDrag=null; // {jugadorIds, esGrupo, chip, pitch, pointerId} mientras se arrastra un chip (uno o varios jugadores a la vez si es un grupo)
 
 /** Lee el campo "Sistema" (p.ej. "4-3-3", "4-2-3-1") y devuelve cuántos
  *  jugadores de campo corresponden a cada línea, solo como cifra
@@ -5011,33 +5011,47 @@ function _campogramaChipPosHTML(eq,j,slot,editMode,horiz){
 
 /** Chip agrupado cuando VARIOS jugadores comparten el mismo hueco/código
  *  (ej. 2 o 4 delanteros centro) — en vez de escoger uno y mandar el
- *  resto al banquillo sin motivo, se listan todos juntos ahí mismo, en
- *  texto, ordenados por dorsal: "#4 Juan Mari — CTD (Central diestro)".
- *  No es arrastrable (no hay un único punto que mover); el admin puede
- *  seguir cambiando el sistema o editando cada jugador desde su ficha. */
-function _campogramaChipGrupoHTML(jugadores,slot,horiz){
+ *  resto al banquillo sin motivo, se listan todos juntos ahí mismo, con
+ *  su foto y en texto, ordenados por dorsal: "#4 Juan Mari — CTD
+ *  (Central diestro)". Arrastrable como un solo bloque: en modo edición,
+ *  al soltarlo se guarda la MISMA posición como override para todos los
+ *  jugadores del grupo, así que la próxima vez que se agrupen (mismo
+ *  código de posición) aparecen juntos en el sitio donde se dejaron. */
+function _campogramaChipGrupoHTML(eq,jugadores,slot,editMode,horiz){
   // El hueco del portero queda muy pegado a la línea defensiva en varios
   // sistemas (pocos puntos de diferencia) — para un chip de foto no se
   // nota, pero la tarjeta de texto de un grupo es bastante más ancha y
   // podía solaparse con el grupo vecino de defensas (ej. 2 porteros + 2
-  // centrales agrupados a la vez). Solo al agrupar (el chip individual de
-  // un jugador no se toca) se separa un poco más el portero hacia su
-  // portería para ganar margen.
-  const yAjustada=slot.code==='PT'?Math.min(99,slot.y+6):slot.y;
-  const pantalla=_campogramaAPantalla(slot.x,yAjustada,horiz);
+  // centrales agrupados a la vez). Solo cuando se usa la posición POR
+  // DEFECTO del sistema (no hay override guardado) se separa un poco
+  // más el portero hacia su portería para ganar margen — si el admin ya
+  // arrastró el grupo a mano, se respeta el sitio exacto donde lo dejó.
+  const ov=eq.campoOverrides && eq.campoOverrides[jugadores[0].id];
+  const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
+  const xCanon=tieneOv?ov.x:slot.x;
+  const yCanon=tieneOv?ov.y:(slot.code==='PT'?Math.min(99,slot.y+6):slot.y);
+  const pantalla=_campogramaAPantalla(xCanon,yCanon,horiz);
   // Al ser una tarjeta bastante más ancha que un chip normal, si el hueco
   // cae muy pegado al borde del campo (típicamente el portero, junto al
   // lateral izquierdo del contenedor) el texto quedaba recortado por el
   // overflow:hidden de .campo-wrap — se limita el punto de anclaje para
-  // dejar siempre margen a los lados y arriba/abajo.
+  // dejar siempre margen a los lados y arriba/abajo (también al soltar
+  // un arrastre cerca del borde).
   const x=Math.max(14,Math.min(86,pantalla.x));
   const y=Math.max(10,Math.min(90,pantalla.y));
   const filasH=jugadores.map(j=>{
     const {codigo,nombre}=_campogramaEtiquetaPos(j);
     const nomCompleto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
-    return `<div class="campo-grupo-fila">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCompleto} — ${eH(codigo)} <span class="campo-grupo-fila-larga">(${eH(nombre)})</span></div>`;
+    const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+    return `<div class="campo-grupo-fila">
+      <div class="campo-grupo-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.55)'}">${_campogramaAvatarHTML(j)}</div>
+      <span class="campo-grupo-fila-txt">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCompleto} — ${eH(codigo)} <span class="campo-grupo-fila-larga">(${eH(nombre)})</span></span>
+    </div>`;
   }).join('');
-  return `<div class="campo-chip-grupo" style="left:${x}%;top:${y}%">
+  const idsStr=eH(jugadores.map(j=>j.id).join(','));
+  return `<div class="campo-chip-grupo${editMode?' editable':''}" data-jids="${idsStr}"
+      style="left:${x}%;top:${y}%"
+      ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+idsStr+'\')"':''}>
     <div class="campo-chip-grupo-tit">${eH(slot.code)} · ${jugadores.length}</div>
     ${filasH}
   </div>`;
@@ -5131,7 +5145,7 @@ function renderCampograma(){
 
   const chipsH=colocados.map(c=>c.jugadores.length===1
     ? _campogramaChipPosHTML(eq,c.jugadores[0],c.slot,editMode,horiz)
-    : _campogramaChipGrupoHTML(c.jugadores,c.slot,horiz)
+    : _campogramaChipGrupoHTML(eq,c.jugadores,c.slot,editMode,horiz)
   ).join('');
   const banquilloH=suplentes.length?`
     <div class="campo-banquillo">
@@ -5235,14 +5249,19 @@ function campogramaResetTodo(){
 // para que el arrastre siga funcionando aunque el puntero salga del
 // chip. La posición se guarda como % relativo a .campo-pitch-abs, y
 // se persiste en eq.campoOverrides[jugadorId]={x,y} al soltar.
-function _campogramaPointerDown(ev,jugadorId){
+function _campogramaPointerDown(ev,idsStr){
   if(!_campogramaEditMode || !esAdminActual()) return;
   ev.preventDefault();
   const chip=ev.currentTarget;
   const pitch=document.getElementById('campo-pitch-abs');
   if(!chip || !pitch) return;
   chip.setPointerCapture(ev.pointerId);
-  _campogramaDrag={jugadorId,chip,pitch,pointerId:ev.pointerId};
+  const jugadorIds=String(idsStr).split(',').filter(Boolean);
+  // Un chip agrupado (varios jugadores en el mismo hueco) es más ancho
+  // que uno normal — se limita más el recorrido para que no se salga del
+  // recuadro visible del campo, igual que al renderizarlo ya recortado.
+  const esGrupo=jugadorIds.length>1;
+  _campogramaDrag={jugadorIds,esGrupo,chip,pitch,pointerId:ev.pointerId};
   chip.classList.add('dragging');
   chip.addEventListener('pointermove',_campogramaPointerMove);
   chip.addEventListener('pointerup',_campogramaPointerUp);
@@ -5250,13 +5269,13 @@ function _campogramaPointerDown(ev,jugadorId){
 }
 function _campogramaPointerMove(ev){
   if(!_campogramaDrag) return;
-  const {chip,pitch}=_campogramaDrag;
+  const {chip,pitch,esGrupo}=_campogramaDrag;
   const r=pitch.getBoundingClientRect();
   if(!r.width || !r.height) return;
   let x=((ev.clientX-r.left)/r.width)*100;
   let y=((ev.clientY-r.top)/r.height)*100;
-  x=Math.max(3,Math.min(97,x));
-  y=Math.max(3,Math.min(97,y));
+  x=esGrupo?Math.max(14,Math.min(86,x)):Math.max(3,Math.min(97,x));
+  y=esGrupo?Math.max(10,Math.min(90,y)):Math.max(3,Math.min(97,y));
   chip.style.left=x+'%';
   chip.style.top=y+'%';
   chip.dataset.x=x;
@@ -5264,14 +5283,14 @@ function _campogramaPointerMove(ev){
 }
 function _campogramaPointerUp(ev){
   if(!_campogramaDrag) return;
-  const {jugadorId,chip}=_campogramaDrag;
+  const {jugadorIds,chip}=_campogramaDrag;
   chip.classList.remove('dragging');
   chip.removeEventListener('pointermove',_campogramaPointerMove);
   chip.removeEventListener('pointerup',_campogramaPointerUp);
   chip.removeEventListener('pointercancel',_campogramaPointerUp);
   const xPant=parseFloat(chip.dataset.x), yPant=parseFloat(chip.dataset.y);
   _campogramaDrag=null;
-  if(!eId || isNaN(xPant) || isNaN(yPant)) return;
+  if(!eId || isNaN(xPant) || isNaN(yPant) || !jugadorIds.length) return;
   const eq=eDB.find(x2=>x2.id===eId);
   if(!eq) return;
   // Las coordenadas del arrastre están en espacio de pantalla (según la
@@ -5280,7 +5299,11 @@ function _campogramaPointerUp(ev){
   // la posición equivocada.
   const {x,y}=_campogramaDePantalla(xPant,yPant,_campogramaEsHoriz());
   eq.campoOverrides=eq.campoOverrides||{};
-  eq.campoOverrides[jugadorId]={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
+  const ovGuardado={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
+  // Si es un grupo, TODOS sus jugadores comparten la misma posición
+  // guardada — así el bloque entero se mueve junto la próxima vez que
+  // se agrupen (mismo código de posición), en vez de solo el primero.
+  jugadorIds.forEach(jid=>{ eq.campoOverrides[jid]=ovGuardado; });
   saveEDB();
   _campogramaSincronizarNube(eq);
   const btnReset=document.getElementById('campo-btn-reset');
@@ -7369,7 +7392,8 @@ function guardarEConFeedback(){
 }
 
 /* Chip agrupado: varios jugadores comparten un mismo hueco/posición (ej. 4 DC).
-   Se renderiza como una tarjeta de texto (sin foto), no arrastrable. */
+   Se renderiza como una tarjeta con la foto de cada jugador junto a su
+   nombre, y es arrastrable como un solo bloque en modo edición. */
 .campo-chip-grupo{
   position:absolute; z-index:2; transform:translate(-50%,-50%);
   display:flex; flex-direction:column; align-items:stretch;
@@ -7377,21 +7401,31 @@ function guardarEConFeedback(){
      (el portero suplente queda muy cerca de la línea defensiva, por
      ejemplo) una tarjeta ancha se solapaba con la del hueco vecino y
      dejaba el texto ilegible — de ahí el ancho reducido aquí. */
-  min-width:92px; max-width:152px;
+  min-width:104px; max-width:168px;
   background:rgba(13,17,23,.94); border:1.5px solid rgba(255,255,255,.55);
   border-radius:9px; box-shadow:0 3px 12px rgba(0,0,0,.5);
-  padding:4px 6px; user-select:none;
+  padding:4px 6px; user-select:none; touch-action:none;
 }
+.campo-chip-grupo.editable{ cursor:grab; }
+.campo-chip-grupo.editable:active,.campo-chip-grupo.dragging{ cursor:grabbing; z-index:5; }
 .campo-chip-grupo-tit{
   font-size:8px; font-weight:800; color:#fff; text-align:center;
   letter-spacing:.4px; margin-bottom:3px; opacity:.85; text-transform:uppercase;
 }
 .campo-grupo-fila{
-  display:flex; flex-wrap:wrap; align-items:baseline; gap:2px;
+  display:flex; align-items:flex-start; gap:5px;
   font-size:8.5px; font-weight:700; color:#fff; line-height:1.25;
-  padding:2px 0; border-top:1px solid rgba(255,255,255,.14);
+  padding:3px 0; border-top:1px solid rgba(255,255,255,.14);
 }
 .campo-grupo-fila:first-of-type{ border-top:none; }
+.campo-grupo-av{
+  width:18px; height:18px; border-radius:50%; overflow:hidden; flex-shrink:0;
+  margin-top:1px; border:1.5px solid rgba(255,255,255,.55);
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-weight:800; font-size:7px; pointer-events:none;
+}
+.campo-grupo-av img{ width:100%; height:100%; object-fit:cover; }
+.campo-grupo-fila-txt{ flex:1; min-width:0; }
 .campo-grupo-fila-larga{ font-size:7px; font-weight:600; color:rgba(255,255,255,.65); }
 
 .campo-banquillo{ padding:14px 12px 18px; border-top:1px solid var(--border2); background:rgba(0,0,0,.18); }
@@ -7418,9 +7452,10 @@ function guardarEConFeedback(){
   .campo-chip-pos{ width:50px; }
   .campo-chip-pos-av{ width:32px; height:32px; font-size:10px; }
   .campo-chip-pos-nm{ font-size:7px; }
-  .campo-chip-grupo{ min-width:76px; max-width:120px; padding:3px 4px; }
+  .campo-chip-grupo{ min-width:86px; max-width:132px; padding:3px 4px; }
   .campo-chip-grupo-tit{ font-size:7px; }
   .campo-grupo-fila{ font-size:7px; }
+  .campo-grupo-av{ width:14px; height:14px; font-size:6px; }
   .campo-grupo-fila-larga{ font-size:6px; }
   .campo-banq-chip{ width:62px; }
   .campo-banq-av{ width:36px; height:36px; font-size:10px; }
