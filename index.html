@@ -1768,6 +1768,12 @@ body.solo-lectura .ed-panel-form {
   <!-- ── PANEL CAMPOGRAMA ── -->
   <div class="ed-panel ed-panel-ficha" id="epanel-campograma">
     <div class="campo-toolbar" id="campo-toolbar">
+      <div class="fg campo-sist-fg" id="campo-jornada-fg">
+        <label style="font-size:9px">Alineación</label>
+        <select id="campo-jornada-sel" onchange="campogramaSeleccionarJornada(this.value)">
+          <option value="">Plantilla actual (automática)</option>
+        </select>
+      </div>
       <div class="fg campo-sist-fg" id="campo-sist-fg" style="display:none">
         <label style="font-size:9px">Sistema</label>
         <select id="campo-sist-sel" onchange="campogramaCambiarSistema(this.value)">
@@ -1777,6 +1783,8 @@ body.solo-lectura .ed-panel-form {
           <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
         </select>
       </div>
+      <button class="btn b-ghost b-sm" id="campo-btn-alineacion" onclick="campogramaEditarAlineacionActual()" style="display:none">📋 Editar alineación de esta jornada</button>
+      <button class="btn b-ghost b-sm" id="campo-btn-orient" onclick="campogramaToggleOrientacion()" title="Cambiar orientación">↔️ Horizontal / Vertical</button>
       <button class="btn b-ghost b-sm" id="campo-btn-editar" onclick="toggleCampogramaEdit()" style="display:none">✏️ Editar campograma</button>
       <button class="btn b-ghost b-sm" id="campo-btn-reset" onclick="campogramaResetTodo()" style="display:none">↺ Restablecer automático</button>
       <button class="btn b-azul b-sm" onclick="descargarCampogramaImagen()">📷 Descargar imagen</button>
@@ -1871,6 +1879,42 @@ body.solo-lectura .ed-panel-form {
 
 <!-- ══ MODAL AÑADIR / EDITAR PARTIDO ══════════════════════════ -->
 
+
+<!-- ── MODAL DE ALINEACIÓN POR JORNADA (Campograma) ── -->
+<div class="add-partido-modal" id="modal-alineacion" onclick="if(event.target===this)cerrarModalAlineacion()">
+  <div class="add-partido-box" style="max-width:560px">
+    <div class="add-partido-hdr">
+      <span id="modal-alineacion-titulo">📋 Alineación</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarModalAlineacion()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <div class="apf">
+        <label>Jornada</label>
+        <input id="al-jornada" placeholder="Ej: J4" oninput="_alRefrescarVinculo()">
+      </div>
+      <div id="al-vinculo-info" style="font-size:11px;color:var(--gris2);margin:-6px 0 10px"></div>
+      <div id="al-manual-rival" style="display:none">
+        <div class="apf-row">
+          <div class="apf"><label>Rival</label><input id="al-rival" placeholder="Nombre del rival"></div>
+        </div>
+        <div class="apf-row">
+          <div class="apf"><label>Goles a favor</label><input id="al-gf" type="number" min="0"></div>
+          <div class="apf"><label>Goles en contra</label><input id="al-gc" type="number" min="0"></div>
+        </div>
+      </div>
+      <div class="apf">
+        <label>Jugadores convocados</label>
+        <p style="font-size:9px;color:var(--gris2);margin:2px 0 8px">Marca quién fue titular, quién estuvo en el banquillo, y deja "No convocado" al resto de la plantilla.</p>
+        <div id="al-jugs-list" style="max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+    </div>
+    <div class="modal-btns" style="padding:0 20px 20px">
+      <button class="btn b-ghost" onclick="cerrarModalAlineacion()">Cancelar</button>
+      <button class="btn b-rojo" id="al-btn-borrar" style="display:none" onclick="_alBorrarAlineacion()">🗑 Borrar</button>
+      <button class="btn b-azul" onclick="_alGuardarAlineacion()">💾 Guardar alineación</button>
+    </div>
+  </div>
+</div>
 
 <div class="add-partido-modal" id="add-partido-modal" onclick="if(event.target===this)cerrarAddPartido()">
   <div class="add-partido-box">
@@ -3245,13 +3289,19 @@ function _cmpEsperarImagenes(cont,timeoutMs=4000){
 // la misma foto se vea perfectamente bien en el campograma en pantalla).
 // Este helper, ANTES de capturar, pide cada foto externa otra vez en modo
 // CORS explícito y la convierte a un data: URL propio (dibujándola en un
-// canvas). Si el servidor no admite CORS, sencillamente no se puede leer
-// esa imagen desde JavaScript de ninguna forma — se deja la foto tal cual
-// estaba (no se rompe nada, el resto de la exportación sigue igual).
+// canvas). Si el servidor concreto no admite CORS (algunos enlaces de
+// Google Drive, según sus permisos de uso compartido, no lo hacen) no hay
+// ninguna forma de leer esa imagen desde JavaScript — en ese caso, en vez
+// de dejar un hueco en blanco en la imagen exportada, se marca el <img>
+// para que la exportación (ver el onclone de html2canvas en las funciones
+// que llaman a este helper) muestre el mismo aviso de "sin foto" que ya
+// se ve en pantalla cuando la imagen falla de verdad (el escudo 🛡️, las
+// iniciales del jugador, etc.), en vez de un hueco vacío.
 function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
   const imgs=[...cont.querySelectorAll('img')].filter(img=>img.src && !img.src.startsWith('data:'));
   if(!imgs.length) return Promise.resolve();
   return Promise.all(imgs.map(img=>new Promise(resolve=>{
+    delete img.dataset.cmpCorsFail;
     let listo=false;
     const acabar=()=>{ if(!listo){ listo=true; resolve(); } };
     const timer=setTimeout(acabar,timeoutMs);
@@ -3263,12 +3313,29 @@ function _cmpConvertirImagenesADataURL(cont,timeoutMs=6000){
         c.width=probeta.naturalWidth||1; c.height=probeta.naturalHeight||1;
         c.getContext('2d').drawImage(probeta,0,0);
         img.src=c.toDataURL('image/png');
-      }catch(e){ /* Este servidor en concreto no admite CORS — se deja la foto como estaba. */ }
+      }catch(e){
+        // Este servidor en concreto no admite CORS — se deja la foto tal
+        // cual en pantalla y se marca para el fallback en la exportación.
+        img.dataset.cmpCorsFail='1';
+      }
       clearTimeout(timer); acabar();
     };
-    probeta.onerror=()=>{ clearTimeout(timer); acabar(); };
+    probeta.onerror=()=>{ img.dataset.cmpCorsFail='1'; clearTimeout(timer); acabar(); };
     probeta.src=img.src;
   })));
+}
+
+/** Callback onclone para html2canvas: en el documento CLONADO (nunca en
+ *  el DOM real en pantalla) sustituye cada <img> marcada por
+ *  _cmpConvertirImagenesADataURL como "sin CORS" por el mismo aviso que
+ *  ya usa cada plantilla cuando la carga de la imagen falla de verdad
+ *  (this.parentNode.textContent='🛡️' / iniciales, vía su propio
+ *  atributo onerror), disparando ese mismo evento 'error' sobre la
+ *  copia — así la imagen en pantalla nunca se toca ni se rompe. */
+function _cmpAplicarFallbackCORS(clonedDoc){
+  clonedDoc.querySelectorAll('img[data-cmp-cors-fail="1"]').forEach(img=>{
+    img.dispatchEvent(new Event('error'));
+  });
 }
 
 /** Fila de barras horizontales (una barra por jugador/equipo comparado)
@@ -3367,7 +3434,7 @@ async function _cmpCapturarYExportarPDF(html,anchoPx,nombreArchivo,toastMsg){
     const tablaTopMm=tablaEl?tablaEl.offsetTop*mmPorPx:null;
     const tablaAltoMm=tablaEl?tablaEl.offsetHeight*mmPorPx:null;
 
-    const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
+    const canvas=await html2canvas(cont,{scale:2,backgroundColor:'#0a0d13',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS});
     const{jsPDF}=window.jspdf;
     const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
     const PW=210,PH=297,iW=PW-10;
@@ -4407,6 +4474,47 @@ function calcularPlantillaEquipo(nombreEquipo,temporada){
 // bien con la plantilla real).
 // ══════════════════════════════════════════════════════════════════
 let _campogramaEditMode=false;
+
+// ── Registro de alineaciones por jornada ────────────────────────────
+// '' = se muestra la plantilla actual (colocación automática, la de
+// siempre); si tiene un valor, es la jornada seleccionada en el
+// desplegable "Alineación" de arriba, y el campograma pasa a mostrar
+// el once + banquillo GUARDADOS para esa jornada concreta en
+// eq.alineaciones, en vez de la plantilla completa del equipo.
+let _campogramaJornadaActiva='';
+// id del equipo cuya alineación se está creando/editando en el modal
+let _campogramaAlineacionEqId=null;
+
+// ── Orientación del campograma (vertical/horizontal) ────────────────
+// Antes el campo siempre era vertical (más alto que ancho), aunque
+// hubiera de sobra espacio horizontal en un ordenador. Ahora se puede
+// cambiar a horizontal para aprovechar pantallas anchas — por defecto
+// se sugiere horizontal en pantallas grandes y vertical en móvil, pero
+// el botón de la barra de herramientas siempre permite forzar el modo
+// que se prefiera, y esa preferencia se recuerda entre visitas.
+function _campogramaEsHoriz(){
+  const v=localStorage.getItem('scout_campo_horiz');
+  if(v==='1') return true;
+  if(v==='0') return false;
+  return window.innerWidth>=860;
+}
+function campogramaToggleOrientacion(){
+  localStorage.setItem('scout_campo_horiz', _campogramaEsHoriz()?'0':'1');
+  renderCampograma();
+}
+/** Convierte una coordenada (x,y en % del campo VERTICAL, que es el
+ *  sistema de referencia en el que se guardan huecos y campoOverrides)
+ *  a la posición equivalente en pantalla, según la orientación activa. */
+function _campogramaAPantalla(x,y,horiz){
+  return horiz ? {x:100-y, y:x} : {x,y};
+}
+/** Inversa de _campogramaAPantalla — convierte una posición soltada en
+ *  pantalla (tras arrastrar) de vuelta al sistema de referencia vertical
+ *  para guardarla en eq.campoOverrides de forma consistente sin importar
+ *  en qué orientación se hizo el arrastre. */
+function _campogramaDePantalla(xPant,yPant,horiz){
+  return horiz ? {x:yPant, y:100-xPant} : {x:xPant, y:yPant};
+}
 let _campogramaDrag=null; // {jugadorId, pitchEl} mientras se arrastra un chip
 
 /** Lee el campo "Sistema" (p.ej. "4-3-3", "4-2-3-1") y devuelve cuántos
@@ -4444,6 +4552,25 @@ const CODIGO_LINEA={
   MCD:'Centrocampistas',MC:'Centrocampistas',
   DC:'Delanteros',SD:'Delanteros',ED:'Delanteros',EI:'Delanteros'
 };
+const POS_NOMBRE_COMPLETO={
+  PT:'Portero',LTD:'Lateral derecho',LTI:'Lateral izquierdo',CT:'Central',
+  CTD:'Central diestro',CTI:'Central zurdo',MCD:'Mediocentro defensivo',MC:'Mediocentro',
+  DC:'Delantero centro',SD:'Segunda punta',ED:'Extremo derecho',EI:'Extremo izquierdo'
+};
+/** Código+nombre de posición para MOSTRAR en el campograma cuando se
+ *  agrupan varios jugadores en el mismo hueco (ej. "4 - Juan Mari - CTD
+ *  (Central diestro)"). Para los centrales, además de la posición se usa
+ *  el pie del jugador (campo "Pie" de su ficha) para distinguir zurdo/
+ *  diestro dentro del mismo puesto — el resto de posiciones ya llevan
+ *  el lado (derecho/izquierdo) en el propio texto de la posición. */
+function _campogramaEtiquetaPos(j){
+  let codigo=POS_CODE_MAP[j.pos]||'MC';
+  if(codigo==='CT'){
+    if(j.pie==='Derecho') codigo='CTD';
+    else if(j.pie==='Izquierdo') codigo='CTI';
+  }
+  return {codigo, nombre:POS_NOMBRE_COMPLETO[codigo]||j.pos||''};
+}
 
 /** Reparte n puntos uniformemente en el eje X entre xMin y xMax
  *  (si solo hay uno, lo centra). Se usa para generar sistemas
@@ -4533,41 +4660,306 @@ function _campogramaGrupos(eq){
   return calcularPlantillaEquipo(eq.nom,eq.temp);
 }
 
-/** Coloca la plantilla real del equipo sobre los huecos del sistema
- *  elegido: para cada hueco intenta primero encontrar un jugador con
- *  el código de posición exacto, y si no hay ninguno libre, recurre a
- *  cualquiera de su misma línea general que aún no esté colocado. Los
- *  jugadores que sobran (no caben en el once del sistema) quedan
- *  en el banquillo. Devuelve {colocados:[{jugador,slot}], suplentes}. */
+/** Núcleo de la colocación: reparte una lista concreta de jugadores
+ *  (la plantilla completa, o solo el once+banquillo guardado de una
+ *  jornada) sobre los huecos del sistema indicado. Para cada hueco
+ *  intenta primero encontrar un jugador con el código de posición
+ *  exacto, y si no hay ninguno libre, recurre a cualquiera de su misma
+ *  línea general que aún no esté colocado. Los jugadores que sobran
+ *  (no caben en el once del sistema) se devuelven aparte para que la
+ *  función que llama decida si van al banquillo o no.
+ *  Devuelve {colocados:[{slot,jugadores:[...]}], suplentesSinHueco}. */
+function _campogramaAsignarJugadores(todos,sist){
+  const slots=_formacionSlots(sist);
+
+  // Colapsa los huecos duplicados de un mismo código en UNO solo (su
+  // posición media) — así, si el sistema pide p.ej. 2 "DC" y hay 4
+  // delanteros centro en la plantilla, los 4 se agrupan juntos en ese
+  // mismo punto en vez de que 2 sobren al banquillo sin motivo real:
+  // esto es ante todo para controlar la plantilla completa, no un
+  // dibujo táctico exacto de once jugadores.
+  const slotPorCodigo={};
+  slots.forEach(s=>{
+    (slotPorCodigo[s.code]=slotPorCodigo[s.code]||{xs:[],ys:[]});
+    slotPorCodigo[s.code].xs.push(s.x);
+    slotPorCodigo[s.code].ys.push(s.y);
+  });
+  const codigosSlot=Object.keys(slotPorCodigo);
+  const promedio=arr=>Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+  const slotUnico={};
+  codigosSlot.forEach(c=>{ slotUnico[c]={code:c,x:promedio(slotPorCodigo[c].xs),y:promedio(slotPorCodigo[c].ys)}; });
+
+  // Código de respaldo por línea general — a qué hueco del sistema
+  // recurrir cuando un jugador no tiene ninguno con su código exacto
+  // (ej. el sistema no define "MCD" para nadie, pero sí "MC").
+  const codigoDeRespaldoPorLinea={};
+  ['Porteros','Defensas','Centrocampistas','Delanteros'].forEach(linea=>{
+    codigoDeRespaldoPorLinea[linea]=codigosSlot.find(c=>(CODIGO_LINEA[c]||'Centrocampistas')===linea)||null;
+  });
+
+  const gruposJugadores={};
+  const suplentes=[];
+  todos.forEach(j=>{
+    const codigoBase=POS_CODE_MAP[j.pos]||'MC';
+    const {codigo}=_campogramaEtiquetaPos(j); // ej. "CTD" para un central diestro
+    let destino=null;
+    if(slotUnico[codigo]) destino=codigo;
+    else if(slotUnico[codigoBase]) destino=codigoBase;
+    else destino=codigoDeRespaldoPorLinea[POS_GRUPO_MAP[j.pos]||'Centrocampistas'];
+    if(destino) (gruposJugadores[destino]=gruposJugadores[destino]||[]).push(j);
+    else suplentes.push(j);
+  });
+  Object.values(gruposJugadores).forEach(l=>l.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
+  suplentes.sort((a,b)=>(+a.dor||99)-(+b.dor||99));
+
+  const colocados=codigosSlot
+    .filter(c=>gruposJugadores[c] && gruposJugadores[c].length)
+    .map(c=>({slot:slotUnico[c], jugadores:gruposJugadores[c]}));
+  return {colocados,suplentesSinHueco:suplentes};
+}
+
+/** Coloca la plantilla COMPLETA del equipo (todos los jugadores
+ *  vinculados, sin importar si jugaron o no una jornada concreta)
+ *  sobre los huecos del sistema — es la vista por defecto de
+ *  "Plantilla actual (automática)". Devuelve {colocados,suplentes}. */
 function _campogramaAsignar(eq){
   const grupos=_campogramaGrupos(eq);
   const todos=Object.values(grupos).flat();
-  const slots=_formacionSlots(eq.sist);
+  const {colocados,suplentesSinHueco}=_campogramaAsignarJugadores(todos,eq.sist);
+  return {colocados,suplentes:suplentesSinHueco};
+}
 
-  const porCodigo={};
-  const porLinea={Porteros:[],Defensas:[],Centrocampistas:[],Delanteros:[]};
-  todos.forEach(j=>{
-    const linea=POS_GRUPO_MAP[j.pos]||'Centrocampistas';
-    (porLinea[linea]=porLinea[linea]||[]).push(j);
-    const codigo=POS_CODE_MAP[j.pos]||'MC';
-    (porCodigo[codigo]=porCodigo[codigo]||[]).push(j);
-  });
-  Object.values(porCodigo).forEach(l=>l.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
-  Object.values(porLinea).forEach(l=>l.sort((a,b)=>(+a.dor||99)-(+b.dor||99)));
+// ══════════════════════════════════════════════════════════════════
+// Registro de alineaciones por jornada
+// ══════════════════════════════════════════════════════════════════
+// Guarda, por equipo (eq.alineaciones[]), el once titular + banquillo
+// realmente usados en cada jornada, para poder consultarlos después
+// (aunque la plantilla haya cambiado desde entonces). Cuando existe un
+// partido con esa misma jornada en la videoteca de Partidos para este
+// equipo, el rival y el resultado se toman de ahí automáticamente; si
+// no existe (amistoso no registrado, jornada suelta, etc.) se pueden
+// escribir a mano y se guardan en la propia alineación.
+// Cada entrada: {jornada, titulares:[jugadorId,...], suplentes:[...],
+//                rivalManual, gfManual, gcManual}
 
-  const usados=new Set();
-  const colocados=[];
-  slots.forEach(slot=>{
-    let jugador=(porCodigo[slot.code]||[]).find(j=>!usados.has(j.id));
-    if(!jugador){
-      const linea=CODIGO_LINEA[slot.code]||'Centrocampistas';
-      jugador=(porLinea[linea]||[]).find(j=>!usados.has(j.id));
-    }
-    if(jugador) usados.add(jugador.id);
-    colocados.push({jugador:jugador||null,slot});
+/** Busca en la videoteca de Partidos el partido de esta jornada en el
+ *  que participó el equipo (por nombre), respetando la temporada del
+ *  equipo si el partido tiene una indicada. */
+function _campogramaBuscarPartido(eq,jornada){
+  const j=(jornada||'').trim();
+  if(!j) return null;
+  return pDB.find(p=>(p.jornada||'').trim()===j &&
+    (p.local===eq.nom || p.visitante===eq.nom) &&
+    (!eq.temp || !p.temp || p.temp===eq.temp)) || null;
+}
+
+function _campogramaAlineacionPorJornada(eq,jornada){
+  return (eq.alineaciones||[]).find(a=>a.jornada===jornada) || null;
+}
+
+/** Todas las jornadas "disponibles" para el selector: las que ya
+ *  tienen un partido registrado en Partidos para este equipo (aunque
+ *  aún no tengan alineación guardada) y las que solo tienen una
+ *  alineación guardada manualmente (sin partido vinculado). */
+function _campogramaJornadasDisponibles(eq){
+  const mapa={};
+  pDB.forEach(p=>{
+    if(!p.jornada) return;
+    if(p.local!==eq.nom && p.visitante!==eq.nom) return;
+    if(eq.temp && p.temp && p.temp!==eq.temp) return;
+    mapa[p.jornada]=mapa[p.jornada]||{jornada:p.jornada};
+    mapa[p.jornada].partido=p;
   });
-  const suplentes=todos.filter(j=>!usados.has(j.id)).sort((a,b)=>(+a.dor||99)-(+b.dor||99));
-  return {colocados,suplentes};
+  (eq.alineaciones||[]).forEach(a=>{
+    mapa[a.jornada]=mapa[a.jornada]||{jornada:a.jornada,partido:_campogramaBuscarPartido(eq,a.jornada)};
+    mapa[a.jornada].alineacion=a;
+  });
+  return Object.values(mapa).sort((a,b)=>{
+    const na=parseInt(a.jornada)||999,nb=parseInt(b.jornada)||999;
+    if(na!==nb) return na-nb;
+    return (a.jornada||'').localeCompare(b.jornada||'');
+  });
+}
+
+/** Rival + resultado de una jornada, vistos desde este equipo — del
+ *  partido vinculado si existe, o de los campos manuales si no. */
+function _campogramaResultadoJornada(eq,info){
+  if(info.partido){
+    const p=info.partido;
+    const somosLocal=p.local===eq.nom;
+    return {rival:(somosLocal?p.visitante:p.local)||'Rival', gf:somosLocal?p.gf:p.gc, gc:somosLocal?p.gc:p.gf, vinculado:true};
+  }
+  const a=info.alineacion;
+  return {rival:(a&&a.rivalManual)||'Rival', gf:a?a.gfManual:null, gc:a?a.gcManual:null, vinculado:false};
+}
+
+/** Etiqueta larga para el desplegable, con el formato que pidió el
+ *  entrenador: "J4 C.D. San Roque de Lepe (2-0) Atlético Onubense". */
+function _campogramaEtiquetaJornada(eq,info){
+  const jTxt=/^\d+$/.test(info.jornada)?'J'+info.jornada:info.jornada;
+  const r=_campogramaResultadoJornada(eq,info);
+  const res=(r.gf!=null && r.gc!=null)?` (${r.gf}-${r.gc})`:'';
+  const sinGuardar=info.alineacion?'':' — sin alineación';
+  return `${jTxt} ${eq.nom}${res} ${r.rival}${sinGuardar}`.replace(/\s+/g,' ').trim();
+}
+
+/** Texto corto para la cabecera del propio campograma (el nombre del
+ *  equipo ya se ve arriba en grande, así que aquí no se repite). */
+function _campogramaSubHeaderJornada(eq,info){
+  const jTxt=/^\d+$/.test(info.jornada)?'J'+info.jornada:info.jornada;
+  const r=_campogramaResultadoJornada(eq,info);
+  const res=(r.gf!=null && r.gc!=null)?` (${r.gf}-${r.gc})`:'';
+  // Sin escapar aquí a propósito: el texto se pasa en mayúsculas y
+  // luego se escapa entero en el punto donde se inserta en el DOM,
+  // para no dejar entidades HTML (&amp; etc.) a medio escapar por el
+  // .toUpperCase() posterior.
+  return `${jTxt} · vs ${r.rival}${res}`;
+}
+
+/** Reconstruye las opciones del desplegable "Alineación" de arriba,
+ *  conservando la jornada activa si sigue siendo válida. */
+function _campogramaPoblarSelectorJornadas(eq){
+  const sel=document.getElementById('campo-jornada-sel');
+  if(!sel) return;
+  const disponibles=_campogramaJornadasDisponibles(eq);
+  sel.innerHTML='<option value="">Plantilla actual (automática)</option>'+
+    disponibles.map(info=>`<option value="${eH(info.jornada)}">${eH(_campogramaEtiquetaJornada(eq,info))}</option>`).join('')+
+    '<option value="__nueva__">＋ Nueva alineación de jornada…</option>';
+  const valorPrevio=_campogramaJornadaActiva||'';
+  sel.value=[...sel.options].some(o=>o.value===valorPrevio)?valorPrevio:'';
+  _campogramaJornadaActiva=sel.value;
+}
+
+/** Al cambiar el desplegable: "__nueva__" abre el editor sin cambiar
+ *  la vista actual (y deja el desplegable como estaba); cualquier otro
+ *  valor cambia qué se muestra en el campograma. */
+function campogramaSeleccionarJornada(valor){
+  if(valor==='__nueva__'){
+    const sel=document.getElementById('campo-jornada-sel');
+    if(sel) sel.value=_campogramaJornadaActiva||'';
+    const eq=eDB.find(x=>x.id===eId);
+    if(eq) _abrirModalAlineacion(eq,'');
+    return;
+  }
+  _campogramaJornadaActiva=valor||'';
+  renderCampograma();
+}
+
+function campogramaEditarAlineacionActual(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden editar alineaciones',true); return; }
+  const eq=eDB.find(x=>x.id===eId);
+  if(!eq) return;
+  if(!_campogramaJornadaActiva){ toast('Selecciona primero una jornada arriba',true); return; }
+  _abrirModalAlineacion(eq,_campogramaJornadaActiva);
+}
+
+/** Abre el modal de creación/edición, precargando (si existe) la
+ *  alineación ya guardada para esa jornada, o dejándolo en blanco si
+ *  es una jornada nueva sin alineación todavía. */
+function _abrirModalAlineacion(eq,jornada){
+  _campogramaAlineacionEqId=eq.id;
+  const existente=jornada?_campogramaAlineacionPorJornada(eq,jornada):null;
+  document.getElementById('modal-alineacion-titulo').textContent=existente?'📋 Editar alineación':'📋 Nueva alineación';
+  document.getElementById('al-jornada').value=jornada||'';
+  document.getElementById('al-rival').value=(existente&&existente.rivalManual)||'';
+  document.getElementById('al-gf').value=(existente&&existente.gfManual!=null)?existente.gfManual:'';
+  document.getElementById('al-gc').value=(existente&&existente.gcManual!=null)?existente.gcManual:'';
+  document.getElementById('al-btn-borrar').style.display=existente?'':'none';
+
+  const grupos=_campogramaGrupos(eq);
+  const todos=Object.values(grupos).flat().sort((a,b)=>(+a.dor||99)-(+b.dor||99));
+  const titSet=new Set((existente&&existente.titulares)||[]);
+  const supSet=new Set((existente&&existente.suplentes)||[]);
+  document.getElementById('al-jugs-list').innerHTML=todos.map(j=>{
+    const estado=titSet.has(j.id)?'titular':(supSet.has(j.id)?'suplente':'');
+    const nom=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid var(--border2)">
+      <span style="flex:1;font-size:12px">${j.dor?'#'+eH(String(j.dor))+' ':''}${nom} — ${eH(j.pos||'')}</span>
+      <select data-al-jid="${eH(j.id)}" style="font-size:11px;padding:3px 6px;border-radius:6px;background:var(--bg2);color:var(--blanco);border:1px solid var(--border2)">
+        <option value=""${estado===''?' selected':''}>No convocado</option>
+        <option value="titular"${estado==='titular'?' selected':''}>Titular</option>
+        <option value="suplente"${estado==='suplente'?' selected':''}>Suplente</option>
+      </select>
+    </div>`;
+  }).join('');
+  _alRefrescarVinculo();
+  document.getElementById('modal-alineacion').classList.add('open');
+}
+
+/** Mientras se escribe la jornada en el modal, comprueba en vivo si
+ *  ya existe un partido con esa jornada para este equipo en Partidos:
+ *  si lo hay, muestra el rival/resultado detectado y oculta los
+ *  campos manuales (se toman del partido); si no, los muestra. */
+function _alRefrescarVinculo(){
+  const eq=eDB.find(x=>x.id===_campogramaAlineacionEqId);
+  const jornada=(document.getElementById('al-jornada').value||'').trim();
+  const info=document.getElementById('al-vinculo-info');
+  const manualBox=document.getElementById('al-manual-rival');
+  if(!info || !manualBox) return;
+  if(!eq || !jornada){ info.textContent=''; manualBox.style.display='none'; return; }
+  const p=_campogramaBuscarPartido(eq,jornada);
+  if(p){
+    const somosLocal=p.local===eq.nom;
+    const rival=somosLocal?p.visitante:p.local;
+    const gf=somosLocal?p.gf:p.gc, gc=somosLocal?p.gc:p.gf;
+    const res=(gf!=null&&gc!=null)?` (${gf}-${gc})`:'';
+    info.textContent=`🔗 Vinculado automáticamente con Partidos: vs ${rival}${res}`;
+    manualBox.style.display='none';
+  } else {
+    info.textContent='No hay ningún partido con esa jornada para este equipo en Partidos — puedes escribir el rival y el resultado a mano.';
+    manualBox.style.display='';
+  }
+}
+
+function cerrarModalAlineacion(){
+  const m=document.getElementById('modal-alineacion');
+  if(m) m.classList.remove('open');
+}
+
+function _alGuardarAlineacion(){
+  const eq=eDB.find(x=>x.id===_campogramaAlineacionEqId);
+  if(!eq) return;
+  const jornada=(document.getElementById('al-jornada').value||'').trim();
+  if(!jornada){ toast('Escribe la jornada (ej: J4)',true); return; }
+  const titulares=[],suplentes=[];
+  document.querySelectorAll('#al-jugs-list [data-al-jid]').forEach(sel=>{
+    const jid=sel.getAttribute('data-al-jid');
+    if(sel.value==='titular') titulares.push(jid);
+    else if(sel.value==='suplente') suplentes.push(jid);
+  });
+  if(!titulares.length){ toast('Marca al menos un titular',true); return; }
+  eq.alineaciones=eq.alineaciones||[];
+  let entry=eq.alineaciones.find(a=>a.jornada===jornada);
+  if(!entry){ entry={jornada}; eq.alineaciones.push(entry); }
+  entry.titulares=titulares;
+  entry.suplentes=suplentes;
+  const tienePartido=!!_campogramaBuscarPartido(eq,jornada);
+  entry.rivalManual=tienePartido?'':(document.getElementById('al-rival').value||'').trim();
+  const gfEl=document.getElementById('al-gf'), gcEl=document.getElementById('al-gc');
+  entry.gfManual=tienePartido?null:(gfEl.value===''?null:+gfEl.value);
+  entry.gcManual=tienePartido?null:(gcEl.value===''?null:+gcEl.value);
+  saveEDB();
+  _campogramaSincronizarNube(eq);
+  cerrarModalAlineacion();
+  _campogramaJornadaActiva=jornada;
+  renderCampograma();
+  toast('📋 Alineación guardada');
+}
+
+function _alBorrarAlineacion(){
+  const eq=eDB.find(x=>x.id===_campogramaAlineacionEqId);
+  if(!eq) return;
+  const jornada=(document.getElementById('al-jornada').value||'').trim();
+  if(!jornada) return;
+  askDel('¿Borrar la alineación guardada de esta jornada? (el partido en Partidos, si existe, no se toca)',()=>{
+    eq.alineaciones=(eq.alineaciones||[]).filter(a=>a.jornada!==jornada);
+    saveEDB();
+    _campogramaSincronizarNube(eq);
+    cerrarModalAlineacion();
+    _campogramaJornadaActiva='';
+    renderCampograma();
+    toast('🗑 Alineación borrada');
+  });
 }
 
 /** Aclara/oscurece un color hexadecimal. amt entre -100 (negro) y 100
@@ -4592,13 +4984,15 @@ function _campogramaAvatarHTML(j){
     :eH(ini(j.nom,j.ape)||'?');
 }
 
-/** Chip de un jugador colocado en un punto exacto del campo (x,y en %
+/** Chip de UN jugador colocado en un punto exacto del campo (x,y en %
  *  — usa la reasignación manual guardada en eq.campoOverrides si
- *  existe, si no la posición por defecto del hueco del sistema). */
-function _campogramaChipPosHTML(eq,j,slot,editMode){
+ *  existe, si no la posición por defecto del hueco del sistema). Se usa
+ *  cuando el hueco tiene un único jugador — con varios se usa el chip
+ *  agrupado de abajo (_campogramaChipGrupoHTML). */
+function _campogramaChipPosHTML(eq,j,slot,editMode,horiz){
   const ov=eq.campoOverrides && eq.campoOverrides[j.id];
   const tieneOv=ov && typeof ov==='object' && typeof ov.x==='number' && typeof ov.y==='number';
-  const x=tieneOv?ov.x:slot.x, y=tieneOv?ov.y:slot.y;
+  const {x,y}=_campogramaAPantalla(tieneOv?ov.x:slot.x, tieneOv?ov.y:slot.y, horiz);
   const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
   // Nombre completo (nombre + TODO el apellido) — antes se cortaba al
   // primer apellido con .split(' ')[0], así que un jugador con apellido
@@ -4612,6 +5006,40 @@ function _campogramaChipPosHTML(eq,j,slot,editMode){
       ${editMode?'onpointerdown="_campogramaPointerDown(event,\''+eH(j.id)+'\')"':''}>
     <div class="campo-chip-pos-av" style="background:${eH(avColor)};border-color:${j.imgJug?'#fff':'rgba(255,255,255,.7)'}">${_campogramaAvatarHTML(j)}</div>
     <div class="campo-chip-pos-nm">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCorto}</div>
+  </div>`;
+}
+
+/** Chip agrupado cuando VARIOS jugadores comparten el mismo hueco/código
+ *  (ej. 2 o 4 delanteros centro) — en vez de escoger uno y mandar el
+ *  resto al banquillo sin motivo, se listan todos juntos ahí mismo, en
+ *  texto, ordenados por dorsal: "#4 Juan Mari — CTD (Central diestro)".
+ *  No es arrastrable (no hay un único punto que mover); el admin puede
+ *  seguir cambiando el sistema o editando cada jugador desde su ficha. */
+function _campogramaChipGrupoHTML(jugadores,slot,horiz){
+  // El hueco del portero queda muy pegado a la línea defensiva en varios
+  // sistemas (pocos puntos de diferencia) — para un chip de foto no se
+  // nota, pero la tarjeta de texto de un grupo es bastante más ancha y
+  // podía solaparse con el grupo vecino de defensas (ej. 2 porteros + 2
+  // centrales agrupados a la vez). Solo al agrupar (el chip individual de
+  // un jugador no se toca) se separa un poco más el portero hacia su
+  // portería para ganar margen.
+  const yAjustada=slot.code==='PT'?Math.min(99,slot.y+6):slot.y;
+  const pantalla=_campogramaAPantalla(slot.x,yAjustada,horiz);
+  // Al ser una tarjeta bastante más ancha que un chip normal, si el hueco
+  // cae muy pegado al borde del campo (típicamente el portero, junto al
+  // lateral izquierdo del contenedor) el texto quedaba recortado por el
+  // overflow:hidden de .campo-wrap — se limita el punto de anclaje para
+  // dejar siempre margen a los lados y arriba/abajo.
+  const x=Math.max(14,Math.min(86,pantalla.x));
+  const y=Math.max(10,Math.min(90,pantalla.y));
+  const filasH=jugadores.map(j=>{
+    const {codigo,nombre}=_campogramaEtiquetaPos(j);
+    const nomCompleto=eH(((j.nom||'')+' '+(j.ape||'')).trim()||'Sin nombre');
+    return `<div class="campo-grupo-fila">${j.dor?'#'+eH(String(j.dor))+' ':''}${nomCompleto} — ${eH(codigo)} <span class="campo-grupo-fila-larga">(${eH(nombre)})</span></div>`;
+  }).join('');
+  return `<div class="campo-chip-grupo" style="left:${x}%;top:${y}%">
+    <div class="campo-chip-grupo-tit">${eH(slot.code)} · ${jugadores.length}</div>
+    ${filasH}
   </div>`;
 }
 
@@ -4636,27 +5064,59 @@ function renderCampograma(){
   const eq=eDB.find(x=>x.id===eId);
   if(!eq){ cont.innerHTML=''; return; }
 
-  const {colocados,suplentes}=_campogramaAsignar(eq);
-  const totalJug=colocados.filter(c=>c.jugador).length+suplentes.length;
+  _campogramaPoblarSelectorJornadas(eq);
+  const jornadaActiva=_campogramaJornadaActiva;
+  const esAdmin=esAdminActual();
+
+  // Info de la jornada seleccionada (rival/resultado + alineación
+  // guardada, si la hay) — null cuando se ve la "Plantilla actual".
+  let jornadaInfo=null, colocados, suplentes;
+  if(jornadaActiva){
+    jornadaInfo=_campogramaJornadasDisponibles(eq).find(i=>i.jornada===jornadaActiva) ||
+      {jornada:jornadaActiva, partido:_campogramaBuscarPartido(eq,jornadaActiva)};
+    const entry=_campogramaAlineacionPorJornada(eq,jornadaActiva);
+    if(entry){
+      const todos=Object.values(_campogramaGrupos(eq)).flat();
+      const porId={}; todos.forEach(j=>{ porId[j.id]=j; });
+      const titJugs=(entry.titulares||[]).map(id=>porId[id]).filter(Boolean);
+      const supJugs=(entry.suplentes||[]).map(id=>porId[id]).filter(Boolean);
+      const asign=_campogramaAsignarJugadores(titJugs,eq.sist);
+      colocados=asign.colocados;
+      suplentes=[...supJugs,...asign.suplentesSinHueco];
+    } else {
+      colocados=[]; suplentes=[];
+    }
+  } else {
+    ({colocados,suplentes}=_campogramaAsignar(eq));
+  }
+  const totalJug=colocados.reduce((s,c)=>s+(c.jugadores?c.jugadores.length:0),0)+suplentes.length;
 
   const btnEditar=document.getElementById('campo-btn-editar');
   const btnReset=document.getElementById('campo-btn-reset');
   const sistFg=document.getElementById('campo-sist-fg');
   const sistSel=document.getElementById('campo-sist-sel');
-  const esAdmin=esAdminActual();
-  if(btnEditar){
-    btnEditar.style.display=esAdmin?'':'none';
-    btnEditar.textContent=_campogramaEditMode?'✅ Terminar edición':'✏️ Editar campograma';
+  const btnAlineacion=document.getElementById('campo-btn-alineacion');
+  // El arrastre libre y el cambio de sistema son para la plantilla
+  // automática; una alineación de jornada guardada es un dato fijo del
+  // pasado, así que en esa vista se ocultan y en su lugar se ofrece el
+  // botón para crear/editar esa alineación concreta.
+  if(btnEditar) btnEditar.style.display=(esAdmin && !jornadaActiva)?'':'none';
+  if(btnEditar) btnEditar.textContent=_campogramaEditMode?'✅ Terminar edición':'✏️ Editar campograma';
+  if(btnReset) btnReset.style.display=(esAdmin && !jornadaActiva && eq.campoOverrides && Object.keys(eq.campoOverrides).length)?'':'none';
+  if(sistFg) sistFg.style.display=(esAdmin && !jornadaActiva)?'':'none';
+  if(btnAlineacion){
+    btnAlineacion.style.display=(esAdmin && jornadaActiva)?'':'none';
+    btnAlineacion.textContent=(jornadaActiva && _campogramaAlineacionPorJornada(eq,jornadaActiva))?'📋 Editar alineación de esta jornada':'📋 Crear alineación de esta jornada';
   }
-  if(btnReset) btnReset.style.display=(esAdmin && eq.campoOverrides && Object.keys(eq.campoOverrides).length)?'':'none';
-  if(sistFg) sistFg.style.display=esAdmin?'':'none';
   if(sistSel){
     const valores=[...sistSel.options].map(o=>o.value);
     sistSel.value=valores.includes(eq.sist)?eq.sist:'4-3-3';
   }
 
   if(!totalJug){
-    cont.innerHTML=`<div class="empty" style="margin:20px 0"><div class="empty-ic">🏟️</div><div style="font-size:14px">Sin jugadores vinculados a ${eH(eq.nom||'este equipo')} en la temporada ${eH(eq.temp||'actual')}</div></div>`;
+    cont.innerHTML=jornadaActiva
+      ? `<div class="empty" style="margin:20px 0"><div class="empty-ic">📋</div><div style="font-size:14px">Aún no hay alineación guardada para esta jornada.</div>${esAdmin?'<button class="btn b-azul b-sm" style="margin-top:12px" onclick="campogramaEditarAlineacionActual()">📋 Crear alineación de esta jornada</button>':''}</div>`
+      : `<div class="empty" style="margin:20px 0"><div class="empty-ic">🏟️</div><div style="font-size:14px">Sin jugadores vinculados a ${eH(eq.nom||'este equipo')} en la temporada ${eH(eq.temp||'actual')}</div></div>`;
     return;
   }
 
@@ -4664,25 +5124,34 @@ function renderCampograma(){
   const stripeA=_sombraHex(colorBase,14),stripeB=_sombraHex(colorBase,-4);
   const hdrA=_sombraHex(colorBase,-58),hdrB=_sombraHex(colorBase,-30);
   const escudo=eq.imgEsc?`<img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='🛡️'">`:'🛡️';
-  const editMode=_campogramaEditMode && esAdmin;
+  const editMode=!jornadaActiva && _campogramaEditMode && esAdmin;
+  const horiz=_campogramaEsHoriz();
+  const btnOrient=document.getElementById('campo-btn-orient');
+  if(btnOrient) btnOrient.textContent=horiz?'↕️ Ver en vertical':'↔️ Ver en horizontal';
 
-  const chipsH=colocados.filter(c=>c.jugador).map(c=>_campogramaChipPosHTML(eq,c.jugador,c.slot,editMode)).join('');
+  const chipsH=colocados.map(c=>c.jugadores.length===1
+    ? _campogramaChipPosHTML(eq,c.jugadores[0],c.slot,editMode,horiz)
+    : _campogramaChipGrupoHTML(c.jugadores,c.slot,horiz)
+  ).join('');
   const banquilloH=suplentes.length?`
     <div class="campo-banquillo">
       <div class="campo-banquillo-tit">🪑 Banquillo / Sin hueco en el sistema (${suplentes.length})</div>
       <div class="campo-banquillo-jugs">${suplentes.map(j=>_campogramaBanquilloChipHTML(j)).join('')}</div>
     </div>`:'';
 
-  cont.innerHTML=`
-    <div class="campo-wrap" id="campo-capture">
-      <div class="campo-hdr" style="background:linear-gradient(120deg,${hdrA},${hdrB})">
-        <div class="campo-hdr-badge">${escudo}</div>
-        <div class="campo-hdr-txt">
-          <div class="campo-hdr-nom">${eH(eq.nom||'Equipo')}</div>
-          <div class="campo-hdr-sub">PLANTILLA · TEMPORADA ${eH(eq.temp||'—')}${eq.sist?' · 1-'+eH(eq.sist):''}</div>
-        </div>
-      </div>
-      <div class="campo-pitch-abs" id="campo-pitch-abs" style="background:repeating-linear-gradient(180deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
+  const marcasH = horiz ? `
+        <svg class="campo-marcas" viewBox="0 0 140 100" preserveAspectRatio="none">
+          <rect x="2" y="2" width="136" height="96" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <line x1="71" y1="2" x2="71" y2="98" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="71" cy="50" r="12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="71" cy="50" r="0.8" fill="rgba(255,255,255,.55)"/>
+          <rect x="2" y="25" width="20" height="50" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="2" y="38" width="8" height="24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 22 38 A 12 12 0 0 1 22 62" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="118" y="25" width="20" height="50" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="130" y="38" width="8" height="24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 118 38 A 12 12 0 0 0 118 62" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+        </svg>` : `
         <svg class="campo-marcas" viewBox="0 0 100 140" preserveAspectRatio="none">
           <rect x="2" y="2" width="96" height="136" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
           <line x1="2" y1="71" x2="98" y2="71" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
@@ -4694,7 +5163,19 @@ function renderCampograma(){
           <rect x="25" y="118" width="50" height="20" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
           <rect x="38" y="130" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
           <path d="M 38 118 A 12 12 0 0 1 62 118" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
-        </svg>
+        </svg>`;
+
+  cont.innerHTML=`
+    <div class="campo-wrap${horiz?' horiz':''}" id="campo-capture">
+      <div class="campo-hdr" style="background:linear-gradient(120deg,${hdrA},${hdrB})">
+        <div class="campo-hdr-badge">${escudo}</div>
+        <div class="campo-hdr-txt">
+          <div class="campo-hdr-nom">${eH(eq.nom||'Equipo')}</div>
+          <div class="campo-hdr-sub">${jornadaActiva&&jornadaInfo?eH(_campogramaSubHeaderJornada(eq,jornadaInfo).toUpperCase()):'PLANTILLA · TEMPORADA '+eH(eq.temp||'—')+(eq.sist?' · 1-'+eH(eq.sist):'')}</div>
+        </div>
+      </div>
+      <div class="campo-pitch-abs${horiz?' horiz':''}" id="campo-pitch-abs" style="background:repeating-linear-gradient(${horiz?90:180}deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
+        ${marcasH}
         ${chipsH}
       </div>
       ${banquilloH}
@@ -4788,11 +5269,16 @@ function _campogramaPointerUp(ev){
   chip.removeEventListener('pointermove',_campogramaPointerMove);
   chip.removeEventListener('pointerup',_campogramaPointerUp);
   chip.removeEventListener('pointercancel',_campogramaPointerUp);
-  const x=parseFloat(chip.dataset.x), y=parseFloat(chip.dataset.y);
+  const xPant=parseFloat(chip.dataset.x), yPant=parseFloat(chip.dataset.y);
   _campogramaDrag=null;
-  if(!eId || isNaN(x) || isNaN(y)) return;
+  if(!eId || isNaN(xPant) || isNaN(yPant)) return;
   const eq=eDB.find(x2=>x2.id===eId);
   if(!eq) return;
+  // Las coordenadas del arrastre están en espacio de pantalla (según la
+  // orientación actual); hay que pasarlas a espacio canónico vertical
+  // antes de guardarlas, si no al arrastrar en horizontal se guardaría
+  // la posición equivocada.
+  const {x,y}=_campogramaDePantalla(xPant,yPant,_campogramaEsHoriz());
   eq.campoOverrides=eq.campoOverrides||{};
   eq.campoOverrides[jugadorId]={x:Math.round(x*10)/10,y:Math.round(y*10)/10};
   saveEDB();
@@ -4817,7 +5303,7 @@ async function descargarCampogramaImagen(){
     // _cmpConvertirImagenesADataURL más arriba).
     await _cmpConvertirImagenesADataURL(el);
     await _cmpEsperarImagenes(el);
-    const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false});
+    const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS});
     const url=canvas.toDataURL('image/png');
     const a=document.createElement('a');
     a.href=url;a.download=`Campograma_${(eq.nom||'Equipo').replace(/\s+/g,'_')}.png`;
@@ -5456,7 +5942,7 @@ async function xPDF(){
       // aunque se vean bien en pantalla (ver _cmpConvertirImagenesADataURL).
       await _cmpConvertirImagenesADataURL(el);
       await _cmpEsperarImagenes(el);
-      const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false});
+      const canvas=await html2canvas(el,{scale:2.1,backgroundColor:'#161b22',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS});
       const{jsPDF}=window.jspdf;
       const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
       const PW=210,PH=297,iW=PW-10;
@@ -6821,6 +7307,15 @@ function guardarEConFeedback(){
 
 /* ── Campograma (plantilla visual sobre el campo) ─────────────────── */
 .campo-toolbar{ display:flex; gap:8px; flex-wrap:wrap; justify-content:center; padding:4px 0 18px; width:100%; }
+/* El panel que aloja el campograma centra su contenido con
+   align-items:center (para que la vista de plantilla vertical clásica
+   quede centrada), lo que hace que #campograma-container (sin un ancho
+   propio) se reduzca a su contenido en vez de ocupar el espacio
+   disponible — así, aunque .campo-wrap.horiz pida un max-width mucho
+   mayor, nunca llegaba a usarlo de verdad. Con width:100% aquí, el
+   contenedor sí ocupa el ancho real del panel y .campo-wrap.horiz por
+   fin puede aprovechar las pantallas anchas de escritorio. */
+#campograma-container{ width:100%; }
 
 .campo-wrap{
   width:100%; max-width:480px; margin:0 auto;
@@ -6828,6 +7323,7 @@ function guardarEConFeedback(){
   box-shadow:0 10px 30px rgba(0,0,0,.4);
   border:1px solid var(--border2);
 }
+.campo-wrap.horiz{ max-width:980px; }
 .campo-hdr{ display:flex; align-items:center; gap:12px; padding:16px 18px; }
 .campo-hdr-badge{
   width:48px; height:48px; border-radius:10px; background:rgba(255,255,255,.12);
@@ -6846,6 +7342,7 @@ function guardarEConFeedback(){
 .campo-pitch-abs{
   position:relative; width:100%; aspect-ratio:100/140; min-height:480px;
 }
+.campo-pitch-abs.horiz{ aspect-ratio:140/100; min-height:360px; }
 .campo-marcas{ position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; }
 
 /* Chip posicionado en un punto exacto del campo (x/y en % vía style inline) */
@@ -6871,6 +7368,32 @@ function guardarEConFeedback(){
   max-width:100%; overflow-wrap:break-word; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
+/* Chip agrupado: varios jugadores comparten un mismo hueco/posición (ej. 4 DC).
+   Se renderiza como una tarjeta de texto (sin foto), no arrastrable. */
+.campo-chip-grupo{
+  position:absolute; z-index:2; transform:translate(-50%,-50%);
+  display:flex; flex-direction:column; align-items:stretch;
+  /* Más compacto que en la primera versión: con huecos cercanos entre sí
+     (el portero suplente queda muy cerca de la línea defensiva, por
+     ejemplo) una tarjeta ancha se solapaba con la del hueco vecino y
+     dejaba el texto ilegible — de ahí el ancho reducido aquí. */
+  min-width:92px; max-width:152px;
+  background:rgba(13,17,23,.94); border:1.5px solid rgba(255,255,255,.55);
+  border-radius:9px; box-shadow:0 3px 12px rgba(0,0,0,.5);
+  padding:4px 6px; user-select:none;
+}
+.campo-chip-grupo-tit{
+  font-size:8px; font-weight:800; color:#fff; text-align:center;
+  letter-spacing:.4px; margin-bottom:3px; opacity:.85; text-transform:uppercase;
+}
+.campo-grupo-fila{
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:2px;
+  font-size:8.5px; font-weight:700; color:#fff; line-height:1.25;
+  padding:2px 0; border-top:1px solid rgba(255,255,255,.14);
+}
+.campo-grupo-fila:first-of-type{ border-top:none; }
+.campo-grupo-fila-larga{ font-size:7px; font-weight:600; color:rgba(255,255,255,.65); }
+
 .campo-banquillo{ padding:14px 12px 18px; border-top:1px solid var(--border2); background:rgba(0,0,0,.18); }
 .campo-banquillo-tit{ font-size:10px; font-weight:800; color:rgba(255,255,255,.6); letter-spacing:.4px; margin-bottom:10px; text-align:center; }
 .campo-banquillo-jugs{ display:flex; flex-wrap:wrap; justify-content:center; gap:12px 8px; }
@@ -6891,9 +7414,14 @@ function guardarEConFeedback(){
 
 @media(max-width:680px){
   .campo-pitch-abs{ min-height:400px; }
+  .campo-pitch-abs.horiz{ min-height:280px; }
   .campo-chip-pos{ width:50px; }
   .campo-chip-pos-av{ width:32px; height:32px; font-size:10px; }
   .campo-chip-pos-nm{ font-size:7px; }
+  .campo-chip-grupo{ min-width:76px; max-width:120px; padding:3px 4px; }
+  .campo-chip-grupo-tit{ font-size:7px; }
+  .campo-grupo-fila{ font-size:7px; }
+  .campo-grupo-fila-larga{ font-size:6px; }
   .campo-banq-chip{ width:62px; }
   .campo-banq-av{ width:36px; height:36px; font-size:10px; }
 }
