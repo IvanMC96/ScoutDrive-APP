@@ -470,13 +470,13 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .card-sponsor img{height:calc(16px * var(--patro-escala,1));max-width:calc(56px * var(--patro-escala,1));object-fit:contain;flex-shrink:0;}
 .card-sponsor-txt{font-size:10px;color:var(--gris);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
-.ficha-sponsor{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--border);
-  border-radius:20px;padding:6px 14px 6px 6px;text-decoration:none;transition:border-color .15s;
-  max-width:min(280px,100%);flex-shrink:0;}
+.ficha-sponsor{display:flex;align-items:center;gap:9px;background:var(--bg2);border:1px solid var(--border);
+  border-radius:24px;padding:9px 20px 9px 10px;text-decoration:none;transition:border-color .15s;
+  max-width:min(340px,100%);flex-shrink:0;}
 .ficha-sponsor:hover{border-color:var(--azul);}
-.ficha-sponsor-lbl{font-size:8px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
-.ficha-sponsor img{height:calc(22px * var(--patro-escala,1));max-width:calc(70px * var(--patro-escala,1));object-fit:contain;flex-shrink:0;border-radius:4px;background:var(--bg);}
-.ficha-sponsor-txt{font-size:11px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ficha-sponsor-lbl{font-size:9.5px;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;flex-shrink:0;}
+.ficha-sponsor img{height:calc(32px * var(--patro-escala,1));max-width:calc(100px * var(--patro-escala,1));object-fit:contain;flex-shrink:0;border-radius:5px;background:var(--bg);}
+.ficha-sponsor-txt{font-size:13px;color:var(--blanco);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
 /* Insignia del patrocinador — logo grande integrado en la propia fila de
    cabecera de la tarjeta (jugador o equipo), a la altura del escudo/foto,
@@ -3912,8 +3912,7 @@ function renderJ(){
     <div class="fhdr"><div class="fhdr-l">${avH}<div><div class="fnm">${eH(nom)||'Jugador'}</div><div class="fmeta"><span style="font-size:11px;color:var(--gris)">#${dor}</span><span class="badge bp">${eH(pos)}</span><span class="badge bn">${eH(nac)}</span>${edad?`<span class="badge bt">${eH(edad)} años</span>`:''}<span class="badge bt">${eH(temp)}</span></div></div></div>
     ${jSponsorH}
     <div class="fhdr-r">${escH}<div class="fclub">${eH(club)}</div><div class="fliga">${eH(temp)}</div></div></div>
-    <div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div></div>
-    <div style="display:flex;border-bottom:1px solid var(--border)"><div class="kpi" style="background:var(--bg3)"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>
+    <div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}</div>
     <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
@@ -6570,6 +6569,17 @@ function _urlDescargaDrivePartido(p){
   return id ? `https://drive.google.com/uc?export=download&id=${id}` : null;
 }
 
+// Misma lógica de descarga directa, pero para los clips de goles de
+// jugador/equipo (galería de clips), cuyo vídeo viene guardado en
+// cl.src en vez de p.urlNorm/p.urlOrig — así el modal de vídeo compartido
+// ofrece el mismo botón de descarga tanto si se abre desde un partido
+// como si se abre desde un clip de gol enlazado a Google Drive.
+function _urlDescargaDriveClip(cl){
+  if(!cl) return null;
+  const id = _idDriveDeURL(cl.src);
+  return id ? `https://drive.google.com/uc?export=download&id=${id}` : null;
+}
+
 function _setVideoModalDescarga(url){
   const btn = document.getElementById('video-modal-descarga');
   _videoModalUrlDescarga = url || null;
@@ -6592,6 +6602,11 @@ function abrirVideoModal(cl){
 
   let html = '';
   _setVideoModalExterno(null);
+  // Igual que en los vídeos de partido: solo hay descarga directa cuando
+  // el clip está alojado en Google Drive (YouTube no lo permite, y los
+  // vídeos "blob"/locales no persisten un archivo descargable en el
+  // servidor).
+  _setVideoModalDescarga(cl.srcType === 'gdrive' ? _urlDescargaDriveClip(cl) : null);
   if (cl.blobURL && cl.srcType === 'blob') {
     html = `<video controls autoplay preload="metadata"><source src="${cl.blobURL}"></video>`;
   } else if (cl.srcType === 'youtube' && cl.src) {
