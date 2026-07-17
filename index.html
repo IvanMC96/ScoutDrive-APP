@@ -346,6 +346,16 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .to-fal{background:#3a1a1a;color:var(--rojo-cl);}
 .to-rdb{background:#1a1a3a;color:var(--lila);}
 .to-pen{background:#3a3a1a;color:var(--naranja-cl);}
+/* Causas de gol encajado (registro de porteros) */
+.to-err{background:#3a1414;color:var(--rojo-cl);}
+.to-mm{background:#3a2414;color:var(--naranja-cl);}
+.to-air{background:#142a3a;color:var(--azul-cl);}
+.to-sal{background:#1a2a3a;color:var(--cian);}
+.to-cen{background:#2a1f3a;color:var(--lila);}
+.to-abpc{background:#3a2a10;color:var(--naranja-cl);}
+.to-lej{background:#241a3a;color:var(--lila);}
+.to-cont{background:#1a3a2a;color:var(--verde-cl);}
+.to-def{background:#242424;color:var(--gris);}
 .gf-row{border-left:2px solid var(--verde-dk);}
 .gc-row{border-left:2px solid var(--rojo);}
 
@@ -633,6 +643,24 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .fclips{padding:13px 15px;border-bottom:1px solid var(--border);overflow:hidden;background:rgba(0,0,0,.3);}
 .fclips-t{font-size:9px;font-weight:700;color:var(--gris);text-transform:uppercase;
   letter-spacing:.7px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;}
+/* Vídeo destacado (highlight) — pensado para que un ojeador/representante
+   lo vea nada más entrar en la ficha: banda ancha con miniatura grande a
+   la izquierda y título/temporada a la derecha, con borde dorado para
+   que destaque claramente sobre el resto de bloques. */
+.fhighlight{display:flex;align-items:stretch;gap:0;margin:0 15px 13px;border-radius:9px;overflow:hidden;
+  border:1.5px solid #d29922;background:linear-gradient(135deg,#241c0d,#1a1508);cursor:pointer;transition:transform .15s;}
+.fhighlight:hover{transform:translateY(-1px);}
+.fhighlight-thumb{position:relative;width:120px;flex-shrink:0;aspect-ratio:16/9;background:#000;overflow:hidden;}
+.fhighlight-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.fhighlight-play{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,.35);color:#fff;font-size:20px;}
+.fhighlight-meta{padding:10px 14px;display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;}
+.fhighlight-tit{font-size:12px;font-weight:800;color:#f2c94c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.fhighlight-sub{font-size:10px;color:var(--gris);}
+@media(max-width:680px){
+  .fhighlight-thumb{width:84px;}
+  .fhighlight-tit{font-size:11px;}
+}
 .perw{display:flex;align-items:flex-end;justify-content:center;gap:32px;height:95px;padding:0 14px;}
 .perc{display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end;}
 .perb{width:50px;border-radius:4px 4px 0 0;min-height:4px;}
@@ -1432,6 +1460,14 @@ body.solo-lectura .ed-panel-form {
       </div>
     </div>
     <div class="psec">
+      <div class="phdr" onclick="tog(this)">📈 Trayectoria <span class="arr">▾</span></div>
+      <div class="pbody">
+        <p style="font-size:10px;color:var(--gris)">Al empezar una temporada nueva, no hace falta crear otra ficha: archiva la actual (club, categoría, stats de ese curso) y deja esta misma ficha lista para la siguiente, con el mismo nombre, foto, nota técnica, vídeos y perfil de siempre.</p>
+        <button class="badd" onclick="jNuevaTemporada()">➕ Nueva Temporada</button>
+        <div id="j-trayectoria-form" style="margin-top:10px;overflow-x:auto"></div>
+      </div>
+    </div>
+    <div class="psec">
       <div class="phdr" onclick="tog(this)">🖼️ Foto y Escudo <span class="arr">▾</span></div>
       <div class="pbody">
         <div class="fg">
@@ -1463,18 +1499,18 @@ body.solo-lectura .ed-panel-form {
     <div class="psec">
       <div class="phdr" onclick="tog(this)">📊 Estadísticas <span class="arr">▾</span></div>
       <div class="pbody">
-        <div class="fg3">
+        <div class="fg3" id="stats-row-campo">
           <div class="fg"><label>Goles</label><input class="nbig" id="kg" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>Asist.</label><input class="nbig" id="ka" type="number" value="0" oninput="renderJ()"></div>
-          <div class="fg"><label>Partidos</label><input class="nbig" id="kp" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>ABP goles</label><input class="nbig" id="kab" type="number" value="0" oninput="renderJ()"></div>
+        </div>
+        <div class="fg2" id="stats-row-portero" style="display:none">
+          <div class="fg"><label>Porterías a cero</label><input class="nbig" id="kpz" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>Goles recibidos</label><input class="nbig" id="kgr" type="number" value="0" oninput="renderJ()"></div>
         </div>
         <div class="fg2">
-          <div class="fg"><label>ABP goles</label><input class="nbig" id="kab" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>Partidos</label><input class="nbig" id="kp" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>% Min. jugados <span style="opacity:.6;font-weight:400">(auto)</span></label><input class="nbig" id="kf" type="number" value="0" readonly style="opacity:.75;cursor:not-allowed"></div>
-        </div>
-        <div class="fg">
-          <label>Porterías a cero (solo porteros)</label>
-          <input class="nbig" id="kpz" type="number" value="0" oninput="renderJ()">
         </div>
         <div class="fg">
           <label>Minutos jugados (total)</label>
@@ -1482,7 +1518,7 @@ body.solo-lectura .ed-panel-form {
         </div>
       </div>
     </div>
-    <div class="psec">
+    <div class="psec" id="psec-origen-zonas">
       <div class="phdr" onclick="tog(this)">⚡ Origen y Zonas <span class="arr">▾</span></div>
       <div class="pbody">
         <label>Ataque Organizado</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="oatq" min="0" max="40" value="0" oninput="sv('oatq_v',this.value);renderJ()"><span id="oatq_v" style="font-size:10px;color:var(--azul-cl);font-weight:800;width:16px">0</span></div>
@@ -1504,6 +1540,21 @@ body.solo-lectura .ed-panel-form {
         </div>
       </div>
     </div>
+    <div class="psec" id="psec-evaluacion-portero" style="display:none">
+      <div class="phdr" onclick="tog(this)">🧤 Evaluación de Portero <span class="arr">▾</span></div>
+      <div class="pbody">
+        <p style="font-size:10px;color:var(--gris)">Valoración del cuerpo técnico de 0 a 100 en cada faceta del puesto</p>
+        <div id="j-gk-sliders"></div>
+      </div>
+    </div>
+    <div class="psec" id="psec-goles-encajados" style="display:none">
+      <div class="phdr" onclick="tog(this)">🥅 Goles Encajados <span class="arr">▾</span></div>
+      <div class="pbody">
+        <p style="font-size:10px;color:var(--gris)">Registra cómo encaja los goles para ver en qué facetas necesita mejorar</p>
+        <div id="j-goles-encajados-list"></div>
+        <button class="badd" onclick="addJGolEncajado()" style="border-color:var(--rojo-cl);color:var(--rojo-cl)">+ Añadir gol encajado</button>
+      </div>
+    </div>
     <div class="psec">
       <div class="phdr" onclick="tog(this)">🔥 Forma Reciente <span class="arr">▾</span></div>
       <div class="pbody">
@@ -1512,7 +1563,7 @@ body.solo-lectura .ed-panel-form {
         <div class="chip-leg"><span><span class="dot" style="background:var(--verde-dk)"></span>Gol</span><span><span class="dot" style="background:#78350f"></span>Asist.</span><span><span class="dot" style="background:var(--border2)"></span>Sin</span></div>
       </div>
     </div>
-    <div class="psec">
+    <div class="psec" id="psec-registro-goles">
       <div class="phdr" onclick="tog(this)">📋 Registro de Goles <span class="arr">▾</span></div>
       <div class="pbody">
         <p style="font-size:10px;color:var(--gris)">Taxonomía táctica completa con Origen, Subtipo ABP, Fase, Zona y Cuerpo</p>
@@ -1520,7 +1571,7 @@ body.solo-lectura .ed-panel-form {
         <button class="badd" onclick="addJGol()">+ Añadir gol</button>
       </div>
     </div>
-    <div class="psec">
+    <div class="psec" id="psec-perfil-jugador">
       <div class="phdr" onclick="tog(this)">🕸 Perfil Jugador <span class="arr">▾</span></div>
       <div class="pbody" id="j-radar-sliders"></div>
     </div>
@@ -1530,6 +1581,13 @@ body.solo-lectura .ed-panel-form {
         <div style="background:#0d1b2b;border:1px solid var(--azul-dk);border-radius:7px;padding:8px 10px;font-size:10px;color:var(--azul-cl);line-height:1.6">💾 Las portadas se guardan en la BD. Los vídeos (YouTube/Drive) se recuperan solos. Archivos locales hay que volver a subirlos.</div>
         <div id="j-clips-list"></div>
         <button class="badd" onclick="addJClip()">+ Añadir clip</button>
+      </div>
+    </div>
+    <div class="psec">
+      <div class="phdr" onclick="tog(this)">🌟 Vídeo Destacado (Highlight) <span class="arr">▾</span></div>
+      <div class="pbody">
+        <p style="font-size:10px;color:var(--gris)">Un único vídeo resumen con sus mejores jugadas — de cualquier temporada — para que el jugador destaque de un vistazo ante ojeadores y representantes.</p>
+        <div id="j-highlight-card"></div>
       </div>
     </div>
     <div class="psec">
@@ -2237,6 +2295,17 @@ const FASE={'Ataque Organizado':'Posesión desarrollada','Juego Directo':'Pelota
 const ZONAS=['Área Grande','Área Pequeña','Fuera del Área','Penalti'];
 const CUERPOS=['Pie Derecho','Pie Izquierdo','Cabeza','Otro'];
 const OCSS={'Ataque Organizado':'to-atq','Juego Directo':'to-jd','Centro Lateral':'to-cl','Finalización Frontal':'to-ff','Transición Ofensiva':'to-tr','ABP Ofensiva':'to-abp','Corner A Favor':'to-cor','Falta Ofensiva':'to-fal','RDB Ofensivo':'to-rdb','Penalti':'to-pen'};
+
+// Taxonomía de "cómo se produce" un gol encajado, pensada para que el
+// cuerpo técnico vea patrones de mejora del portero (si se le escapa
+// mucho por arriba, en el mano a mano, etc.) — cada causa mapea a una de
+// las facetas de jGKEjes cuando tiene sentido, para que quede claro qué
+// evaluar/entrenar.
+const CAUSAS_GC=['Error individual','Mano a mano perdido','Salida aérea fallida','Salida del área fallida',
+  'Centro lateral no despejado','Balón parado (córner/falta)','Tiro lejano','Contragolpe','Defensa del equipo (no evitable)'];
+const OCSS_GC={'Error individual':'to-err','Mano a mano perdido':'to-mm','Salida aérea fallida':'to-air',
+  'Salida del área fallida':'to-sal','Centro lateral no despejado':'to-cen','Balón parado (córner/falta)':'to-abpc',
+  'Tiro lejano':'to-lej','Contragolpe':'to-cont','Defensa del equipo (no evitable)':'to-def'};
 
 // ══════════════════════════════════════════════════════════════════
 // BD KEYS + CONFIG
@@ -3134,6 +3203,228 @@ function _autoRadarDesdeStats(){
   for(let i=0;i<J_RADAR_AUTO_N;i++) sv('jrv'+i,jRadar[i]);
 }
 
+// ── PORTEROS ──────────────────────────────────────────────────────
+// Un portero no se valora igual que un jugador de campo: los goles que
+// marca (y cuándo) no dicen nada de si es buen portero, así que en vez
+// de eso se evalúan a mano (0-100, como el resto de sliders del perfil)
+// las facetas propias del puesto. Todo esto vive en su propio array
+// jGK, independiente de jRadar, y solo se muestra/edita cuando la
+// posición del jugador es "Portero" — ver _esPortero()/renderJ().
+let jGK=[50,50,50,50,50,50,50,50,50,50,50];
+const jGKEjes=['Salidas aéreas','Salidas del área','Mano a mano','Centros laterales',
+  'ABP (córner/falta)','Agilidad bajo palos','Colocación bajo palos',
+  'Pies: corto','Pies: largo','Pies: volea','Precisión de pase'];
+
+function _esPortero(){ return (G('jpos')||'')==='Portero'; }
+
+function buildJGK(){
+  const c=document.getElementById('j-gk-sliders');if(!c)return;c.innerHTML='';
+  jGKEjes.forEach((e,i)=>{
+    const d=document.createElement('div');d.className='rrow';
+    d.innerHTML=`<span class="rlbl">${e}</span><input type="range" min="0" max="100" value="${jGK[i]}" oninput="jGK[${i}]=+this.value;sv('jgv${i}',this.value);renderJ()"><span class="rval" id="jgv${i}">${jGK[i]}</span>`;
+    c.appendChild(d);
+  });
+}
+
+// ── GOLES ENCAJADOS (solo porteros) ────────────────────────────────
+// Igual que el Registro de Goles de un jugador de campo, pero registrando
+// CÓMO encaja los goles el portero (mano a mano, salida aérea, ABP...) en
+// vez de cómo los marca — así el cuerpo técnico ve de un vistazo en qué
+// facetas concretas necesita mejorar.
+let jGolesEncajados=[];
+function buildJGolesEncajados(){
+  const c=document.getElementById('j-goles-encajados-list');if(!c)return;c.innerHTML='';
+  jGolesEncajados.forEach((g,i)=>{
+    const d=document.createElement('div');d.className='gr';d.style.borderLeft='2px solid var(--rojo)';
+    d.innerHTML=`<div class="g1">
+        <input type="number" value="${g.min??''}" placeholder="min" style="text-align:center" oninput="jGolesEncajados[${i}].min=this.value?+this.value:null;renderJ()">
+        <input type="text" value="${eH(g.rival||'')}" placeholder="Rival" oninput="jGolesEncajados[${i}].rival=this.value;renderJ()">
+        <button class="brm2" onclick="jGolesEncajados.splice(${i},1);buildJGolesEncajados();renderJ()">✕</button>
+      </div>
+      <div class="fg"><label style="font-size:9px">Cómo se produjo</label>
+        <select onchange="jGolesEncajados[${i}].causa=this.value;renderJ()">
+          ${CAUSAS_GC.map(c2=>`<option${g.causa===c2?' selected':''}>${c2}</option>`).join('')}
+        </select>
+      </div>
+      <div class="fg"><label style="font-size:9px">Descripción</label>
+        <input type="text" value="${eH(g.desc||'')}" placeholder="Breve descripción..." oninput="jGolesEncajados[${i}].desc=this.value;renderJ()">
+      </div>`;
+    c.appendChild(d);
+  });
+}
+function addJGolEncajado(){jGolesEncajados.push({min:0,rival:'',causa:CAUSAS_GC[0],desc:''});buildJGolesEncajados();renderJ();}
+
+// ── VÍDEO DESTACADO / HIGHLIGHT (todos los jugadores) ──────────────
+// A diferencia de la galería de Clips de Goles (que solo tiene sentido
+// para remates concretos), este es UN único vídeo resumen de las mejores
+// jugadas del jugador —de cualquier temporada, no solo la actual— pensado
+// para que destaque de un vistazo ante ojeadores/representantes. Reutiliza
+// el mismo modal de vídeo compartido (abrirVideoModal) que ya usan los
+// clips de gol y los partidos, así hereda gratis el botón de pantalla
+// completa y de descarga (si está en Drive).
+let jHighlight={titulo:'',temporada:'',srcType:'',src:'',portada:null,blobURL:null};
+
+function buildJHighlight(){
+  const c=document.getElementById('j-highlight-card');if(!c)return;c.innerHTML='';
+  const h=jHighlight||{};
+  const hasVideo=(h.blobURL&&h.srcType==='blob')||(h.src&&(h.srcType==='youtube'||h.srcType==='gdrive'||h.srcType==='direct'))||h.srcType==='blob_local';
+  let playerH='';
+  if(h.blobURL&&h.srcType==='blob') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.blobURL}"></video>`;
+  else if(h.src&&h.srcType==='youtube'){const yid=getYTId(h.src);playerH=yid?`<iframe src="https://www.youtube.com/embed/${yid}?rel=0" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`:`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--gris2);font-size:11px">URL inválida</div>`;}
+  else if(h.src&&h.srcType==='gdrive') playerH=`<iframe src="${h.src}" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
+  else if(h.src&&h.srcType==='direct') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.src}"></video>`;
+  else if(h.srcType==='blob_local') playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--naranja-cl);text-align:center;padding:0 10px"><span style="font-size:22px">⚠️</span><p style="font-size:10px">Archivo local: vuelve a subirlo</p></div>`;
+  else playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--gris2)"><span style="font-size:22px">🌟</span><p style="font-size:10px;text-align:center;padding:0 10px">Sube archivo o pega URL</p></div>`;
+  let stH=`<span class="clip-st cs-inf">Sin fuente</span>`;
+  if(h.srcType==='blob')stH=`<span class="clip-st cs-ok">✓ Archivo cargado</span>`;
+  else if(h.srcType==='youtube')stH=`<span class="clip-st cs-ok">✓ YouTube</span>`;
+  else if(h.srcType==='gdrive')stH=`<span class="clip-st cs-ok">✓ Google Drive</span>`;
+  else if(h.srcType==='direct')stH=`<span class="clip-st cs-ok">✓ URL directa</span>`;
+  else if(h.srcType==='blob_local')stH=`<span class="clip-st cs-warn">⚠️ Vuelve a subir el archivo</span>`;
+  const portH=h.portada
+    ?`<div class="clip-portada-zona has-portada" id="jpz-highlight"><button class="cp-rm" onclick="rmJHighlightPortada(event)">✕</button><img src="${h.portada}" class="clip-portada-img"><div class="clip-portada-overlay"><span>📷 Cambiar</span></div><input type="file" accept="image/*" style="display:none" id="jpf-highlight" onchange="loadJHighlightPortada(event)"></div>`
+    :`<div class="clip-portada-zona" id="jpz-highlight" onclick="document.getElementById('jpf-highlight').click()"><div class="clip-portada-empty"><span>📸</span><p><strong style="color:var(--azul-cl)">Subir portada</strong><br>Sale en la ficha y el PDF</p></div><input type="file" accept="image/*" style="display:none" id="jpf-highlight" onchange="loadJHighlightPortada(event)"></div>`;
+  const div=document.createElement('div');div.className='clip-card';
+  div.innerHTML=`<div class="clip-top"><div class="clip-num">🌟</div><input class="clip-tit-inp" placeholder="Título (ej. Mejores jugadas 2023-24)" value="${eH(h.titulo)}" oninput="jHighlight.titulo=this.value;renderJ()"><button class="brm2" onclick="limpiarJHighlight()">✕</button></div>
+  <div class="clip-body">${portH}<div class="clip-player" style="position:relative">${playerH}</div>
+  <div>${stH}</div>
+  <div class="fg"><label style="font-size:9px">Temporada / época (opcional)</label><input type="text" placeholder="ej. 2023-24 o Selección Sub-19" value="${eH(h.temporada||'')}" oninput="jHighlight.temporada=this.value;renderJ()"></div>
+  <label class="clip-file-lbl"><input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" onchange="loadJHighlightVideoFile(event)">📁 Seleccionar vídeo MP4/MOV/WebM</label>
+  <div class="clip-url-row"><input type="text" id="jhurl" placeholder="URL YouTube / Drive / directa" value="${eH(h.src&&h.srcType!=='blob'?h.src:'')}"><button class="btn b-azul b-sm" onclick="applyJHighlightURL()">Cargar</button></div>
+  ${h.srcType==='blob_local'?`<p style="font-size:10px;color:var(--naranja-cl)">⚠️ Archivo local: vuelve a subirlo. La portada sí está guardada.</p>`:''}
+  </div>`;
+  c.appendChild(div);
+  if(h.portada){const pz=div.querySelector('.clip-portada-zona');if(pz)pz.onclick=()=>document.getElementById('jpf-highlight').click();}
+}
+async function loadJHighlightPortada(e){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl)return;jHighlight.portada=dataUrl;buildJHighlight();renderJ();}
+function rmJHighlightPortada(e){e.stopPropagation();jHighlight.portada=null;buildJHighlight();renderJ();}
+function loadJHighlightVideoFile(e){const f=e.target.files[0];if(!f)return;if(jHighlight.blobURL)URL.revokeObjectURL(jHighlight.blobURL);const url=URL.createObjectURL(f);jHighlight.blobURL=url;jHighlight.src=url;jHighlight.srcType='blob';if(!jHighlight.titulo)jHighlight.titulo=f.name.replace(/\.[^.]+$/,'');buildJHighlight();renderJ();toast('🌟 Vídeo destacado cargado');}
+function applyJHighlightURL(){let u=(document.getElementById('jhurl')||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jHighlight.srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jHighlight.srcType='youtube';else jHighlight.srcType='direct';if(jHighlight.blobURL)URL.revokeObjectURL(jHighlight.blobURL);jHighlight.blobURL=null;jHighlight.src=u;buildJHighlight();renderJ();}
+function limpiarJHighlight(){if(jHighlight.blobURL)URL.revokeObjectURL(jHighlight.blobURL);jHighlight={titulo:'',temporada:'',srcType:'',src:'',portada:null,blobURL:null};buildJHighlight();renderJ();}
+function jHighlightAbrirModal(){if(!jHighlight||(!jHighlight.src&&!jHighlight.blobURL))return;abrirVideoModal(jHighlight);}
+
+// ── TRAYECTORIA (histórico de temporadas) ──────────────────────────
+// Antes, para llevar a un jugador de una temporada a la siguiente había
+// que crear una ficha nueva desde cero (duplicando nombre/foto/nota/etc.)
+// o pisar los datos de la temporada anterior sin dejar rastro. Ahora
+// "➕ Nueva Temporada" archiva un snapshot de la temporada actual (club,
+// categoría/liga en ESE momento, posición, dorsal, stats, goles...) dentro
+// de jTemporadas, y deja los campos "en vivo" del formulario listos para
+// rellenar la temporada nueva (stats a cero, club/posición/dorsal como
+// punto de partida editable por si ha cambiado de equipo) — todo bajo el
+// mismo jId, así que sigue siendo LA MISMA ficha de jugador de siempre
+// (misma foto, mismo nombre, mismo vídeo destacado, mismos clips...).
+// Lo que SÍ se archiva por temporada son los datos que cambian curso a
+// curso; lo que no se archiva (perfil/radar, evaluación de portero, nota
+// técnica, clips, foto) se entiende como un rasgo del jugador que se
+// sigue viendo/editando igual, no algo que "empiece de cero" cada año.
+let jTemporadas=[];
+
+// Sugiere la temporada siguiente a partir de la actual (ej. "2025-26" ->
+// "2026-27"); si el texto no tiene un año reconocible, no sugiere nada y
+// deja el campo vacío para que se rellene a mano.
+function _siguienteTemporada(temp){
+  const m=(temp||'').match(/(\d{4})/);
+  if(!m) return '';
+  const y=parseInt(m[1],10)+1;
+  return `${y}-${String((y+1)%100).padStart(2,'0')}`;
+}
+
+// Snapshot de "temporada actual" leído directamente del formulario — se
+// usa tanto para archivar (jNuevaTemporada) como para pintar la fila de
+// la temporada en curso dentro del resumen de trayectoria.
+function _temporadaActualSnapshot(){
+  const club=G('jclub');
+  return {
+    temp:G('jtemp'), club, liga:ligaDeEquipoPorNombre(club)||'', categoria:categoriaDeEquipoPorNombre(club)||'', grupo:grupoDeEquipoPorNombre(club)||'',
+    pos:G('jpos'), dorsal:G('jdor'), edad:G('jedad'),
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
+  };
+}
+
+function jNuevaTemporada(){
+  if(!jId){ toast('Guarda el jugador antes de añadir una temporada nueva',true); return; }
+  const tempActual=G('jtemp')||'(sin temporada)';
+  askDel(`¿Archivar la temporada ${tempActual} y empezar una nueva para ${(G('jnom')+' '+G('jape')).trim()||'este jugador'}? El club, la posición y las estadísticas quedan listas para editar en la temporada nueva; el resto (foto, nota técnica, vídeos, perfil) se mantiene igual.`,()=>{
+    jTemporadas.push(_temporadaActualSnapshot());
+    // Stats/goles/forma de la temporada se reinician — son contadores de
+    // ESTA temporada, no tendría sentido que la nueva empezara ya con los
+    // goles de la anterior.
+    ['kg','ka','kab','kpz','kgr','kmj','kp'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+    { const e=document.getElementById('kf'); if(e) e.value=0; }
+    jForma=Array(10).fill('nada');jGoles=[];jGolesEncajados=[];
+    buildJForma();buildJGoles();buildJGolesEncajados();
+    // Club/posición/dorsal se DEJAN COMO ESTABAN (punto de partida editable):
+    // la mayoría de jugadores siguen en el mismo club, así que no tiene
+    // sentido vaciarlos — si se ha ido a otro equipo, se cambia a mano.
+    const nuevaTemp=_siguienteTemporada(G('jtemp'));
+    if(nuevaTemp) document.getElementById('jtemp').value=nuevaTemp;
+    const edadNum=parseInt(G('jedad'),10);
+    if(!isNaN(edadNum)) document.getElementById('jedad').value=edadNum+1;
+    renderJ();
+    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}`);
+  });
+}
+
+// Borra una temporada archivada del histórico (por si se archivó por
+// error) — la temporada EN CURSO no se puede borrar desde aquí, solo se
+// sustituye archivando otra vez.
+function jBorrarTemporada(i){
+  askDel(`¿Borrar del histórico la temporada ${jTemporadas[i]?.temp||''}? Esta acción no se puede deshacer.`,()=>{
+    jTemporadas.splice(i,1);
+    renderJ();
+  });
+}
+
+// Construye la tabla de trayectoria (histórico + temporada en curso,
+// ordenadas de más antigua a más reciente) — se usa tanto en el panel de
+// edición como en la ficha/PDF, con la única diferencia de si se muestra
+// el botón de borrar por fila (edición) o no (ficha/PDF).
+function _trayectoriaFilas(editable){
+  const actual={...(_temporadaActualSnapshot()),_actual:true};
+  const todas=[...jTemporadas.map((t,i)=>({...t,_i:i})),actual];
+  // Orden cronológico por el primer año de 4 dígitos que aparezca en el
+  // texto de la temporada; si no se puede leer un año, se manda al final
+  // en vez de romper el orden del resto.
+  const anio=t=>{const m=(t.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):9999;};
+  todas.sort((a,b)=>anio(a)-anio(b));
+  return todas.map(t=>{
+    const g=t.stats?.g||0,a=t.stats?.a||0,p=t.stats?.p||0,f=t.stats?.f||0;
+    const golesRow=(t.pos==='Portero')?`${t.stats?.pz||0} portería${(t.stats?.pz||0)===1?'':'s'} a 0`:`${g} goles · ${a} asist.`;
+    return `<tr${t._actual?' style="background:rgba(47,129,247,.08)"':''}>
+      <td class="tmin">${eH(t.temp)||'—'}${t._actual?' <span class="tbdg to-jd" style="margin-left:4px">actual</span>':''}</td>
+      <td>${eH(t.club)||'—'}</td>
+      <td style="font-size:9px;color:var(--gris2)">${eH(t.categoria||t.liga||'—')}</td>
+      <td style="font-size:9px;color:var(--gris)">${eH(t.pos)||'—'}</td>
+      <td style="text-align:center">${p}</td>
+      <td style="font-size:10px">${golesRow}</td>
+      <td style="text-align:center">${f}%</td>
+      ${editable?`<td>${t._actual?'':`<button class="brm2" onclick="jBorrarTemporada(${t._i})">✕</button>`}</td>`:''}
+    </tr>`;
+  }).join('');
+}
+
+function _trayectoriaTablaHTML(editable){
+  const filas=_trayectoriaFilas(editable);
+  return `<table class="tgj"><thead><tr><th>Temp.</th><th>Club</th><th>Categoría</th><th>Pos.</th><th>PJ</th><th>Producción</th><th>%Min</th>${editable?'<th></th>':''}</tr></thead><tbody>${filas}</tbody></table>`;
+}
+
+// Mini gráfico de progresión: barras horizontales con los goles (o, si es
+// portero, las porterías a cero) de cada temporada — para que "si voy
+// creciendo con temporadas" se vea de un vistazo, no solo en la tabla.
+function _trayectoriaProgresoHTML(){
+  const actual={...(_temporadaActualSnapshot()),_actual:true};
+  const todas=[...jTemporadas,actual];
+  const anio=t=>{const m=(t.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):9999;};
+  todas.sort((a,b)=>anio(a)-anio(b));
+  const esGK=_esPortero();
+  const valores=todas.map(t=>esGK?(t.stats?.pz||0):(t.stats?.g||0));
+  const mx=Math.max(...valores,1);
+  const etiqueta=esGK?'Porterías a cero':'Goles';
+  return todas.map((t,i)=>barra(`${eH(t.temp)||'—'}${t._actual?' (actual)':''}`,valores[i],mx,'#2f81f7')).join('')
+    +`<p style="font-size:9px;color:var(--gris2);margin-top:6px">Progresión de "${etiqueta}" por temporada</p>`;
+}
+
 // ── Selección para comparar varios jugadores a la vez ──────────────
 let jComparar=new Set();
 
@@ -3702,7 +3993,7 @@ async function xComparativaPDF(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','kab','kf','kpz','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','kab','kf','kpz','kgr','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   poblarDatalistTemporadasJugador();
@@ -3710,10 +4001,11 @@ function nuevoJ(){
   document.getElementById('jdor').value='9';
   document.getElementById('javcolor').value='#2f81f7';
   document.getElementById('javcolor-hex').value='';
-  jForma=Array(10).fill('nada');jGoles=[];jClips=[];jRadar=Array(jRadarEjes.length).fill(50);
+  jForma=Array(10).fill('nada');jGoles=[];jClips=[];jRadar=Array(jRadarEjes.length).fill(50);jGK=Array(jGKEjes.length).fill(50);
+  jGolesEncajados=[];jHighlight={titulo:'',temporada:'',srcType:'',src:'',portada:null,blobURL:null};jTemporadas=[];
   imgStore.jfoto=null;imgStore.jesc=null;jClipCnt=0;
   uzZone('jfoto',null);uzZone('jesc',null);
-  buildJForma();buildJGoles();buildJRadar();buildJClips();
+  buildJForma();buildJGoles();buildJRadar();buildJGK();buildJGolesEncajados();buildJClips();buildJHighlight();
   navTo('jugador-ed');renderJ();
 }
 
@@ -3725,7 +4017,7 @@ function editJ(id){
   poblarDatalistTemporadasJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kmj',j.stats?.min);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
   S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
   S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
@@ -3739,10 +4031,15 @@ function editJ(id){
   jGoles=[...(j.goles||[])];
   jRadar=[...(j.radar||[])];
   while(jRadar.length<jRadarEjes.length) jRadar.push(50); // compatibilidad con fichas guardadas antes de añadir el eje nuevo
+  jGK=[...(j.gk||[])];
+  while(jGK.length<jGKEjes.length) jGK.push(50); // compatibilidad con fichas guardadas antes de añadir la evaluación de portero
+  jGolesEncajados=(j.golesEncajados||[]).map(g=>({...g}));
+  jHighlight=j.highlight?{...j.highlight,blobURL:null}:{titulo:'',temporada:'',srcType:'',src:'',portada:null,blobURL:null};
+  jTemporadas=(j.temporadas||[]).map(t=>({...t}));
   imgStore.jfoto=j.imgJug||null;imgStore.jesc=j.imgEsc||null;
   jClips=(j.clips||[]).map(c=>({...c,blobURL:null}));jClipCnt=jClips.length;
   uzZone('jfoto',imgStore.jfoto);uzZone('jesc',imgStore.jesc);
-  buildJForma();buildJGoles();buildJRadar();buildJClips();
+  buildJForma();buildJGoles();buildJRadar();buildJGK();buildJGolesEncajados();buildJClips();buildJHighlight();
   navTo('jugador-ed');renderJ();
 }
 
@@ -3751,15 +4048,19 @@ function guardarJ(){
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
-    forma:[...jForma],goles:[...jGoles],radar:[...jRadar],nota:G('jnota'),
+    forma:[...jForma],goles:[...jGoles],radar:[...jRadar],gk:[...jGK],golesEncajados:[...jGolesEncajados],nota:G('jnota'),
     imgJug:imgStore.jfoto||null,imgEsc:imgStore.jesc||null,
     clips:jClips.map(c=>({id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
       srcType:c.srcType==='blob'?'blob_local':c.srcType,
       src:c.srcType==='blob'?'':c.src,portada:c.portada||null})),
+    highlight:{titulo:jHighlight.titulo||'',temporada:jHighlight.temporada||'',
+      srcType:jHighlight.srcType==='blob'?'blob_local':(jHighlight.srcType||''),
+      src:jHighlight.srcType==='blob'?'':(jHighlight.src||''),portada:jHighlight.portada||null},
+    temporadas:[...jTemporadas],
     fecha:new Date().toLocaleDateString('es-ES')};
   const idx=jDB.findIndex(x=>x.id===id);
   if(idx>=0)jDB[idx]=j;else jDB.unshift(j);
@@ -3936,10 +4237,38 @@ function radarSVG(vals,labels,sz=185){
 function renderJ(){
   const nom=(G('jnom')+' '+G('jape')).trim(),dor=G('jdor'),pos=G('jpos'),nac=G('jnac'),temp=G('jtemp'),club=G('jclub'),edad=G('jedad');
   const[kg,ka,kp,kab,kmj]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj')];
+  const[kpz,kgr]=[GN('kpz'),GN('kgr')];
   const kf=pctMinutosJugados(kmj,kp);
   { const e=document.getElementById('kf'); if(e) e.value=kf; }
+  // Un portero se evalúa con datos totalmente distintos a un jugador de
+  // campo (porterías a cero en vez de goles marcados, facetas propias del
+  // puesto en vez de origen táctico de gol...), así que en cuanto la
+  // Posición pasa a "Portero" (o viceversa) tanto el formulario de edición
+  // como la ficha mostrada/exportada cambian al instante — esto se llama
+  // en cada pulsación/cambio del formulario (igual que el resto de
+  // renderJ()), así que no hace falta guardar para verlo.
+  const esGK=_esPortero();
+  const secCampo=document.getElementById('stats-row-campo'), secPortero=document.getElementById('stats-row-portero');
+  if(secCampo) secCampo.style.display=esGK?'none':'';
+  if(secPortero) secPortero.style.display=esGK?'':'none';
+  const secOrigZonas=document.getElementById('psec-origen-zonas');
+  if(secOrigZonas) secOrigZonas.style.display=esGK?'none':'';
+  const secEvalPort=document.getElementById('psec-evaluacion-portero');
+  if(secEvalPort) secEvalPort.style.display=esGK?'':'none';
+  const secRegGoles=document.getElementById('psec-registro-goles');
+  if(secRegGoles) secRegGoles.style.display=esGK?'none':'';
+  const secPerfilJ=document.getElementById('psec-perfil-jugador');
+  if(secPerfilJ) secPerfilJ.style.display=esGK?'none':'';
+  const secGolesEnc=document.getElementById('psec-goles-encajados');
+  if(secGolesEnc) secGolesEnc.style.display=esGK?'':'none';
+  // Trayectoria (histórico de temporadas): la tabla editable (con botón de
+  // borrar por fila) se pinta siempre en el formulario, tenga o no
+  // temporadas archivadas todavía — así el usuario ve de entrada su
+  // temporada actual ahí y entiende qué va a ir creciendo con "+ Nueva
+  // Temporada".
+  { const trForm=document.getElementById('j-trayectoria-form'); if(trForm) trForm.innerHTML=_trayectoriaTablaHTML(true); }
   _autoRadarDesdeStats();
-  const kga=kg+ka,kgpj=kp>0?(kg/kp).toFixed(1):'0.0';
+  const kga=kg+ka,kgpj=kp>0?(kg/kp).toFixed(1):'0.0',kgrpj=kp>0?(kgr/kp).toFixed(1):'0.0';
   const[oA,oAb,oCl,oJd]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd')];const oMx=Math.max(oA,oAb,oCl,oJd,1);
   const[zA,zAp]=[GN('zag'),GN('zap')];const zMx=Math.max(zA,zAp,1);
   const[cPd,cCab,cPi]=[GN('cpd'),GN('ccab'),GN('cpi')];const cMx=Math.max(cPd,cCab,cPi,1);
@@ -3950,6 +4279,20 @@ function renderJ(){
     :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Origen</th><th>Sub.</th><th>Fase</th><th>Zona</th><th>Cuerpo</th></tr></thead><tbody>
     ${jGoles.slice(0,10).map(gl=>{const isA=gl.origen==='ABP Ofensiva';const oc=OCSS[isA&&gl.subtipo?gl.subtipo:gl.origen]||'to-atq';return `<tr><td class="tmin">m.${gl.min}</td><td>${eH(gl.rival)||'—'}</td><td><span class="tbdg ${OCSS[gl.origen]||'to-atq'}">${gl.origen}</span></td><td>${isA&&gl.subtipo?`<span class="tbdg ${oc}">${gl.subtipo}</span>`:'—'}</td><td style="font-size:9px;color:var(--gris2)">${eH(gl.fase||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.zona||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.cuerpo||'—')}</td></tr>`;}).join('')}
     </tbody></table>`;
+  // Goles encajados (solo porteros) — misma idea que golesH pero registrando
+  // la CAUSA de cada gol recibido en vez del origen de un remate propio, así
+  // el bloque deja ver de un vistazo en qué facetas concretas mejorar.
+  const golesEncH=jGolesEncajados.length===0?'<p style="font-size:10px;color:var(--gris)">Sin goles encajados registrados</p>'
+    :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Causa</th><th>Descripción</th></tr></thead><tbody>
+    ${jGolesEncajados.slice(0,10).map(g=>`<tr><td class="tmin">${g.min!=null?'m.'+g.min:'—'}</td><td>${eH(g.rival)||'—'}</td><td><span class="tbdg ${OCSS_GC[g.causa]||'to-def'}">${eH(g.causa||'—')}</span></td><td style="font-size:9px;color:var(--gris2)">${eH(g.desc||'—')}</td></tr>`).join('')}
+    </tbody></table>`;
+  // Vídeo destacado (highlight) — igual para porteros que para jugadores de
+  // campo, solo se pinta si hay algo cargado (archivo/URL).
+  const hlHasVideo=jHighlight&&((jHighlight.blobURL&&jHighlight.srcType==='blob')||(jHighlight.src&&(jHighlight.srcType==='youtube'||jHighlight.srcType==='gdrive'||jHighlight.srcType==='direct'))||jHighlight.srcType==='blob_local');
+  const highlightH=hlHasVideo?`<div class="fhighlight" onclick="jHighlightAbrirModal()">
+    <div class="fhighlight-thumb">${jHighlight.portada?`<img src="${jHighlight.portada}">`:''}<div class="fhighlight-play">▶</div></div>
+    <div class="fhighlight-meta"><div class="fhighlight-tit">🌟 ${eH(jHighlight.titulo)||'Vídeo destacado'}</div><div class="fhighlight-sub">${eH(jHighlight.temporada)||'Mejores jugadas'}</div></div>
+  </div>`:'';
   const avColor=G('javcolor-hex').trim()||colorDeEquipoPorNombre(club)||'#2f81f7';
   const avH=imgStore.jfoto?`<div class="fav" style="background:${eH(avColor)}"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
   // Patrocinio del club: se incrusta dentro de la propia ficha (no solo en
@@ -3976,19 +4319,52 @@ function renderJ(){
     clipsH=`<div class="fclips"><div class="fclips-t"><span>□ Galería de Clips</span><span style="background:var(--azul-dk);color:#fff;font-size:9px;padding:2px 8px;border-radius:8px">${jClips.length} clips</span></div><div class="clips-grid">${cards}</div></div>`;
   }
   const brandN=cfg.nombre||'Scoutdrive';
+  // KPIs y bloque central: un portero no se juzga por goles marcados, así
+  // que su fila de KPIs y el bloque de "perfil" que sigue son totalmente
+  // distintos a los de un jugador de campo — ver _esPortero() más arriba.
+  const kpisH=esGK
+    ? `<div class="fkpis" style="grid-template-columns:repeat(5,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
+    : `<div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
+  // Bloque táctico (Origen/Zona/Goles por periodo/Registro de goles) —
+  // solo tiene sentido para un jugador de campo, así que no se muestra
+  // para porteros.
+  const bloqueTacticoH=`<div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}</div>
+    <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
+    <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
+    <div class="fblk" style="overflow-x:auto"><div class="fblkt">Registro Goles · Taxonomía Táctica</div>${golesH}</div></div>`;
+  // Para porteros, en ese mismo hueco (donde iría el bloque táctico de un
+  // jugador de campo) se muestra en su lugar el registro de goles
+  // encajados — mismo objetivo (ver patrones) pero desde la portería.
+  const bloqueGolesEncH=`<div class="fg2b"><div class="fblk" style="overflow-x:auto;grid-column:1/-1"><div class="fblkt">🥅 Goles Encajados · Cómo se producen</div>${golesEncH}</div></div>`;
+  // Trayectoria en la ficha/PDF: solo aparece si ya hay al menos una
+  // temporada archivada — un jugador en su primera temporada no tiene
+  // "trayectoria" que mostrar todavía, así que no se le añade un bloque
+  // vacío/redundante con la fila de la temporada actual sola.
+  const trayectoriaH=jTemporadas.length>0?`<div class="fg2b"><div class="fblk" style="overflow-x:auto;grid-column:1/-1">
+    <div class="fblkt">📈 Trayectoria · ${jTemporadas.length+1} temporadas</div>
+    ${_trayectoriaTablaHTML(false)}
+    <div style="margin-top:10px">${_trayectoriaProgresoHTML()}</div>
+  </div></div>`:'';
+  // Bloque de perfil (radar + barras) — mismo hueco visual para los dos
+  // casos, pero con datos y ejes completamente distintos: perfil de
+  // jugador de campo (Goles/Asistencias/ABP/...) o perfil de portero
+  // (salidas aéreas, mano a mano, juego de pies...).
+  const bloquePerfilH=esGK
+    ? `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">🧤 Perfil de Portero</div>${radarSVG(jGK,jGKEjes,190)}</div>
+    <div class="fblk"><div class="fblkt">Evaluación por facetas</div>${jGKEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:88px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jGK[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jGK[i]}</span></div>`).join('')}</div></div>`
+    : `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">Perfil jugador</div>${radarSVG(jRadar,jRadarEjes,190)}</div>
+    <div class="fblk"><div class="fblkt">Índices del perfil</div>${jRadarEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:74px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jRadar[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jRadar[i]}</span></div>`).join('')}</div></div>`;
   document.getElementById('j-ficha-container').innerHTML=`
   <div class="ficha" id="j-ficha-pdf">
     <div class="fhdr"><div class="fhdr-l">${avH}<div><div class="fnm">${eH(nom)||'Jugador'}</div><div class="fmeta"><span style="font-size:11px;color:var(--gris)">#${dor}</span><span class="badge bp">${eH(pos)}</span><span class="badge bn">${eH(nac)}</span>${edad?`<span class="badge bt">${eH(edad)} años</span>`:''}<span class="badge bt">${eH(temp)}</span></div></div></div>
     ${jSponsorH}
     <div class="fhdr-r">${escH}<div class="fclub">${eH(club)}</div><div class="fliga">${eH(temp)}</div></div></div>
-    <div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>
-    <div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}</div>
-    <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
-    <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
-    <div class="fblk" style="overflow-x:auto"><div class="fblkt">Registro Goles · Taxonomía Táctica</div>${golesH}</div></div>
+    ${highlightH}
+    ${kpisH}
+    ${esGK?bloqueGolesEncH:bloqueTacticoH}
     <div class="fforma"><div class="fblkt">Forma reciente · últimos 10 partidos</div><div class="fchips">${formaH}</div></div>
-    <div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">Perfil jugador</div>${radarSVG(jRadar,jRadarEjes,190)}</div>
-    <div class="fblk"><div class="fblkt">Índices del perfil</div>${jRadarEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:74px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jRadar[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jRadar[i]}</span></div>`).join('')}</div></div>
+    ${bloquePerfilH}
+    ${trayectoriaH}
     ${clipsH}
     <div class="fnota"><strong>Nota técnica:</strong> ${eH(G('jnota'))||'—'}</div>
     <div class="ffoot"><p>${brandN} · ${eH(club)}</p><p>${cfg.footer||'Uso interno · Cuerpo técnico'}</p></div>
@@ -4018,8 +4394,15 @@ function poblarDatalistTemporadasJugador(){
   const dl=document.getElementById('jtemp-list');
   if(!dl) return;
   const vistas=_valoresUnicos(jDB,'temp');
+  // También se sugieren las temporadas ya archivadas en el histórico de
+  // trayectoria de cualquier jugador (jDB[].temporadas y, si estamos
+  // editando uno ahora mismo, las que lleve jTemporadas en memoria todavía
+  // sin guardar), para que "2026-27", etc. quede disponible en cuanto
+  // exista en algún sitio, no solo como temporada "actual" de alguien.
+  const archivadas=jDB.flatMap(j=>(j.temporadas||[]).map(t=>t.temp)).filter(Boolean);
+  const enEdicion=(typeof jTemporadas!=='undefined'?jTemporadas:[]).map(t=>t.temp).filter(Boolean);
   const base=['2024-25','2025-26'];
-  const todas=[...new Set([...base,...vistas])].sort((a,b)=>a.localeCompare(b,'es'));
+  const todas=[...new Set([...base,...vistas,...archivadas,...enEdicion])].sort((a,b)=>a.localeCompare(b,'es'));
   dl.innerHTML=todas.map(t=>`<option value="${eH(t)}">`).join('');
 }
 
