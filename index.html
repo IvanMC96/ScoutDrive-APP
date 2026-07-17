@@ -32,7 +32,7 @@
   --shadow:0 8px 32px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--blanco);min-height:100vh;overscroll-behavior-y:contain;}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--blanco);min-height:100vh;min-height:100dvh;overscroll-behavior-y:contain;}
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:var(--bg);}
 ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px;}
@@ -127,7 +127,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .vista:not(.on){display:none!important;}
 
 /* LAYOUT DB genérico */
-.db-page{padding:22px 26px;gap:16px;min-height:calc(100vh - 52px);}
+.db-page{padding:22px 26px;gap:16px;min-height:calc(100vh - 52px);min-height:calc(100dvh - 52px);}
 .db-hdr{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;}
 .db-tit{font-size:20px;font-weight:800;}
 .db-sub{font-size:11px;color:var(--gris);margin-top:2px;}
@@ -170,6 +170,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
   display:grid;
   grid-template-columns:390px 1fr;
   height:calc(100vh - 52px);
+  height:calc(100dvh - 52px);
   overflow:hidden;
 }
 .ed-form{
@@ -386,6 +387,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .video-modal-box{
   width:100%;max-width:960px;
   max-height:calc(100vh - 64px);
+  max-height:calc(100dvh - 64px);
   background:var(--bg2);border:1px solid var(--border);border-radius:12px;
   overflow:hidden;
   display:flex;flex-direction:column;
@@ -404,6 +406,7 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .video-modal-player{
   position:relative;width:100%;aspect-ratio:16/9;
   max-height:calc(100vh - 64px - 44px);
+  max-height:calc(100dvh - 64px - 44px);
   background:#000;overflow:hidden;contain:strict;
 }
 .video-modal-player video,.video-modal-player iframe{
@@ -412,8 +415,8 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 
 @media(max-width:680px){
   .video-modal-bg{ padding:8px; }
-  .video-modal-box{ max-height:calc(100vh - 16px); max-width:100%; }
-  .video-modal-player{ max-height:calc(100vh - 16px - 44px); }
+  .video-modal-box{ max-height:calc(100vh - 16px); max-height:calc(100dvh - 16px); max-width:100%; }
+  .video-modal-player{ max-height:calc(100vh - 16px - 44px); max-height:calc(100dvh - 16px - 44px); }
 }
 
 /* CONFIG PAGE */
@@ -896,7 +899,7 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 /* Sustituye el ed-layout grid anterior */
 .ed-layout{
   display:flex;flex-direction:column;
-  height:calc(100vh - 52px);overflow:hidden;
+  height:calc(100vh - 52px);height:calc(100dvh - 52px);overflow:hidden;
 }
 
 /* Barra de pestañas superior */
@@ -1236,7 +1239,7 @@ body.solo-lectura .ed-panel-form {
     <div class="drawer-sec" id="drawer-secciones"></div>
     <div class="drawer-clubs">
       <div class="drawer-clubs-tit">🏟️ Ir a un club</div>
-      <input type="text" class="drawer-search" id="drawer-club-q" placeholder="Buscar club o liga…" oninput="renderDrawerClubes(this.value)">
+      <input type="text" class="drawer-search" id="drawer-club-q" placeholder="Buscar club o liga…" oninput="renderDrawerClubesDebounced(this.value)">
       <div class="drawer-club-list" id="drawer-club-list"></div>
     </div>
   </div>
@@ -1334,7 +1337,7 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
   <div class="db-bar">
-    <input type="search" id="jdb-q" name="jdb-buscar-jugador" autocomplete="off" placeholder="🔍 Buscar jugador..." oninput="renderJDB()">
+    <input type="search" id="jdb-q" name="jdb-buscar-jugador" autocomplete="off" placeholder="🔍 Buscar jugador..." oninput="renderJDBDebounced()">
     <select id="jdb-filtro-cat" onchange="renderJDB()" style="width:150px;padding:7px 10px;font-size:12px">
       <option value="">Todas las categorías</option>
     </select>
@@ -1565,7 +1568,7 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
   <div class="db-bar">
-    <input type="search" id="edb-q" name="edb-buscar-equipo" autocomplete="off" placeholder="🔍 Buscar equipo..." oninput="renderEDB()">
+    <input type="search" id="edb-q" name="edb-buscar-equipo" autocomplete="off" placeholder="🔍 Buscar equipo..." oninput="renderEDBDebounced()">
     <select id="edb-filtro-cat" onchange="renderEDB()" style="width:150px;padding:7px 10px;font-size:12px">
       <option value="">Todas las categorías</option>
     </select>
@@ -1787,6 +1790,7 @@ body.solo-lectura .ed-panel-form {
       <button class="btn b-ghost b-sm" id="campo-btn-orient" onclick="campogramaToggleOrientacion()" title="Cambiar orientación">↔️ Horizontal / Vertical</button>
       <button class="btn b-ghost b-sm" id="campo-btn-editar" onclick="toggleCampogramaEdit()" style="display:none">✏️ Editar campograma</button>
       <button class="btn b-ghost b-sm" id="campo-btn-reset" onclick="campogramaResetTodo()" style="display:none">↺ Restablecer automático</button>
+      <button class="btn b-ghost b-sm" onclick="_campogramaFullscreen()" title="Ver el campograma más grande (recomendado en móvil)">🔍 Ampliar</button>
       <button class="btn b-azul b-sm" onclick="descargarCampogramaImagen()">📷 Descargar imagen</button>
     </div>
     <div id="campograma-container"></div>
@@ -1796,7 +1800,7 @@ body.solo-lectura .ed-panel-form {
 
 
 <!-- ══ SECCIÓN PARTIDOS ════════════════════════════════════════ -->
-<div class="vista" id="v-partidos" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px)">
+<div class="vista" id="v-partidos" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px);height:calc(100dvh - 52px)">
   <div class="partidos-wrap">
 
     <!-- Header -->
@@ -1814,7 +1818,7 @@ body.solo-lectura .ed-panel-form {
     <!-- Filtros -->
     <!-- Barra de filtros compacta en una sola línea -->
     <div class="partidos-filters">
-      <input type="search" id="p-buscar" name="p-buscar-partido" autocomplete="off" placeholder="🔍 Buscar..." oninput="renderPartidos()" style="flex:1;min-width:140px">
+      <input type="search" id="p-buscar" name="p-buscar-partido" autocomplete="off" placeholder="🔍 Buscar..." oninput="renderPartidosDebounced()" style="flex:1;min-width:140px">
       <select id="p-fil-jornada" onchange="renderPartidos()" style="min-width:130px">
         <option value="">Todas las jornadas</option>
       </select>
@@ -1839,7 +1843,7 @@ body.solo-lectura .ed-panel-form {
 </div>
 
 <!-- ══ SECCIÓN GOLES — REGISTRO UNIFICADO ═══════════════════════ -->
-<div class="vista" id="v-goles" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px)">
+<div class="vista" id="v-goles" style="flex-direction:column;overflow-y:auto;height:calc(100vh - 52px);height:calc(100dvh - 52px)">
   <div class="partidos-wrap">
     <div class="partidos-header">
       <div>
@@ -1852,7 +1856,7 @@ body.solo-lectura .ed-panel-form {
     </div>
 
     <div class="partidos-filters">
-      <input type="search" id="goles-buscar" name="goles-buscar" autocomplete="off" placeholder="🔍 Buscar jugador o equipo..." oninput="renderGolesView()" style="flex:1;min-width:140px">
+      <input type="search" id="goles-buscar" name="goles-buscar" autocomplete="off" placeholder="🔍 Buscar jugador o equipo..." oninput="renderGolesViewDebounced()" style="flex:1;min-width:140px">
       <select id="goles-fil-equipo" onchange="renderGolesView()" style="min-width:150px">
         <option value="">Todos los equipos</option>
       </select>
@@ -2271,6 +2275,30 @@ const pctMinutosJugados=(min,p)=>{ min=+min||0; p=+p||0; return p>0 ? Math.max(0
 const eH=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const ini=(n,a)=>{const p=(n+' '+a).trim().split(' ');return p.slice(0,2).map(x=>x[0]||'').join('').toUpperCase();};
 const sv=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+// Debounce genérico — usado para no relanzar un re-render pesado (listas
+// grandes con imágenes, recalculo de <select> en cascada, etc.) en CADA
+// pulsación de un buscador de texto, que es donde más se nota el tirón en
+// móviles con menos CPU que un ordenador. Los onchange de selects/filtros
+// puntuales siguen llamando a la función original sin debounce, ya que
+// esos no se disparan en ráfaga como al escribir.
+function _debounce(fn,ms=220){
+  let t=null;
+  return function(...args){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,args),ms); };
+}
+// Versiones "debounced" de los buscadores de listas grandes (Partidos,
+// Jugadores, Equipos, Goles, drawer de clubes) — todas reconstruyen un
+// grid entero (con miniaturas/avatares) y, en el caso de Partidos,
+// también recalculan los <select> de filtros en cascada, así que
+// lanzarlo en cada tecla es justo el tipo de trabajo que se nota como
+// lag/tirón al escribir rápido en un móvil. El resto de usos de estas
+// funciones (onchange de selects, alta/edición/borrado, etc.) siguen
+// llamando a la función original sin debounce para que la respuesta a
+// esas acciones puntuales siga siendo inmediata.
+const renderPartidosDebounced=_debounce(()=>renderPartidos(),220);
+const renderJDBDebounced=_debounce(()=>renderJDB(),220);
+const renderEDBDebounced=_debounce(()=>renderEDB(),220);
+const renderGolesViewDebounced=_debounce(()=>renderGolesView(),220);
+const renderDrawerClubesDebounced=_debounce(v=>renderDrawerClubes(v),220);
 
 function toast(msg,err=false){
   const t=document.getElementById('toast');
@@ -3171,9 +3199,9 @@ function renderJDB(){
   grid.innerHTML=lst.map(j=>{
     const s=j.stats||{};
     const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
-    const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+    const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img loading="lazy" src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
     const escudoJCard=escudoDeEquipoPorNombre(j.club);
-    const avBadge=escudoJCard?`<div class="card-av-badge"><img src="${eH(escudoJCard)}"></div>`:'';
+    const avBadge=escudoJCard?`<div class="card-av-badge"><img loading="lazy" src="${eH(escudoJCard)}"></div>`:'';
     const avWrap=`<div class="card-av-wrap">${av}${avBadge}</div>`;
     const _adJ=_anuncioClubActivo(idDeEquipoPorNombre(j.club));
     return `<div class="card">
@@ -4064,7 +4092,7 @@ function renderEDB(){
     const typeClr=eq.tipo==='propio'?'var(--azul-dk)':'#7d1717';
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
     const eqColor=eq.color||'#30363d';
-    const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
+    const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img loading="lazy" src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
     const _adE=_anuncioClubActivo(eq.id);
     return `<div class="card" style="border-left:4px solid ${eqColor}">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
@@ -5601,6 +5629,30 @@ function _campoSponsorResize(delta){
   renderCampograma();
 }
 
+/** El campograma en pantalla vive dentro de .campo-wrap con un
+ *  max-width pensado para que la vista clásica quede centrada en
+ *  ordenador/tablet, que en un móvil se traduce en un dibujo bastante
+ *  pequeño (el pellizco para hacer zoom solo amplía el trazo, no
+ *  recoloca nada). "Ampliar" pide pantalla completa sobre el propio
+ *  contenedor: la regla :fullscreen de abajo anula ese max-width y deja
+ *  que el campo ocupe todo el alto disponible respetando su aspect-ratio,
+ *  igual que el botón de pantalla completa ya existente en el modal de
+ *  vídeo. Recomendado especialmente en móvil, sobre todo en horizontal. */
+function _campogramaFullscreen(){
+  const el=document.getElementById('campo-capture');
+  if(!el) return;
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    (document.exitFullscreen||document.webkitExitFullscreen)?.call(document).catch(()=>{});
+    return;
+  }
+  const req=el.requestFullscreen||el.webkitRequestFullscreen||el.mozRequestFullScreen;
+  if(req){
+    Promise.resolve(req.call(el)).catch(()=>{ toast('Tu navegador no permite pantalla completa aquí',true); });
+  } else {
+    toast('Tu navegador no permite pantalla completa aquí',true);
+  }
+}
+
 async function descargarCampogramaImagen(){
   const eq=eDB.find(x=>x.id===eId);
   if(!eq){ toast('Abre primero un equipo',true); return; }
@@ -5931,7 +5983,7 @@ function renderE(){
             <div class="feq-plantilla-col-tit" style="color:${col};border-color:${col}44">${grupo} <span style="color:var(--gris);font-weight:600">(${lista.length})</span></div>
             ${lista.map(j=>{
               const av=j.imgJug
-                ?`<img src="${eH(j.imgJug)}" class="feq-plant-av">`
+                ?`<img loading="lazy" src="${eH(j.imgJug)}" class="feq-plant-av">`
                 :`<div class="feq-plant-av feq-plant-av-fb">${eH(ini(j.nom,j.ape)||'?')}</div>`;
               return `<div class="feq-plant-row">
                 ${av}
@@ -6796,6 +6848,26 @@ window.addEventListener('resize',()=>{
   const modal=document.getElementById('video-modal');
   if(modal && modal.classList.contains('open')) _ajustarAlturaVideoModal();
 });
+// En móvil, 'resize' no siempre llega a tiempo (o llega con valores de
+// innerHeight/innerWidth todavía a medio actualizar) justo al girar el
+// dispositivo — de ahí que el reproductor se quedase con un alto "raro"
+// unos instantes (o hasta el siguiente resize) tras pasar a horizontal.
+// 'orientationchange' se dispara de forma más fiable en ese momento, y
+// el pequeño retraso deja que el navegador termine de recalcular el
+// viewport antes de volver a medir.
+window.addEventListener('orientationchange',()=>{
+  setTimeout(()=>{
+    const modal=document.getElementById('video-modal');
+    if(modal && modal.classList.contains('open')) _ajustarAlturaVideoModal();
+    // El campograma (plantilla táctica) decide vertical/horizontal según
+    // el ancho de pantalla salvo que el usuario haya forzado una
+    // orientación a mano (ver _campogramaEsHoriz) — así que, si no hay
+    // preferencia guardada, con volver a renderizar tras girar el móvil
+    // ya se adapta solo. renderCampograma() no hace nada si esa vista no
+    // está abierta, así que esta llamada es segura en cualquier pantalla.
+    if(typeof renderCampograma==='function') renderCampograma();
+  }, 200);
+});
 
 /** Google Drive (y YouTube) sirven su reproductor embebido en un <iframe>
  *  cuyo contenido no controlamos: cuando ese iframe es estrecho (el caso
@@ -7247,7 +7319,7 @@ function guardarEConFeedback(){
 /* Sustituye el ed-layout grid anterior */
 .ed-layout{
   display:flex;flex-direction:column;
-  height:calc(100vh - 52px);overflow:hidden;
+  height:calc(100vh - 52px);height:calc(100dvh - 52px);overflow:hidden;
 }
 
 /* Barra de pestañas superior */
@@ -7654,6 +7726,19 @@ function guardarEConFeedback(){
   border:1px solid var(--border2);
 }
 .campo-wrap.horiz{ max-width:980px; }
+/* Modo "Ampliar" (pantalla completa) — pensado sobre todo para móvil,
+   donde .campo-wrap se queda muy pequeño de por sí. Al anular el
+   max-width y estirar .campo-pitch-abs a partir del alto disponible
+   (con aspect-ratio calculando el ancho correspondiente), el campo pasa
+   a ocupar toda la pantalla en vez del recuadro reducido de siempre. */
+.campo-wrap:fullscreen,.campo-wrap:-webkit-full-screen{
+  max-width:100%; width:100%; height:100%; margin:0; border-radius:0;
+  display:flex; flex-direction:column; justify-content:center;
+  background:var(--bg2); overflow:auto;
+}
+.campo-wrap:fullscreen .campo-pitch-abs,.campo-wrap:-webkit-full-screen .campo-pitch-abs{
+  width:auto; height:100%; max-height:100%; flex-shrink:0; margin:0 auto;
+}
 .campo-hdr{ display:flex; align-items:center; gap:12px; padding:16px 18px; }
 .campo-hdr-badge{
   width:48px; height:48px; border-radius:10px; background:rgba(255,255,255,.12);
@@ -8193,7 +8278,7 @@ function _cardPartido(p){
   const urlDescarga = tieneVideo && _tipoVideo(p.urlNorm)==='drive' ? _urlDescargaDrivePartido(p) : null;
   const fecha = p.fecha ? new Date(p.fecha).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '';
   const thumbH = p.thumb
-    ? `<img src="${p.thumb}" onerror="this.style.display='none'">`
+    ? `<img loading="lazy" src="${p.thumb}" onerror="this.style.display='none'">`
     : `<div class="partido-thumb-default"><span>⚽</span></div>`;
 
   return `<div class="partido-card" onclick="verPartido('${p.id}')">
