@@ -1742,6 +1742,14 @@ body.solo-lectura .ed-panel-form {
       </div>
     </div>
     <div class="psec">
+      <div class="phdr" onclick="tog(this)">📈 Trayectoria <span class="arr">▾</span></div>
+      <div class="pbody">
+        <p style="font-size:10px;color:var(--gris)">Al empezar una temporada nueva, no hace falta crear otro equipo: archiva la actual (categoría, grupo, estadísticas, partidos y clips de ese curso) y deja esta misma ficha lista para la siguiente, con el mismo nombre, escudo y color de siempre.</p>
+        <button class="badd" onclick="eNuevaTemporada()">➕ Nueva Temporada</button>
+        <div id="e-trayectoria-form" style="margin-top:10px;overflow-x:auto"></div>
+      </div>
+    </div>
+    <div class="psec">
       <div class="phdr" onclick="tog(this)">🖼️ Escudo del equipo <span class="arr">▾</span></div>
       <div class="pbody">
         <div class="uzone" id="uz-eesc" onclick="document.getElementById('if-eesc').click()">
@@ -2389,7 +2397,14 @@ function _distanciaEdicion(a,b,max){
 // considerarlo "parecido", pero en uno de 10 letras es un simple despiste.
 function _palabraParecida(query,palabra){
   if(!query||!palabra) return false;
-  if(palabra.includes(query)||query.includes(palabra)) return true;
+  // El atajo de "una contiene a la otra" solo cuenta si la palabra más
+  // corta tiene al menos 3 letras — si no, una palabra suelta de 1-2
+  // letras (p.ej. la "B" de "C.D. Tenerife B", que marca equipo filial)
+  // coincidiría con CUALQUIER búsqueda que contenga esa letra (p.ej.
+  // "Badajoz"), dando falsos positivos. Con 3+ letras el atajo sigue
+  // funcionando para abreviaturas reales (p.ej. "atl" encuentra "Atlético").
+  const masCorta=Math.min(query.length,palabra.length);
+  if(masCorta>=3 && (palabra.includes(query)||query.includes(palabra))) return true;
   const max=query.length<=4?1:query.length<=8?2:3;
   return _distanciaEdicion(query,palabra,max)<=max;
 }
@@ -2531,10 +2546,21 @@ function renderHighlightsInicio(){
 }
 
 // ── Helpers para relacionar equipos por nombre (liga y escudo) ────
-function _buscarEquipoPorNombre(nombre){
+// "temp", si se indica, se usa solo como desempate defensivo por si en
+// algún momento hubiera más de un equipo con el mismo nombre en eDB
+// (p.ej. datos antiguos de antes de que "➕ Nueva Temporada" evitara los
+// duplicados) — de haber varios, se prefiere el que coincide también en
+// temporada antes que quedarse con el primero sin más.
+function _buscarEquipoPorNombre(nombre,temp){
   if(!nombre) return null;
   const key=nombre.trim().toLowerCase();
-  return eDB.find(e=>(e.nom||'').trim().toLowerCase()===key)||null;
+  const candidatos=eDB.filter(e=>(e.nom||'').trim().toLowerCase()===key);
+  if(!candidatos.length) return null;
+  if(candidatos.length>1 && temp){
+    const exacto=candidatos.find(e=>(e.temp||'').trim()===temp.trim());
+    if(exacto) return exacto;
+  }
+  return candidatos[0];
 }
 function ligaDeEquipoPorNombre(nombre){
   const eq=_buscarEquipoPorNombre(nombre);
@@ -2665,9 +2691,20 @@ function calcularClasificacionPorLiga(){
   pDB.forEach(p=>{
     if(p.gf==null || p.gc==null) return;
     if(!p.local || !p.visitante) return;
+    // La categoría/grupo del partido se toma del propio registro del
+    // partido (p.comp/p.grupo, rellenados al añadirlo) cuando existen —
+    // es el dato más fiable, porque no cambia aunque más adelante se
+    // edite la ficha del equipo para la temporada siguiente. Si siempre
+    // se derivara de la ficha ACTUAL del club, un ascenso/descenso, un
+    // cambio de grupo o (como pasaba antes) dos fichas con el mismo
+    // nombre reclasificarían también los partidos antiguos, mezclando
+    // temporadas o categorías que no tienen nada que ver. Solo si el
+    // partido no trae comp/grupo se recurre, como antes, a la liga
+    // actual del club.
+    const ligaPartido=[p.comp,p.grupo].filter(Boolean).join(' · ');
     [[p.local,p.gf,p.gc],[p.visitante,p.gc,p.gf]].forEach(([nombre,gf,gc])=>{
-      const ligaNom=ligaDeEquipoPorNombre(nombre)||'Sin liga especificada';
-      if(!usuarioPuedeVerLiga(ligaDeEquipoPorNombre(nombre))) return;
+      const ligaNom=ligaPartido||ligaDeEquipoPorNombre(nombre)||'Sin liga especificada';
+      if(!usuarioPuedeVerLiga(ligaNom)) return;
       const ligaKey=ligaNom.toLowerCase();
       if(!ligas[ligaKey]) ligas[ligaKey]={nombre:ligaNom,equipos:{}};
       const key=nombre.trim().toLowerCase();
@@ -4463,6 +4500,44 @@ function _valoresUnicos(arr,campo){
   return [...new Set(arr.map(e=>(e[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 }
 
+// ── Trayectoria de Equipos (histórico de temporadas sin duplicar la
+// ficha del club) — mismo patrón que la Trayectoria de Jugadores.
+// Todas las "temporadas" de un equipo (la actual + el histórico
+// archivado con "➕ Nueva Temporada"), como filas sueltas — se usa tanto
+// para poblar los desplegables de filtro como para decidir si un equipo
+// debe seguir apareciendo al filtrar por una categoría/grupo/temporada
+// que ya jugó en el pasado, aunque ahora mismo esté en otra.
+function _eFilasTemporada(e){
+  const catA=_eCategoria(e),grpA=(e.grupo||'').trim();
+  const actual={categoria:catA,grupo:grpA,temp:(e.temp||'').trim(),liga:e.liga||[catA,grpA].filter(Boolean).join(' · ')};
+  const historicas=(e.temporadas||[]).map(t=>{
+    const cat=(t.categoria||t.liga||'').trim(),grp=(t.grupo||'').trim();
+    return {categoria:cat,grupo:grp,temp:(t.temp||'').trim(),liga:t.liga||[cat,grp].filter(Boolean).join(' · ')};
+  });
+  return [actual,...historicas];
+}
+// Dado un equipo y los filtros activos en la sección Equipos, decide qué
+// "temporada" de su histórico mostrar en la tarjeta — así, si se filtra
+// por una temporada/categoría antigua, la tarjeta (que ahora es una sola
+// por club) enseña los datos de ESA temporada en vez de los de la actual.
+function _eVistaParaFiltro(e,fTemp,fCat,fGrupo){
+  const catA=_eCategoria(e),grpA=(e.grupo||'').trim();
+  const filas=[{...e,categoria:catA,grupo:grpA,temp:(e.temp||'').trim(),_esActual:true},
+    ...(e.temporadas||[]).map(t=>{
+      const cat=(t.categoria||t.liga||'').trim(),grp=(t.grupo||'').trim();
+      return {...t,categoria:cat,grupo:grp,temp:(t.temp||'').trim(),_esActual:false};
+    })];
+  let candidatas=filas;
+  if(fTemp) candidatas=candidatas.filter(f=>f.temp===fTemp);
+  if(fCat) candidatas=candidatas.filter(f=>f.categoria===fCat);
+  if(fGrupo) candidatas=candidatas.filter(f=>f.grupo===fGrupo);
+  if(!candidatas.length) candidatas=filas;
+  const actualEntre=candidatas.find(f=>f._esActual);
+  if(actualEntre) return actualEntre;
+  const anio=f=>{const m=(f.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):-1;};
+  return [...candidatas].sort((a,b)=>anio(b)-anio(a))[0];
+}
+
 // El campo "Temporada" del jugador era un desplegable fijo (solo dejaba
 // elegir 2025-26 / 2024-25 / la combinada) — ahora es un campo de texto
 // con sugerencias (datalist), igual que Equipos y Partidos: se puede
@@ -4490,9 +4565,15 @@ function poblarDatalistTemporadasJugador(){
 // como los 3 selects de filtro de la sección Equipos.
 function poblarFiltrosYDatalistsEquipos(lista){
   const base=lista||eDB;
-  const temps=_valoresUnicos(base,'temp');
-  const cats=[...new Set(base.map(_eCategoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
-  const grupos=_valoresUnicos(base,'grupo');
+  // Los desplegables de filtro (y los datalists de sugerencias) incluyen
+  // tanto la temporada en curso de cada equipo como su histórico
+  // archivado (eq.temporadas) — así, aunque ahora cada club tenga una
+  // sola ficha, se puede seguir filtrando por una categoría/grupo/
+  // temporada de una temporada antigua que ya jugó.
+  const filas=base.flatMap(_eFilasTemporada);
+  const temps=[...new Set(filas.map(f=>f.temp).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const cats=[...new Set(filas.map(f=>f.categoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const grupos=[...new Set(filas.map(f=>f.grupo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 
   const dlTemp=document.getElementById('etemp-list');
   if(dlTemp)dlTemp.innerHTML=temps.map(t=>`<option value="${eH(t)}">`).join('');
@@ -4510,9 +4591,10 @@ function poblarFiltrosYDatalistsEquipos(lista){
   if(selGrupo){
     const grupoActual=selGrupo.value;
     // El desplegable de grupo se acota a los grupos que existen dentro de
-    // la categoría ya elegida, para que el filtrado en cascada sea útil de
-    // verdad y no se puedan combinar categoría+grupo que nunca coinciden.
-    const gruposDeCat=catActual?_valoresUnicos(base.filter(e=>_eCategoria(e)===catActual),'grupo'):grupos;
+    // la categoría ya elegida (contando también el histórico), para que
+    // el filtrado en cascada sea útil de verdad y no se puedan combinar
+    // categoría+grupo que nunca coinciden.
+    const gruposDeCat=catActual?[...new Set(filas.filter(f=>f.categoria===catActual).map(f=>f.grupo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')):grupos;
     selGrupo.innerHTML=`<option value="">Todos los grupos</option>`+gruposDeCat.map(g=>`<option value="${eH(g)}"${g===grupoActual?' selected':''}>${eH(g)}</option>`).join('');
   }
   const selTemp=document.getElementById('edb-filtro-temp');
@@ -4531,8 +4613,10 @@ function renderEDB(){
   eDB.forEach(eq=>{ if(!eq.id){ eq.id='e_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparo=true; } });
   if(_huboReparo) saveEDB();
   // Solo se cuentan/muestran los equipos de las ligas que este usuario
-  // tiene permitidas (los admin siempre ven todo).
-  const eDBVisible=eDB.filter(e=>usuarioPuedeVerLiga(e.liga));
+  // tiene permitidas (los admin siempre ven todo) — se comprueba tanto la
+  // liga actual como el histórico archivado, para que un equipo no
+  // desaparezca solo porque ahora mismo esté en otra categoría/grupo.
+  const eDBVisible=eDB.filter(e=>_eFilasTemporada(e).some(f=>usuarioPuedeVerLiga(f.liga)));
   document.getElementById('est-n').textContent=eDBVisible.length;
   document.getElementById('est-gf').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gf||0),0);
   document.getElementById('est-gc').textContent=eDBVisible.reduce((s,e)=>s+(e.stats?.gc||0),0);
@@ -4542,14 +4626,23 @@ function renderEDB(){
   const q=(G('edb-q')||'').toLowerCase();
   const fCat=G('edb-filtro-cat')||'',fGrupo=G('edb-filtro-grupo')||'',fTemp=G('edb-filtro-temp')||'';
   let lst=eDBVisible;
-  if(fCat)lst=lst.filter(e=>_eCategoria(e)===fCat);
-  if(fGrupo)lst=lst.filter(e=>(e.grupo||'').trim()===fGrupo);
-  if(fTemp)lst=lst.filter(e=>(e.temp||'').trim()===fTemp);
+  // El filtro comprueba tanto la temporada en curso como el histórico
+  // archivado (eq.temporadas) — así un club con una sola ficha sigue
+  // apareciendo al filtrar por una categoría/grupo/temporada antigua que
+  // ya jugó, en vez de "desaparecer" solo porque ahora mismo esté en otra.
+  if(fCat)lst=lst.filter(e=>_eFilasTemporada(e).some(f=>f.categoria===fCat));
+  if(fGrupo)lst=lst.filter(e=>_eFilasTemporada(e).some(f=>f.grupo===fGrupo));
+  if(fTemp)lst=lst.filter(e=>_eFilasTemporada(e).some(f=>f.temp===fTemp));
   if(q)lst=lst.filter(e=>_fuzzyMatch(e.nom+' '+e.liga,q));
   const grid=document.getElementById('e-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;actualizarBarraCompararE();return;}
   grid.innerHTML=lst.map(eq=>{
-    const s=eq.stats||{};
+    // Si hay un filtro de categoría/grupo/temporada activo, la tarjeta
+    // muestra los datos de ESA temporada del histórico del club (no
+    // siempre los de la temporada en curso) — así, al filtrar por una
+    // temporada antigua, no se ve una tarjeta "vacía" de la actual.
+    const vista=_eVistaParaFiltro(eq,fTemp,fCat,fGrupo);
+    const s=vista.stats||eq.stats||{};
     const typeClr=eq.tipo==='propio'?'var(--azul-dk)':'#7d1717';
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
     const eqColor=eq.color||'#30363d';
@@ -4560,7 +4653,7 @@ function renderEDB(){
         <input type="checkbox" ${eComparar.has(eq.id)?'checked':''} onchange="toggleCompararE('${eq.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editE('${eq.id}')">
-      ${av}<div class="card-hdr-info"><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(eq.temp)} · ${eH(eq.sist)}</div></div>${_sponsorBadgeHTML(_adE)}
+      ${av}<div class="card-hdr-info"><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(vista.temp||eq.temp)} · ${eH(vista.sist||eq.sist)}</div></div>${_sponsorBadgeHTML(_adE)}
     </div>${_sponsorHTML(_adE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde-cl)">${s.v||0}V</div><div class="ckl">Victorias</div></div>
@@ -4782,8 +4875,119 @@ async function xComparativaEPDF(){
   await _cmpCapturarYExportarPDF(html,900,`${cfg.nombre||'Scout'}_Comparativa_Equipos_${equipos.length}eq.pdf`,'📄 PDF comparativa de equipos exportado');
 }
 
+// ── Trayectoria de Equipos ──────────────────────────────────────────
+// Igual que jTemporadas para jugadores: un club conserva SIEMPRE una
+// única ficha (eDB entry); al empezar una temporada nueva, la temporada
+// que se deja atrás se archiva aquí en vez de crear un equipo duplicado.
+let eTemporadas=[];
+
+function _eStatsActuales(){
+  let pj=GN('epj'),v=GN('ev'),e2=GN('ee'),d=GN('ed'),gf=GN('egf'),gc=GN('egc');
+  if(ePartidos.length>0){
+    pj=ePartidos.length;v=0;e2=0;d=0;gf=0;gc=0;
+    ePartidos.forEach(p=>{
+      const pg=p.gf||0,pcg=p.gc||0;
+      gf+=pg;gc+=pcg;
+      if(pg>pcg)v++;else if(pg===pcg)e2++;else d++;
+    });
+  }
+  return {pj,v,e:e2,d,gf,gc};
+}
+
+// Snapshot de "temporada actual" leído directamente del formulario — se
+// usa tanto para archivar (eNuevaTemporada) como para pintar la fila de
+// la temporada en curso dentro del resumen de trayectoria.
+function _eTemporadaActualSnapshot(){
+  const categoria=G('ecategoria').trim(),grupo=G('egrupo').trim();
+  const eqRef=eId?eDB.find(x=>x.id===eId):null;
+  return {
+    temp:G('etemp'),categoria,grupo,liga:[categoria,grupo].filter(Boolean).join(' · '),
+    ent:G('eent'),sist:G('esist'),nota:G('enota'),
+    stats:_eStatsActuales(),
+    orig:{eoatq:GN('eoatq'),eoabp:GN('eoabp'),eocl:GN('eocl'),eojd:GN('eojd'),eotr:GN('eotr'),
+          egcatq:GN('egcatq'),egcabp:GN('egcabp'),egctr:GN('egctr'),egcjd:GN('egcjd')},
+    partidos:[...ePartidos],gcGoles:[...eGC],
+    clips:eClips.map(c=>({...c})),clipsGC:eClipsGC.map(c=>({...c})),
+    campoOverrides:eqRef?(eqRef.campoOverrides||null):null,
+    campoSponsor:eqRef?(eqRef.campoSponsor||null):null,
+    alineaciones:eqRef?(eqRef.alineaciones||null):null,
+  };
+}
+
+function eNuevaTemporada(){
+  if(!eId){ toast('Guarda el equipo antes de añadir una temporada nueva',true); return; }
+  const tempActual=G('etemp')||'(sin temporada)';
+  askDel(`¿Archivar la temporada ${tempActual} de ${G('enom')||'este equipo'} y empezar una nueva? El nombre, el escudo y el color se mantienen; categoría, grupo, entrenador, sistema, estadísticas, partidos y clips quedan listos para editar en la temporada nueva.`,()=>{
+    eTemporadas.push(_eTemporadaActualSnapshot());
+    // Stats/partidos/clips de la temporada se reinician — son datos de
+    // ESTA temporada, no tendría sentido que la nueva empezara ya con los
+    // partidos de la anterior.
+    ['epj','ev','ee','ed','egf','egc'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+    ['eoatq','eoabp','eocl','eojd','eotr','egcatq','egcabp','egctr','egcjd'].forEach(id=>{
+      const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}
+    });
+    document.getElementById('eent').value='';
+    document.getElementById('enota').value='';
+    ePartidos=[];eGC=[];eClips=[];eClipsGC=[];ePartCnt=0;eClipCnt=0;eClipGCCnt=0;
+    buildEPartidos();buildEGC();buildEClips();buildEClipsGC();
+    // El campograma (posiciones reasignadas a mano) y las alineaciones por
+    // jornada son de la temporada que se acaba de archivar (ya han
+    // quedado guardados en el snapshot de arriba) — la ficha empieza la
+    // temporada nueva sin ellos, en vez de arrastrarlos.
+    const eqRef=eDB.find(x=>x.id===eId);
+    if(eqRef){ eqRef.campoOverrides=null; eqRef.campoSponsor=null; eqRef.alineaciones=null; }
+    // Categoría/grupo se dejan igual (lo normal es que el club siga en la
+    // misma categoría; si asciende/desciende se cambia a mano).
+    const nuevaTemp=_siguienteTemporada(G('etemp'));
+    if(nuevaTemp) document.getElementById('etemp').value=nuevaTemp;
+    renderE();
+    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}`);
+  });
+}
+
+// Borra una temporada archivada del histórico (por si se archivó por
+// error) — la temporada EN CURSO no se puede borrar desde aquí, solo se
+// sustituye archivando otra vez.
+function eBorrarTemporada(i){
+  askDel(`¿Borrar del histórico la temporada ${eTemporadas[i]?.temp||''}? Esta acción no se puede deshacer.`,()=>{
+    eTemporadas.splice(i,1);
+    renderE();
+  });
+}
+
+// Construye la tabla de trayectoria (histórico + temporada en curso,
+// ordenadas de más antigua a más reciente) — se usa tanto en el panel de
+// edición como en la ficha/PDF, con la única diferencia de si se muestra
+// el botón de borrar por fila (edición) o no (ficha/PDF).
+function _eTrayectoriaFilas(editable){
+  const actual={..._eTemporadaActualSnapshot(),_actual:true};
+  const todas=[...eTemporadas.map((t,i)=>({...t,_i:i})),actual];
+  const anio=t=>{const m=(t.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):9999;};
+  todas.sort((a,b)=>anio(a)-anio(b));
+  return todas.map(t=>{
+    const s=t.stats||{};
+    const pts=(s.v||0)*3+(s.e||0);
+    return `<tr${t._actual?' style="background:rgba(47,129,247,.08)"':''}>
+      <td class="tmin">${eH(t.temp)||'—'}${t._actual?' <span class="tbdg to-jd" style="margin-left:4px">actual</span>':''}</td>
+      <td style="font-size:9px;color:var(--gris2)">${eH([t.categoria,t.grupo].filter(Boolean).join(' · '))||'—'}</td>
+      <td style="font-size:9px;color:var(--gris)">${eH(t.ent)||'—'}</td>
+      <td style="text-align:center">${s.pj||0}</td>
+      <td style="font-size:10px">${s.v||0}-${s.e||0}-${s.d||0}</td>
+      <td style="font-size:10px">${s.gf||0}:${s.gc||0}</td>
+      <td style="text-align:center;font-weight:800;color:var(--azul-cl)">${pts}</td>
+      ${editable?`<td>${t._actual?'':`<button class="brm2" onclick="eBorrarTemporada(${t._i})">✕</button>`}</td>`:''}
+    </tr>`;
+  }).join('');
+}
+
+function _eTrayectoriaTablaHTML(editable){
+  const filas=_eTrayectoriaFilas(editable);
+  return `<table class="tgj"><thead><tr><th>Temp.</th><th>Categoría</th><th>Entrenador</th><th>PJ</th><th>V-E-D</th><th>GF:GC</th><th>Pts</th>${editable?'<th></th>':''}</tr></thead><tbody>${filas}</tbody></table>`;
+}
+
 function nuevoE(){
   eId=null;
+  eTemporadas=[];
   ['enom','ecategoria','egrupo','etemp','eent','enota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   ['epj','ev','ee','ed','egf','egc'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['eoatq','eoabp','eocl','eojd','eotr','egcatq','egcabp','egctr','egcjd'].forEach(id=>{
@@ -4807,6 +5011,7 @@ function editE(id){
   const eq=eDB.find(x=>x.id===id);if(!eq)return;
   if(!usuarioPuedeVerLiga(eq.liga)){ toast('No tienes acceso a este equipo',true); return; }
   eId=id;
+  eTemporadas=(eq.temporadas||[]).map(t=>({...t}));
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   poblarFiltrosYDatalistsEquipos();
   S('enom',eq.nom);S('etipo',eq.tipo);S('etemp',eq.temp);S('ecategoria',_eCategoria(eq));S('egrupo',eq.grupo);S('eent',eq.ent);S('esist',eq.sist);S('enota',eq.nota);
@@ -4826,17 +5031,43 @@ function editE(id){
 
 function guardarE(){
   const nom=G('enom').trim();if(!nom){toast('Añade el nombre del equipo',true);return;}
-  const id=eId||('e_'+Date.now());eId=id;
-  // Recalcular stats desde partidos
-  let pj=GN('epj'),v=GN('ev'),e2=GN('ee'),d=GN('ed'),gf=GN('egf'),gc=GN('egc');
-  if(ePartidos.length>0){
-    pj=ePartidos.length;v=0;e2=0;d=0;gf=0;gc=0;
-    ePartidos.forEach(p=>{
-      const pg=p.gf||0,pcg=p.gc||0;
-      gf+=pg;gc+=pcg;
-      if(pg>pcg)v++;else if(pg===pcg)e2++;else d++;
-    });
+  // Si se está dando de alta un equipo NUEVO (no se venía editando uno ya
+  // existente) y el nombre coincide con uno que ya existe, no se crea un
+  // club duplicado — antes esto era justo lo que pasaba al meter la misma
+  // C.D. BADAJOZ para una temporada nueva. En vez de eso, se reutiliza la
+  // misma ficha: lo que tenía guardado hasta ahora (categoría, grupo,
+  // estadísticas, partidos, clips...) se archiva como una temporada más
+  // de su trayectoria, igual que si se hubiera pulsado "➕ Nueva
+  // Temporada" dentro de su propia ficha.
+  let equipoExistentePrevio=null,mensajeExtra='';
+  if(!eId){
+    const nomKey=nom.toLowerCase();
+    const existente=eDB.find(x=>(x.nom||'').trim().toLowerCase()===nomKey);
+    if(existente){
+      equipoExistentePrevio=existente;
+      eId=existente.id;
+      const prevSnapshot={
+        temp:existente.temp||'',categoria:existente.categoria||_eCategoria(existente),grupo:existente.grupo||'',
+        liga:existente.liga||'',ent:existente.ent||'',sist:existente.sist||'',nota:existente.nota||'',
+        stats:{...(existente.stats||{})},orig:{...(existente.orig||{})},
+        partidos:[...(existente.partidos||[])],gcGoles:[...(existente.gcGoles||[])],
+        clips:[...(existente.clips||[])],clipsGC:[...(existente.clipsGC||[])],
+        campoOverrides:existente.campoOverrides||null,campoSponsor:existente.campoSponsor||null,alineaciones:existente.alineaciones||null,
+      };
+      // Solo tiene sentido archivar la temporada anterior si de verdad
+      // tenía algo — si no, era una ficha vacía a medio crear y
+      // archivarla solo ensuciaría la trayectoria con una fila en blanco.
+      const teniaAlgo=(prevSnapshot.stats.pj||0)>0 || prevSnapshot.partidos.length>0 || prevSnapshot.clips.length>0 || prevSnapshot.clipsGC.length>0 || !!prevSnapshot.temp;
+      eTemporadas=[...(existente.temporadas||[])];
+      if(teniaAlgo){ eTemporadas.push(prevSnapshot); mensajeExtra=` · temporada ${prevSnapshot.temp||'anterior'} archivada en su trayectoria`; }
+      else mensajeExtra=' · ya existía esta ficha, se ha actualizado en vez de duplicarla';
+      // El campograma/alineaciones de la temporada anterior ya han
+      // quedado en el snapshot — la temporada nueva empieza sin ellos.
+      existente.campoOverrides=null;existente.campoSponsor=null;existente.alineaciones=null;
+    }
   }
+  const id=eId||('e_'+Date.now());eId=id;
+  const {pj,v,e:e2,d,gf,gc}=_eStatsActuales();
   // "liga" se sigue guardando como texto compuesto (categoría + grupo) para
   // que el permiso de acceso por liga (usuarioPuedeVerLiga/ligasPermitidas)
   // y la búsqueda de equipos sigan funcionando exactamente igual que antes,
@@ -4849,7 +5080,21 @@ function guardarE(){
     orig:{eoatq:GN('eoatq'),eoabp:GN('eoabp'),eocl:GN('eocl'),eojd:GN('eojd'),eotr:GN('eotr'),
           egcatq:GN('egcatq'),egcabp:GN('egcabp'),egctr:GN('egctr'),egcjd:GN('egcjd')},
     imgEsc:imgStore.eesc||null,partidos:[...ePartidos],gcGoles:[...eGC],
+    temporadas:[...eTemporadas],
     fecha:new Date().toLocaleDateString('es-ES')};
+  // El nombre, el escudo y el color son la identidad del club (se
+  // mantienen entre temporadas) — si se está fusionando con una ficha ya
+  // existente y este formulario no traía escudo/color propios (lo normal,
+  // ya que el usuario solo quería añadir la temporada nueva), se
+  // conservan los que ya tenía esa ficha en vez de perderlos.
+  if(equipoExistentePrevio){
+    if(!eq.imgEsc) eq.imgEsc=equipoExistentePrevio.imgEsc||null;
+    // Si el color se dejó en el azul por defecto (el que pone nuevoE()),
+    // lo normal es que el usuario no lo haya tocado a propósito para este
+    // club ya existente — se conserva el color que ya tenía la ficha.
+    if(!G('ecolor-hex') || G('ecolor-hex').toUpperCase()==='#2F81F7') eq.color=equipoExistentePrevio.color||eq.color;
+    eq.tipo=eq.tipo||equipoExistentePrevio.tipo;
+  }
 // Persist clips (no blob)
   const clipsGuardar=eClips.map(c=>({
     id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,jugador:c.jugador||'',
@@ -4881,7 +5126,7 @@ function guardarE(){
   else eDB.unshift(eq);
   saveEDB();
   if(typeof recalcularStatsDesdePartidos==='function') recalcularStatsDesdePartidos();
-  toast(`✅ ${nom} guardado`);
+  toast(`✅ ${nom} guardado${mensajeExtra}`);
 }
 
 // ── PARTIDOS ──────────────────────────────────────────────────────
@@ -6161,6 +6406,13 @@ async function descargarCampogramaImagen(){
 function renderE(){
   const nom=G('enom'),tipo=G('etipo'),temp=G('etemp'),liga=G('eliga'),ent=G('eent'),sist=G('esist');
 
+  // Trayectoria (histórico de temporadas): la tabla editable (con botón de
+  // borrar por fila) se pinta siempre en el formulario, tenga o no
+  // temporadas archivadas todavía — así el usuario ve de entrada su
+  // temporada actual ahí y entiende qué va a ir creciendo con "➕ Nueva
+  // Temporada".
+  { const trForm=document.getElementById('e-trayectoria-form'); if(trForm) trForm.innerHTML=_eTrayectoriaTablaHTML(true); }
+
   // ── Stats (auto desde partidos si los hay) ──────────────────
   let pj=GN('epj'),v=GN('ev'),e2=GN('ee'),d=GN('ed'),gf=GN('egf'),gc=GN('egc');
   if(ePartidos.length>0){
@@ -6526,6 +6778,13 @@ function renderE(){
       ${eclipsH}
     </div>
     ${renderEClipsGC()}
+    ${eTemporadas.length>0?`<!-- ── TRAYECTORIA ── -->
+    <div class="partidos-section">
+      <div class="partidos-title">
+        <span>📈 Trayectoria · ${eTemporadas.length+1} temporadas</span>
+      </div>
+      ${_eTrayectoriaTablaHTML(false)}
+    </div>`:''}
     <!-- ── NOTA TÁCTICA ── -->
     <div class="feq-nota-v2">
       <strong>Notas tácticas:</strong> ${eH(G('enota'))||'—'}
@@ -9209,7 +9468,7 @@ function sincronizarTacticaDesdePartidos(){
       // equipo exista en Equipos (aunque a los goles no se les haya
       // puesto origen todavía), fusionando con un partido ya existente
       // en su ficha si coincide rival+fecha, o creando uno nuevo si no.
-      const eq=_buscarEquipoPorNombre(equipoNom);
+      const eq=_buscarEquipoPorNombre(equipoNom,p.temp);
       if(!eq) return;
       if(!eq.partidos) eq.partidos=[];
       let entry=eq.partidos.find(x=>(x.rival||'').trim().toLowerCase()===(rivalNom||'').trim().toLowerCase() && (x.fecha||'')===(p.fecha||''));
@@ -10124,6 +10383,10 @@ function borrarEquipo(btn){
   askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
     eDB = eDB.filter(x => String(x.id) !== String(id));
     saveEDB(); renderEDB(); toast('🗑 Eliminado');
+    // Se borra también en el Sheet — si no, la próxima sincronización lo
+    // volvería a traer de vuelta como si fuera nuevo (así se puede usar
+    // este mismo botón para quitar un equipo duplicado sin que reaparezca).
+    if(typeof _apiAdmin==='function') _apiAdmin('eliminarEquipo',{id});
   });
 }
 // Borra el equipo que se está viendo/editando actualmente (útil para
@@ -10134,11 +10397,13 @@ function borrarEquipoActual(){
   const eq = eDB.find(x => String(x.id) === String(eId));
   const nom = (eq && eq.nom) ? eq.nom : 'este equipo';
   askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
-    eDB = eDB.filter(x => String(x.id) !== String(eId));
+    const idBorrado=eId;
+    eDB = eDB.filter(x => String(x.id) !== String(idBorrado));
     saveEDB();
     eId = null;
     navTo('equipos-db');
     toast('🗑 Equipo eliminado');
+    if(typeof _apiAdmin==='function') _apiAdmin('eliminarEquipo',{id:idBorrado});
   });
 }
 function borrarJugador(btn){
