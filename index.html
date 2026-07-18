@@ -883,6 +883,11 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .eclip-titulo{font-size:11px;font-weight:700;color:var(--blanco);}
 .eclip-sub{font-size:9px;color:var(--gris);margin-top:2px;}
 .eclip-tipo-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:4px;}
+.eclip-edit-btn{position:absolute;top:6px;right:6px;z-index:3;background:rgba(13,17,23,.75);
+  border:1px solid var(--border2);border-radius:50%;width:26px;height:26px;color:#fff;
+  font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:background .15s,border-color .15s;}
+.eclip-edit-btn:hover{background:rgba(47,129,247,.85);border-color:var(--azul);}
 
 /* Nota táctica */
 .feq-nota-v2{background:linear-gradient(135deg,#0d1b2f,#0d1117);
@@ -1591,13 +1596,6 @@ body.solo-lectura .ed-panel-form {
       </div>
     </div>
     <div class="psec">
-      <div class="phdr" onclick="tog(this)">🔴 Clips Goles en Contra <span class="arr">▾</span></div>
-      <div class="pbody hide" id="equipo-clips-gc-wrap">
-        <p style="font-size:10px;color:var(--gris);padding:6px 0 10px">Clips de goles encajados — análisis defensivo.</p>
-        <div id="eclips-gc-list"></div>
-        <button class="badd" onclick="addEClipGC()" style="border-color:var(--rojo-cl);color:var(--rojo-cl)">+ Añadir clip gol en contra</button>
-      </div>
-
       <div class="phdr" onclick="tog(this)">📝 Nota Técnica <span class="arr">▾</span></div>
       <div class="pbody">
         <textarea id="jnota" rows="3" placeholder="Valoración del cuerpo técnico..." oninput="renderJ()"></textarea>
@@ -1734,7 +1732,7 @@ body.solo-lectura .ed-panel-form {
             <option value="4-4-2 (rombo)">1-4-4-2 (rombo)</option>
             <option value="4-2-3-1">1-4-2-3-1</option>
             <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
-            <option value="5-3-2">1-5-3-2</option>
+            <option value="5-3-2">1-5-3-2</option><option value="5-4-1">1-5-4-1</option>
             <option value="4-1-4-1">1-4-1-4-1</option><option value="Otro">Otro</option>
           </select>
         </div>
@@ -1798,6 +1796,14 @@ body.solo-lectura .ed-panel-form {
       </div>
     </div>
     <div class="psec">
+      <div class="phdr" onclick="tog(this)">🔴 Clips Goles en Contra <span class="arr">▾</span></div>
+      <div class="pbody hide" id="equipo-clips-gc-wrap">
+        <p style="font-size:10px;color:var(--gris);padding:6px 0 10px">Clips de goles encajados — análisis defensivo.</p>
+        <div id="eclips-gc-list"></div>
+        <button class="badd" onclick="addEClipGC()" style="border-color:var(--rojo-cl);color:var(--rojo-cl)">+ Añadir clip gol en contra</button>
+      </div>
+    </div>
+    <div class="psec">
       <div class="phdr" onclick="tog(this)">📈 Análisis de Origen (Goles a Favor) <span class="arr">▾</span></div>
       <div class="pbody">
         <label>Ataque Organizado</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="eoatq" min="0" max="40" value="0" oninput="sv('eoatq_v',this.value);renderE()"><span id="eoatq_v" style="font-size:10px;color:var(--azul-cl);font-weight:800;width:16px">0</span></div>
@@ -1842,6 +1848,8 @@ body.solo-lectura .ed-panel-form {
           <option value="4-4-2 (rombo)">1-4-4-2 (rombo)</option>
           <option value="4-2-3-1">1-4-2-3-1</option>
           <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
+          <option value="5-3-2">1-5-3-2</option><option value="5-4-1">1-5-4-1</option>
+          <option value="4-1-4-1">1-4-1-4-1</option>
         </select>
       </div>
       <button class="btn b-ghost b-sm" id="campo-btn-alineacion" onclick="campogramaEditarAlineacionActual()" style="display:none">📋 Editar alineación de esta jornada</button>
@@ -2344,6 +2352,64 @@ const pctMinutosJugados=(min,p)=>{ min=+min||0; p=+p||0; return p>0 ? Math.max(0
 const eH=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const ini=(n,a)=>{const p=(n+' '+a).trim().split(' ');return p.slice(0,2).map(x=>x[0]||'').join('').toUpperCase();};
 const sv=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+// ── Búsqueda "difusa" (tolerante a acentos y erratas) ──────────────────
+// Quita tildes/diacríticos y pasa a minúsculas — así buscar "gimenez" o
+// "alvaro" encuentra a "Giménez"/"Álvaro" aunque no se escriban los
+// acentos, que es el despiste más habitual al buscar un nombre de memoria.
+function _normalizarBusqueda(s){
+  return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+}
+// Distancia de edición (Levenshtein) acotada a "max": en cuanto se ve que
+// ninguna celda de la fila puede quedar por debajo del margen, corta el
+// cálculo — así no penaliza el rendimiento aunque el texto sea largo, y
+// solo importa "está dentro del margen de tolerancia sí/no", no el valor
+// exacto por encima de ese margen.
+function _distanciaEdicion(a,b,max){
+  if(Math.abs(a.length-b.length)>max) return max+1;
+  const la=a.length,lb=b.length;
+  let prev=Array.from({length:lb+1},(_,j)=>j);
+  for(let i=1;i<=la;i++){
+    const cur=[i];
+    let filaMin=cur[0];
+    for(let j=1;j<=lb;j++){
+      const costo=a[i-1]===b[j-1]?0:1;
+      const v=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+costo);
+      cur.push(v);
+      if(v<filaMin) filaMin=v;
+    }
+    if(filaMin>max) return max+1;
+    prev=cur;
+  }
+  return prev[lb];
+}
+// Compara una palabra buscada contra una palabra del texto permitiendo
+// pequeñas erratas (letra de más/menos, cambiada...) — el margen de
+// tolerancia crece con la longitud de la palabra, porque una letra de
+// diferencia en un nombre de 4 letras cambia demasiado como para
+// considerarlo "parecido", pero en uno de 10 letras es un simple despiste.
+function _palabraParecida(query,palabra){
+  if(!query||!palabra) return false;
+  if(palabra.includes(query)||query.includes(palabra)) return true;
+  const max=query.length<=4?1:query.length<=8?2:3;
+  return _distanciaEdicion(query,palabra,max)<=max;
+}
+/** Búsqueda difusa de uso general para los buscadores de la app (nombre de
+ *  jugador, club, etc.): primero prueba el "contiene" normal (rápido, sin
+ *  tildes) y solo si con eso no basta prueba, palabra a palabra, si cada
+ *  palabra buscada se PARECE lo suficiente a alguna palabra del texto
+ *  (typo, tilde, una letra de más/menos...) — así aunque no te acuerdes
+ *  bien de cómo se escribe el club o el jugador, sigue apareciendo en
+ *  cuanto vas escribiendo algo parecido. */
+function _fuzzyMatch(texto,query){
+  const t=_normalizarBusqueda(texto), q=_normalizarBusqueda(query);
+  if(!q) return true;
+  if(t.includes(q)) return true;
+  const palabrasTexto=t.split(/\s+/).filter(Boolean);
+  const palabrasQuery=q.split(/\s+/).filter(Boolean);
+  if(!palabrasQuery.length) return true;
+  return palabrasQuery.every(pq=>palabrasTexto.some(pt=>_palabraParecida(pq,pt)));
+}
+
 // Debounce genérico — usado para no relanzar un re-render pesado (listas
 // grandes con imágenes, recalculo de <select> en cascada, etc.) en CADA
 // pulsación de un buscador de texto, que es donde más se nota el tirón en
@@ -3028,7 +3094,7 @@ function renderDrawerClubes(q){
   const wrap=document.getElementById('drawer-club-list');if(!wrap)return;
   q=(q!==undefined?q:(G('drawer-club-q')||'')).toLowerCase();
   const visibles=(typeof eDB!=='undefined'?eDB:[]).filter(e=>usuarioPuedeVerLiga(e.liga));
-  let lst=q?visibles.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q)):visibles;
+  let lst=q?visibles.filter(e=>_fuzzyMatch(e.nom+' '+e.liga,q)):visibles;
   lst=[...lst].sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
   if(!lst.length){wrap.innerHTML=`<div class="drawer-club-empty">${visibles.length?'Sin resultados':'Sin equipos'}</div>`;return;}
   wrap.innerHTML=lst.map(eq=>{
@@ -3484,7 +3550,7 @@ function renderJDB(){
   if(fGrupo)lst=lst.filter(j=>grupoDeEquipoPorNombre(j.club)===fGrupo);
   if(fEquipo)lst=lst.filter(j=>(j.club||'').trim()===fEquipo);
   if(fTemp)lst=lst.filter(j=>(j.temp||'').trim()===fTemp);
-  if(q)lst=lst.filter(j=>(j.nom+' '+j.ape+' '+j.pos+' '+j.club).toLowerCase().includes(q));
+  if(q)lst=lst.filter(j=>_fuzzyMatch(j.nom+' '+j.ape+' '+j.pos+' '+j.club,q));
   const grid=document.getElementById('j-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;actualizarBarraComparar();return;}
   grid.innerHTML=lst.map(j=>{
@@ -4479,7 +4545,7 @@ function renderEDB(){
   if(fCat)lst=lst.filter(e=>_eCategoria(e)===fCat);
   if(fGrupo)lst=lst.filter(e=>(e.grupo||'').trim()===fGrupo);
   if(fTemp)lst=lst.filter(e=>(e.temp||'').trim()===fTemp);
-  if(q)lst=lst.filter(e=>(e.nom+' '+e.liga).toLowerCase().includes(q));
+  if(q)lst=lst.filter(e=>_fuzzyMatch(e.nom+' '+e.liga,q));
   const grid=document.getElementById('e-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">🏟️</div><div style="font-size:14px">${eDBVisible.length?'Sin resultados':'Sin equipos'}</div><div style="font-size:11px;opacity:.7">${eDBVisible.length?'Prueba otro término':'Pulsa "+ Nuevo equipo"'}</div></div>`;actualizarBarraCompararE();return;}
   grid.innerHTML=lst.map(eq=>{
@@ -5099,6 +5165,12 @@ const CAMPO_SISTEMAS={
     {code:'CTI',x:30,y:78},{code:'CT',x:50,y:82},{code:'CTD',x:70,y:78},
     {code:'LTI',x:12,y:50},{code:'MC',x:34,y:46},{code:'MCD',x:50,y:54},{code:'MC',x:66,y:46},{code:'LTD',x:88,y:50},
     {code:'DC',x:38,y:14},{code:'DC',x:62,y:14}
+  ],
+  '5-4-1':[
+    {code:'PT',x:50,y:92},
+    {code:'LTI',x:10,y:76},{code:'CTI',x:32,y:80},{code:'CT',x:50,y:82},{code:'CTD',x:68,y:80},{code:'LTD',x:90,y:76},
+    {code:'EI',x:14,y:46},{code:'MC',x:38,y:48},{code:'MC',x:62,y:48},{code:'ED',x:86,y:46},
+    {code:'DC',x:50,y:12}
   ]
 };
 
@@ -9442,7 +9514,9 @@ function renderGolesClipsView(){
       mediaH=`<div class="eclip-media"><div class="em-empty"><span>🎬</span><p>Sin vídeo</p></div></div>`;
     }
     const quien=c.jugador||c.equipo;
+    const editBtn=esAdminActual()?`<button class="eclip-edit-btn" title="Editar clip (título/portada)" onclick="golesEditarClip(${i},event)">✎</button>`:'';
     return `<div class="eclip-card-v2">
+      ${editBtn}
       ${mediaH}
       <div class="eclip-info">
         <div class="eclip-titulo">${eH(c.titulo)||'Sin título'}</div>
@@ -9459,6 +9533,39 @@ function renderGolesClipsView(){
 function golesAbrirClip(i){
   const c=(window._golesClipsActuales||[])[i];
   if(c) abrirVideoModal(c);
+}
+
+/** Lleva al usuario directamente a la ficha del jugador/equipo dueño del
+ *  clip, con la pestaña "Editar" abierta y la sección del clip
+ *  desplegada — así desde la galería global de "🥅 Goles" también se
+ *  puede renombrar el clip o cambiarle la portada, no solo verlo. */
+function golesEditarClip(i,ev){
+  if(ev) ev.stopPropagation();
+  const c=(window._golesClipsActuales||[])[i];
+  if(!c) return;
+  if(!esAdminActual()){ toast('Solo los administradores pueden editar clips',true); return; }
+  const abrirSeccion=(tipo,headerTexto)=>{
+    setTimeout(()=>{
+      edTabSwitch(tipo,'editar');
+      const hdrs=[...document.querySelectorAll('.ed-form-scroll .phdr')];
+      const hdr=hdrs.find(h=>h.textContent.trim().startsWith(headerTexto));
+      if(hdr){
+        const body=hdr.nextElementSibling;
+        if(body && body.classList.contains('hide')) tog(hdr);
+        setTimeout(()=>hdr.scrollIntoView({behavior:'smooth',block:'start'}),80);
+      }
+    },60);
+  };
+  if(c.fuente==='Jugador' && c.jugadorId){
+    editJ(c.jugadorId);
+    abrirSeccion('j','🎬 Clips de Goles');
+  }else if(c.fuente==='Equipo · En contra'){
+    irAEquipoPorNombre(c.equipo);
+    abrirSeccion('e','🔴 Clips Goles en Contra');
+  }else{
+    irAEquipoPorNombre(c.equipo);
+    abrirSeccion('e','🎬 Clips de Goles del Equipo');
+  }
 }
 
 function exportarGolesPDF(){
@@ -9548,8 +9655,8 @@ function buildEClipsGC(){
         <span style="color:var(--rojo-cl);font-size:10px;font-weight:700">GC ${i+1}</span>
         <button class="brm" onclick="eClipsGC.splice(${i},1);buildEClipsGC();renderE()">✕</button>
       </div>
-      <input class="clip-input" placeholder="Título del clip (ej: Gol m.23)" value="${eH(cl.titulo||'')}"
-        oninput="eClipsGC[${i}].titulo=this.value">
+      <input class="clip-input clip-tit-inp" placeholder="Título del clip (ej: Gol m.23)" value="${eH(cl.titulo||'')}"
+        oninput="eClipsGC[${i}].titulo=this.value;renderE()">
       <input class="clip-input" placeholder="⚽ Jugador rival que marca" value="${eH(cl.jugador||'')}"
         oninput="eClipsGC[${i}].jugador=this.value">
       <input class="clip-input" placeholder="Rival / partido" value="${eH(cl.rival||'')}"
@@ -9559,7 +9666,7 @@ function buildEClipsGC(){
       </select>
       <div class="clip-portada-zona ${cl.portada?'has-portada':''}" id="gcpz-${i}"
         onclick="document.getElementById('gcpf-${i}').click()">
-        ${cl.portada?`<img src="${cl.portada}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`
+        ${cl.portada?`<button class="cp-rm" onclick="rmGCPortada(${i},event)">✕</button><img src="${cl.portada}" style="width:100%;height:100%;object-fit:cover;border-radius:5px"><div class="clip-portada-overlay"><span>📷 Cambiar</span></div>`
           :`<div style="text-align:center;color:var(--gris);font-size:10px">📸 Portada<br>(clic)</div>`}
       </div>
       <input type="file" id="gcpf-${i}" accept="image/*" style="display:none"
@@ -9574,6 +9681,7 @@ function buildEClipsGC(){
     </div>`).join('');
 }
 
+function rmGCPortada(i,e){e.stopPropagation();if(eClipsGC[i]){eClipsGC[i].portada=null;buildEClipsGC();renderE();}}
 async function loadGCPortada(e,i){
   const f=e.target.files[0]; if(!f) return;
   const dataUrl = await _comprimirImagenArchivo(f, {maxDim:480, calidad:0.8, formato:'image/jpeg'});
