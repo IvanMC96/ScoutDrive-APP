@@ -3696,6 +3696,18 @@ function _cmpAplicarFallbackCORS(clonedDoc){
   clonedDoc.querySelectorAll('img[data-cmp-cors-fail="1"]').forEach(img=>{
     img.dispatchEvent(new Event('error'));
   });
+  // El campograma en móvil envuelve el campo en un contenedor con scroll
+  // horizontal propio (.campo-pitch-scroll, ver CSS) para que los chips
+  // de varios jugadores agrupados no se amontonen unos sobre otros en
+  // pantallas estrechas — pero html2canvas normalmente solo "fotografía"
+  // la parte visible de un contenedor con overflow recortado. La captura
+  // de descargarCampogramaImagen() ya fuerza un windowWidth de escritorio
+  // (ver esa función) para que ni siquiera entre esa regla de móvil, pero
+  // por si acaso se llega aquí con overflow recortado de todos modos, esto
+  // lo anula SOLO en el documento clonado que se va a capturar (nunca en
+  // la vista real en pantalla), para que la imagen salga completa.
+  clonedDoc.querySelectorAll('.campo-pitch-scroll').forEach(w=>{ w.style.overflow='visible'; });
+  clonedDoc.querySelectorAll('.campo-wrap').forEach(w=>{ w.style.overflow='visible'; });
 }
 
 /** Fila de barras horizontales (una barra por jugador/equipo comparado)
@@ -5737,10 +5749,12 @@ function renderCampograma(){
           <div class="campo-hdr-sub">${jornadaActiva&&jornadaInfo?eH(_campogramaSubHeaderJornada(eq,jornadaInfo).toUpperCase()):'PLANTILLA · TEMPORADA '+eH(eq.temp||'—')+(eq.sist?' · 1-'+eH(eq.sist):'')}</div>
         </div>
       </div>
-      <div class="campo-pitch-abs${horiz?' horiz':''}" id="campo-pitch-abs" style="background:repeating-linear-gradient(${horiz?90:180}deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
-        ${marcasH}
-        ${sponsorH}
-        ${chipsH}
+      <div class="campo-pitch-scroll">
+        <div class="campo-pitch-abs${horiz?' horiz':''}" id="campo-pitch-abs" style="background:repeating-linear-gradient(${horiz?90:180}deg,${stripeA} 0,${stripeA} 48px,${stripeB} 48px,${stripeB} 96px)">
+          ${marcasH}
+          ${sponsorH}
+          ${chipsH}
+        </div>
       </div>
       ${banquilloH}
     </div>`;
@@ -6052,7 +6066,14 @@ async function descargarCampogramaImagen(){
     // _cmpConvertirImagenesADataURL más arriba).
     await _cmpConvertirImagenesADataURL(el);
     await _cmpEsperarImagenes(el);
-    const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS});
+    // windowWidth fuerza a html2canvas a montar el documento clonado como
+    // si la ventana fuera de escritorio (1100px), aunque se esté
+    // exportando desde el móvil — así ni siquiera entra la media query
+    // @media(max-width:680px) que en pantalla encoge los chips y activa
+    // el scroll horizontal de .campo-pitch-scroll, y la imagen descargada
+    // sale siempre con el mismo trazado limpio y sin recortes que en
+    // ordenador, sea cual sea el dispositivo desde el que se pulse.
+    const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS,windowWidth:1100,windowHeight:Math.max(1400,el.scrollHeight||0)});
     const url=canvas.toDataURL('image/png');
     const a=document.createElement('a');
     a.href=url;a.download=`Campograma_${(eq.nom||'Equipo').replace(/\s+/g,'_')}.png`;
@@ -6983,6 +7004,22 @@ function initPullToRefresh(){
     if(e.touches.length!==1) return;
     const overlay=document.getElementById('login-overlay');
     if(overlay && overlay.style.display!=='none') return; // no activo durante el login
+    // El formulario de edición (Jugadores/Equipos) es un panel con su
+    // propio scroll interno (.ed-form-scroll) que en móvil empieza
+    // siempre arriba del todo (scrollTop=0) al abrirlo — antes, arrastrar
+    // el dedo hacia abajo justo ahí (el gesto normal para "subir" y ver
+    // los primeros campos otra vez tras haber bajado) se interpretaba
+    // como "tirar para actualizar" y se comía el gesto, dejando el
+    // formulario como bloqueado y obligando a girar el móvil a horizontal
+    // (donde el editor usa otro layout de 2 columnas) para poder acceder
+    // bien. El campograma tiene el mismo problema con sus chips
+    // arrastrables. En ninguno de los dos tiene sentido "tirar para
+    // actualizar" de todos modos (se perdería un cambio sin guardar), así
+    // que aquí directamente no se activa el gesto propio y el navegador
+    // hace scroll/arrastre normal sin que nosotros interfiramos.
+    if(e.target.closest('.ed-form-scroll,.ed-panel-form,.campo-pitch-abs,.campo-chip-pos,.campo-chip-grupo,.campo-sponsor-badge')){
+      startY=null; activo=false; return;
+    }
     contenedor=contenedorScrollable(e.target);
     const scrollTop=contenedor?contenedor.scrollTop:window.scrollY;
     if(scrollTop<=0){ startY=e.touches[0].clientY; activo=true; disparado=false; }
@@ -7221,9 +7258,23 @@ function _ajustarAlturaVideoModal(){
   requestAnimationFrame(()=>{
     const w=player.getBoundingClientRect().width;
     if(w>0){
-      const h=Math.round(w*9/16);
+      const h169=Math.round(w*9/16);
       const maxH=window.innerHeight-16-44; // deja hueco para cabecera y márgenes
-      player.style.height=Math.min(h,maxH>120?maxH:h)+'px';
+      const techo=maxH>120?maxH:h169;
+      // Un vídeo de Google Drive/YouTube se sirve dentro de un <iframe>
+      // cuyo contenido no controlamos (ver comentario más abajo, junto al
+      // botón de pantalla completa): con un recuadro ajustado a 16:9 puro,
+      // en un móvil en vertical ese iframe queda tan estrecho que Drive/
+      // YouTube muestran su propia cabecera/controles "compactos", que se
+      // comen buena parte del recuadro y dejan el vídeo pequeño y
+      // descuadrado antes de entrar en pantalla completa. Dándole más
+      // alto en móvil (hasta la mitad de la pantalla, sin pasarse del
+      // hueco disponible) esa cabecera pesa mucho menos en proporción y
+      // el vídeo se ve mejor encajado de entrada, sin obligar a pasar a
+      // pantalla completa solo para verlo bien.
+      const esMovil=window.innerWidth<=680;
+      const hDeseado=esMovil?Math.max(h169,Math.round(window.innerHeight*0.5)):h169;
+      player.style.height=Math.min(hDeseado,techo)+'px';
     }
   });
 }
@@ -8120,7 +8171,16 @@ function guardarEConFeedback(){
   background:var(--bg2); overflow:auto;
 }
 .campo-wrap:fullscreen .campo-pitch-abs,.campo-wrap:-webkit-full-screen .campo-pitch-abs{
-  width:auto; height:100%; max-height:100%; flex-shrink:0; margin:0 auto;
+  width:auto; min-width:0; height:100%; max-height:100%; flex-shrink:0; margin:0 auto;
+}
+/* En pantalla completa el propio .campo-wrap ya se encarga de encajar el
+   campo (ver reglas de arriba) — el scroll horizontal de
+   .campo-pitch-scroll pensado para la vista normal en móvil no hace
+   falta aquí (hay sitio de sobra) y, sin anularlo, el centrado y el
+   alto:100% en cadena hasta .campo-pitch-abs no se propagarían bien. */
+.campo-wrap:fullscreen .campo-pitch-scroll,.campo-wrap:-webkit-full-screen .campo-pitch-scroll{
+  height:100%; width:100%; overflow:visible;
+  display:flex; justify-content:center; min-width:0;
 }
 .campo-hdr{ display:flex; align-items:center; gap:12px; padding:16px 18px; }
 .campo-hdr-badge{
@@ -8136,6 +8196,14 @@ function guardarEConFeedback(){
   font-size:12px; padding:5px 8px; border-radius:8px; border:1px solid var(--border2);
   background:var(--bg2); color:var(--blanco);
 }
+
+/* Envuelve .campo-pitch-abs para poder darle scroll horizontal propio en
+   móvil (ver media query de abajo) sin que .campo-wrap pierda su
+   overflow:hidden (necesario para las esquinas redondeadas y para que la
+   cabecera/banquillo, que van fuera de este contenedor, no se vean
+   afectados). En escritorio/tablet no hace nada (ancho normal, sin
+   scroll). */
+.campo-pitch-scroll{ width:100%; }
 
 .campo-pitch-abs{
   position:relative; width:100%; aspect-ratio:100/140; min-height:480px;
@@ -8259,13 +8327,34 @@ function guardarEConFeedback(){
 .campo-sponsor-badge.editable:active,.campo-sponsor-badge.dragging{ cursor:grabbing; z-index:6; }
 
 @media(max-width:680px){
-  .campo-pitch-abs{ min-height:400px; }
-  .campo-pitch-abs.horiz{ min-height:280px; }
+  /* Algunos sistemas colocan dos huecos bastante cerca en horizontal
+     (p.ej. los dos "MCD" del 1-4-2-3-1, o los 3 centrales del 1-3-5-2) —
+     con tarjetas de tamaño fijo, si el campo se encoge para caber entero
+     en la pantalla del móvil esos huecos vecinos terminan solapándose y
+     el texto se vuelve ilegible. En vez de seguir encogiendo el trazado
+     (que ya está bastante ajustado), aquí se le pone un ancho mínimo al
+     campo — igual de espacioso que en un móvil grande — y es
+     .campo-pitch-scroll quien absorbe la diferencia con scroll horizontal
+     propio si la pantalla es más estrecha que eso, en vez de solaparse.
+     La foto/PDF exportados no se ven afectados por este scroll (ver
+     windowWidth en descargarCampogramaImagen y el onclone de
+     _cmpAplicarFallbackCORS). */
+  .campo-pitch-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -2px; padding:0 2px; }
+  .campo-pitch-abs{ min-height:400px; min-width:540px; }
+  .campo-pitch-abs.horiz{ min-height:280px; min-width:680px; }
   .campo-chip-pos{ width:50px; }
   .campo-chip-pos-av{ width:32px; height:32px; font-size:10px; }
   .campo-chip-pos-nm{ font-size:7px; }
   .campo-chip-pos-cod{ font-size:6px; }
-  .campo-chip-grupo{ min-width:86px; max-width:132px; padding:3px 4px; }
+  /* Un chip agrupado más estrecho envuelve más el texto de cada jugador
+     en más líneas, así que la tarjeta se vuelve más ALTA (no solo más
+     estrecha) — y eso puede acabar solapando con la fila vecina en
+     vertical (p.ej. el portero suplente con la línea defensiva) aunque
+     ya no se solape en horizontal. Por eso aquí no se estrecha tanto como
+     podría parecer a primera vista: se apoya sobre todo en el ancho
+     mínimo del campo de arriba (con scroll si no cabe) para evitar el
+     amontonamiento, y solo se recorta un poco el tamaño de la tarjeta. */
+  .campo-chip-grupo{ min-width:96px; max-width:128px; padding:3px 4px; }
   .campo-chip-grupo-tit{ font-size:7px; }
   .campo-grupo-fila{ font-size:7px; }
   .campo-grupo-av{ width:14px; height:14px; font-size:6px; }
