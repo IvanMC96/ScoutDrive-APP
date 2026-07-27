@@ -4794,12 +4794,30 @@ function guardarEConFeedback(){
 
     try {
       const hashPass = await sha256Browser(pass);
-      const res = await fetch(SCOUT_API_LOGIN, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ accion: 'login', email, hashPass })
-      });
-      const data = await res.json();
+      let res;
+      try {
+        res = await fetch(SCOUT_API_LOGIN, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ accion: 'login', email, hashPass })
+        });
+      } catch (errRed) {
+        // Esto sí es un fallo de red de verdad (sin internet, DNS, etc.)
+        throw new Error('RED: ' + errRed.message);
+      }
+
+      const textoBruto = await res.text();
+      let data;
+      try {
+        data = JSON.parse(textoBruto);
+      } catch (errParse) {
+        // El servidor respondió, pero no con JSON — normalmente pasa si
+        // Apps Script devuelve una página de error/login de Google en vez
+        // de la respuesta esperada (p.ej. el despliegue no es público).
+        console.warn('[Scoutdrive] Respuesta no-JSON del servidor:', textoBruto.slice(0, 300));
+        throw new Error('SERVIDOR: respuesta inesperada (revisa que el despliegue de Apps Script sea público)');
+      }
+
       if (data.ok && data.resultado && data.resultado.ok) {
         _abrirApp(data.resultado.usuario);
       } else {
@@ -4809,13 +4827,16 @@ function guardarEConFeedback(){
           : 'Usuario o contraseña incorrectos.');
       }
     } catch(err) {
-      // Sin conexión — fallback local
-      console.warn('[Scoutdrive] API no disponible, usando fallback:', err.message);
+      console.warn('[Scoutdrive] Fallo en login:', err.message);
       const u = FALLBACK_USERS[email];
       if (u && u.pass === pass) {
         _abrirApp({ email, rol: u.rol, nombre: u.nombre, _fallback: true });
-      } else {
+      } else if (String(err.message).startsWith('RED:')) {
         _mostrarError('Sin conexión con el servidor. Verifica tu internet e inténtalo de nuevo.');
+      } else {
+        // Mostramos el motivo real (SERVIDOR: ...) en vez de decir
+        // siempre "sin conexión" — así se puede diagnosticar de verdad.
+        _mostrarError('Error de conexión con Apps Script: ' + err.message.replace('SERVIDOR: ',''));
       }
     }
   }
