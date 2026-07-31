@@ -1,0 +1,46 @@
+// ── AÑADIDO: consulta de almacenamiento de Drive para el panel Admin ──
+function obtenerAlmacenamiento_(solicitanteEmail) {
+  if (!_emailEsAdmin_(solicitanteEmail)) {
+    return { ok: false, motivo: 'solo_administradores' };
+  }
+  try {
+    const token = ScriptApp.getOAuthToken();
+    const resp = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/about?fields=storageQuota', {
+      headers: { Authorization: 'Bearer ' + token },
+      muteHttpExceptions: true
+    });
+    const data = JSON.parse(resp.getContentText());
+    if (!data.storageQuota) return { ok: false, motivo: 'sin_storageQuota_en_respuesta' };
+    return {
+      ok: true,
+      usadoBytes: Number(data.storageQuota.usage || 0),
+      limiteBytes: Number(data.storageQuota.limit || 0)
+    };
+  } catch (e) {
+    return { ok: false, motivo: String(e) };
+  }
+}
+
+// Comprueba el rol de un email leyendo la hoja "Usuarios" por CABECERA
+// (busca las columnas "email" y "rol" por nombre, no por posición fija),
+// para no depender de que las columnas estén siempre en el mismo orden.
+function _emailEsAdmin_(email) {
+  if (!email) return false;
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName('Usuarios');
+    const datos = sheet.getDataRange().getValues();
+    const cabecera = datos[0].map(h => String(h).trim().toLowerCase());
+    const colEmail = cabecera.indexOf('email');
+    const colRol = cabecera.indexOf('rol');
+    if (colEmail < 0 || colRol < 0) return false;
+    const emailNorm = String(email).trim().toLowerCase();
+    for (let i = 1; i < datos.length; i++) {
+      if (String(datos[i][colEmail]).trim().toLowerCase() === emailNorm) {
+        return String(datos[i][colRol]).trim().toLowerCase() === 'admin';
+      }
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
