@@ -1372,6 +1372,11 @@ body.solo-lectura .ed-panel-form {
 
   <div class="inicio-highlights-grid" id="inicio-highlights-grid"></div>
 
+  <div class="inicio-card" id="inicio-proximos-card">
+    <div class="inicio-card-tit">🗓️ Próximos partidos</div>
+    <div id="inicio-proximos-partidos"></div>
+  </div>
+
   <div class="inicio-grid2">
     <div class="inicio-card">
       <div class="inicio-card-tit">📅 Últimos partidos</div>
@@ -2206,6 +2211,15 @@ body.solo-lectura .ed-panel-form {
     <button class="btn b-verde" onclick="abrirModalNuevoUsuario()">+ Nuevo usuario</button>
   </div>
 
+  <!-- Almacenamiento de Google Drive de la cuenta que aloja el backend —
+       las fotos/escudos/vídeos consumen espacio de esa cuenta, y si se
+       llena, el backend empieza a fallar (guardar/compartir vídeo, login
+       incluido) de forma intermitente y difícil de diagnosticar. -->
+  <div class="inicio-card" id="admin-almacenamiento-card" style="margin-bottom:16px">
+    <div class="inicio-card-tit">💾 Almacenamiento de Google Drive</div>
+    <div id="admin-almacenamiento-wrap" style="font-size:12px;color:var(--gris)">Comprobando...</div>
+  </div>
+
   <!-- Lista de usuarios -->
   <div id="admin-usuarios-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
     <div style="color:var(--gris);font-size:12px;padding:20px">Cargando usuarios...</div>
@@ -2514,11 +2528,41 @@ function renderInicio(){
     ? ultimosP.map(p=>`<div class="inicio-row clicable" onclick="irAPartido('${p.id}')"><span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}</span><span class="inicio-row-r">${p.gf??'-'}:${p.gc??'-'}</span></div>`).join('')
     : '<div class="inicio-empty">Sin partidos todavía</div>';
 
+  renderProximosPartidosInicio();
   renderHighlightsInicio();
   renderGoleadoresInicio();
   renderClasificacionInicio();
   renderOrigenGolesInicio();
   renderAdsList();
+}
+
+// ── PRÓXIMOS PARTIDOS: partidos ya cargados en Partidos con fecha futura,
+//    a modo de mini-calendario en Inicio. No hace falta ningún campo
+//    nuevo: "Añadir Partido" ya permite guardar rival/fecha/competición
+//    sin resultado ni vídeo todavía (se completan después del partido) —
+//    con eso ya se puede anticipar la agenda de la próxima jornada. ──
+function renderProximosPartidosInicio(){
+  const cont=document.getElementById('inicio-proximos-partidos');
+  if(!cont) return;
+  const hoy=new Date();
+  const hoyStr=`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
+  const proximos=pDB
+    .filter(p=>p.fecha && p.fecha>=hoyStr)
+    .filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha))
+    .slice(0,5);
+  if(!proximos.length){
+    cont.innerHTML=`<div class="inicio-empty">Sin partidos próximos — añádelos desde "Partidos" en cuanto se sepa el rival y la fecha, aunque todavía no haya resultado ni vídeo</div>`;
+    return;
+  }
+  cont.innerHTML=proximos.map(p=>{
+    const fechaFmt=new Date(p.fecha+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'});
+    const esHoy=p.fecha===hoyStr;
+    return `<div class="inicio-row clicable" onclick="irAPartido('${p.id}')">
+      <span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}${p.comp?` <span style="color:var(--gris2)">· ${eH(p.comp)}</span>`:''}</span>
+      <span class="inicio-row-r" style="${esHoy?'color:var(--naranja-cl)':''}">${esHoy?'HOY':fechaFmt}</span>
+    </div>`;
+  }).join('');
 }
 
 // ── DESTACADOS: equipo más goleador, mejor defensa, portero menos batido ──
@@ -3111,7 +3155,7 @@ function navTo(sec,_esVolver){
   if(sec==='config') initCfgForm();
   if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
   if(sec==='goles'){ loadPDB(); setTimeout(initGolesView, 50); }
-  if(sec==='admin') cargarUsuariosAdmin();
+  if(sec==='admin'){ cargarUsuariosAdmin(); cargarAlmacenamientoAdmin(); }
   // Las barras de comparar (jugadores/equipos) viven fuera de sus vistas
   // para poder quedar fijas abajo del todo — si se navega a una sección
   // que no sea la suya hay que ocultarlas explícitamente, no solo
@@ -3217,15 +3261,26 @@ function tog(hdr){hdr.classList.toggle('closed');hdr.nextElementSibling.classLis
 // MODAL
 // ══════════════════════════════════════════════════════════════════
 let _delCb=null;
-function askDel(msg,cb){
+/** Modal de confirmación genérico. Por defecto sigue mostrando "Borrar"
+ *  en rojo (comportamiento de siempre para todas las acciones de borrado
+ *  que ya lo usaban), pero admite un 4º parámetro opcional para
+ *  personalizar el texto/color del botón y el título — así una acción
+ *  que NO borra nada (como cerrar sesión) no tiene por qué decir
+ *  "Borrar", que confundía y asustaba sin motivo. */
+function askDel(msg,cb,opts){
+  const o=opts||{};
+  document.getElementById('modal-title').textContent=o.titulo||'Confirmar';
   document.getElementById('modal-txt').textContent=msg;
-  document.getElementById('modal-ok').onclick=()=>{cb();cModal();};
+  const okBtn=document.getElementById('modal-ok');
+  okBtn.textContent=o.okTexto||'Borrar';
+  okBtn.className='btn '+(o.okClase||'b-rojo');
+  okBtn.onclick=()=>{cb();cModal();};
   document.getElementById('modal').classList.add('open');
 }
 function confirmarCerrarSesion(){
-  askDel('¿Cerrar sesión? Tendrás que volver a meter tu usuario y contraseña.',()=>{
+  askDel('¿Seguro que quieres cerrar sesión? Tendrás que volver a meter tu usuario y contraseña la próxima vez.',()=>{
     if(typeof window.cerrarSesion==='function') window.cerrarSesion();
-  });
+  },{titulo:'Cerrar sesión',okTexto:'🚪 Cerrar sesión',okClase:'b-azul'});
 }
 function askDelAll(t){
   if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
@@ -3487,6 +3542,7 @@ function _temporadaActualSnapshot(){
 }
 
 function jNuevaTemporada(){
+  if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
   if(!jId){ toast('Guarda el jugador antes de añadir una temporada nueva',true); return; }
   const tempActual=G('jtemp')||'(sin temporada)';
   askDel(`¿Archivar la temporada ${tempActual} y empezar una nueva para ${(G('jnom')+' '+G('jape')).trim()||'este jugador'}? El club, la posición y las estadísticas quedan listas para editar en la temporada nueva; el resto (foto, nota técnica, vídeos, perfil) se mantiene igual.`,()=>{
@@ -3507,13 +3563,14 @@ function jNuevaTemporada(){
     if(!isNaN(edadNum)) document.getElementById('jedad').value=edadNum+1;
     renderJ();
     toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}`);
-  });
+  },{titulo:'Nueva temporada',okTexto:'📅 Archivar y continuar',okClase:'b-azul'});
 }
 
 // Borra una temporada archivada del histórico (por si se archivó por
 // error) — la temporada EN CURSO no se puede borrar desde aquí, solo se
 // sustituye archivando otra vez.
 function jBorrarTemporada(i){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   askDel(`¿Borrar del histórico la temporada ${jTemporadas[i]?.temp||''}? Esta acción no se puede deshacer.`,()=>{
     jTemporadas.splice(i,1);
     renderJ();
@@ -4200,6 +4257,7 @@ function editJ(id){
 }
 
 function guardarJ(){
+  if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const nom=G('jnom').trim();if(!nom){toast('Añade el nombre del jugador',true);return;}
   const id=jId||('j_'+Date.now());jId=id;
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
@@ -4956,6 +5014,7 @@ function _eTemporadaActualSnapshot(){
 }
 
 function eNuevaTemporada(){
+  if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
   if(!eId){ toast('Guarda el equipo antes de añadir una temporada nueva',true); return; }
   const tempActual=G('etemp')||'(sin temporada)';
   askDel(`¿Archivar la temporada ${tempActual} de ${G('enom')||'este equipo'} y empezar una nueva? El nombre, el escudo y el color se mantienen; categoría, grupo, entrenador, sistema, estadísticas, partidos y clips quedan listos para editar en la temporada nueva.`,()=>{
@@ -4983,13 +5042,14 @@ function eNuevaTemporada(){
     if(nuevaTemp) document.getElementById('etemp').value=nuevaTemp;
     renderE();
     toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}`);
-  });
+  },{titulo:'Nueva temporada',okTexto:'📅 Archivar y continuar',okClase:'b-azul'});
 }
 
 // Borra una temporada archivada del histórico (por si se archivó por
 // error) — la temporada EN CURSO no se puede borrar desde aquí, solo se
 // sustituye archivando otra vez.
 function eBorrarTemporada(i){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   askDel(`¿Borrar del histórico la temporada ${eTemporadas[i]?.temp||''}? Esta acción no se puede deshacer.`,()=>{
     eTemporadas.splice(i,1);
     renderE();
@@ -5071,6 +5131,7 @@ function editE(id){
 }
 
 function guardarE(){
+  if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const nom=G('enom').trim();if(!nom){toast('Añade el nombre del equipo',true);return;}
   // Si se está dando de alta un equipo NUEVO (no se venía editando uno ya
   // existente) y el nombre coincide con uno que ya existe, no se crea un
@@ -10107,6 +10168,41 @@ function usuarioPuedeVerLiga(liga){
   return permitidas.includes(liga.trim());
 }
 
+/** Espacio de Google Drive usado por la cuenta que aloja el backend.
+ *  Requiere la acción 'obtenerAlmacenamiento' en el Code.gs — si esa
+ *  acción todavía no existe en el backend (versión antigua desplegada),
+ *  se muestra un aviso explicándolo en vez de un error críptico. */
+async function cargarAlmacenamientoAdmin() {
+  const wrap = document.getElementById('admin-almacenamiento-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = 'Comprobando...';
+  const resultado = await _apiAdmin('obtenerAlmacenamiento', {});
+  if (!resultado || !resultado.ok) {
+    const motivo = resultado?.motivo || 'desconocido';
+    wrap.innerHTML = `<span style="color:var(--gris2)">No se pudo comprobar (${eH(motivo)}). Si es la primera vez que ves esto, puede que el backend todavía no tenga añadida la función de almacenamiento — pídesela a Claude.</span>`;
+    return;
+  }
+  const usadoGB = (resultado.usadoBytes || 0) / (1024 ** 3);
+  const limiteGB = (resultado.limiteBytes || 0) / (1024 ** 3);
+  const porcentaje = limiteGB > 0 ? Math.min(100, (usadoGB / limiteGB) * 100) : 0;
+  const color = porcentaje >= 90 ? 'var(--rojo-cl)' : porcentaje >= 70 ? 'var(--naranja-cl)' : 'var(--verde-cl)';
+  const aviso = porcentaje >= 90
+    ? '⚠️ Casi lleno — el backend puede empezar a fallar al subir fotos/vídeos o compartir accesos. Amplía el almacenamiento (Google One) cuanto antes.'
+    : porcentaje >= 70
+    ? '🔶 Se está acercando al límite — merece la pena tenerlo vigilado.'
+    : '✅ Con margen de sobra.';
+  wrap.innerHTML = `
+    <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+      <span>${usadoGB.toFixed(1)} GB de ${limiteGB.toFixed(0)} GB usados</span>
+      <span style="font-weight:700;color:${color}">${porcentaje.toFixed(0)}%</span>
+    </div>
+    <div style="background:var(--bg3);border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px">
+      <div style="background:${color};height:100%;width:${porcentaje}%"></div>
+    </div>
+    <div style="color:${color}">${aviso}</div>
+  `;
+}
+
 async function cargarUsuariosAdmin() {
   const wrap = document.getElementById('admin-usuarios-wrap');
   if (!wrap) return;
@@ -10147,14 +10243,14 @@ async function cargarUsuariosAdmin() {
         // propia cuenta): el botón de borrar desaparece para esta fila
         // pase lo que pase, en vez de solo cuando es "mi cuenta".
         return `<tr class="${u.activo?'':'admin-fila-inactiva'}">
-          <td><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}${esSuperAdmin?' <span class="admin-yo-badge" style="background:var(--dorado,#c99a2e)" title="Cuenta protegida: nadie puede eliminarla, bajarle el rol ni desactivarla">👑 Super Admin</span>':''}</td>
-          <td>${u.nombre||'—'}</td>
-          <td><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
-          <td><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
-          <td style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
-          <td>
-            <button class="btn b-ghost b-sm" onclick="editarUsuarioAdmin('${u.id}')">✏️</button>
-            ${(!esMiCuenta && !esSuperAdmin) ? `<button class="btn b-rojo b-sm" onclick="eliminarUsuarioAdmin('${u.id}','${u.email}')">🗑</button>` : ''}
+          <td data-label="Email"><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}${esSuperAdmin?' <span class="admin-yo-badge" style="background:var(--dorado,#c99a2e)" title="Cuenta protegida: nadie puede eliminarla, bajarle el rol ni desactivarla">👑 Super Admin</span>':''}</td>
+          <td data-label="Nombre">${u.nombre||'—'}</td>
+          <td data-label="Rol"><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
+          <td data-label="Estado"><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
+          <td data-label="Último acceso" style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
+          <td data-label="Acciones" class="admin-acciones">
+            <button class="btn b-ghost admin-btn-accion" onclick="editarUsuarioAdmin('${u.id}')">✏️ Editar</button>
+            ${(!esMiCuenta && !esSuperAdmin) ? `<button class="btn b-rojo admin-btn-accion" onclick="eliminarUsuarioAdmin('${u.id}','${u.email}',this)">🗑 Eliminar</button>` : ''}
           </td>
         </tr>`;
       }).join('')}
@@ -10219,6 +10315,7 @@ function _ligasSeleccionadasMu(){
 }
 
 function abrirModalNuevoUsuario() {
+  if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   document.getElementById('mu-email').value = '';
   document.getElementById('mu-email').disabled = false;
   document.getElementById('mu-nombre').value = '';
@@ -10239,6 +10336,7 @@ function abrirModalNuevoUsuario() {
 }
 
 async function editarUsuarioAdmin(id) {
+  if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   // Cargar datos del usuario desde la lista ya cargada
   const filas = document.querySelectorAll('.admin-tabla tbody tr');
   // Re-fetch para tener datos frescos
@@ -10277,6 +10375,7 @@ function cerrarModalUsuario() {
 }
 
 async function guardarUsuario() {
+  if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   const editId  = document.getElementById('mu-edit-id').value;
   const email   = document.getElementById('mu-email').value.trim().toLowerCase();
   const nombre  = document.getElementById('mu-nombre').value.trim();
@@ -10334,7 +10433,8 @@ async function guardarUsuario() {
   }
 }
 
-async function eliminarUsuarioAdmin(id, email) {
+async function eliminarUsuarioAdmin(id, email, btn) {
+  if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   // El botón ya no se pinta para esta cuenta (ver cargarUsuariosAdmin), pero
   // se comprueba también aquí por si esta función se llamara de otra forma.
   if (_esSuperAdminProtegido(email)) {
@@ -10342,14 +10442,27 @@ async function eliminarUsuarioAdmin(id, email) {
     return;
   }
   askDel(`¿Eliminar el usuario "${email}"? Esta acción no se puede deshacer.`, async () => {
+    // Guarda contra doble-toque: en móvil, sin este bloqueo, dos toques
+    // seguidos (algo fácil que pase sin querer en pantallas pequeñas)
+    // lanzaban la petición dos veces. Mientras está en curso, el botón se
+    // deshabilita y muestra un reloj de arena para que quede claro que ya
+    // se ha pulsado y hay que esperar.
+    let textoOriginal;
+    if (btn) { textoOriginal = btn.textContent; btn.disabled = true; btn.textContent = '⏳'; }
     const resultado = await _apiAdmin('eliminarUsuario', { id });
     if (resultado && resultado.ok) {
       toast('🗑 Usuario eliminado');
       cargarUsuariosAdmin();
     } else {
-      toast('Error al eliminar usuario', true);
+      // Mostramos el motivo real (sin_conexion, sin_sesion, permiso, etc.)
+      // en vez de un mensaje genérico — así, si el fallo es de red (muy
+      // habitual en móvil con datos móviles inestables) o del backend, se
+      // ve la causa de verdad en vez de pensar que la función no existe.
+      const motivo = resultado?.motivo || 'error desconocido';
+      toast(`Error al eliminar: ${motivo}`, true);
+      if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
     }
-  });
+  },{titulo:'Eliminar usuario',okTexto:'🗑 Eliminar',okClase:'b-rojo'});
 }
 
 // ── CSS del panel admin (inyectado dinámicamente) ────────────────
@@ -10371,6 +10484,28 @@ async function eliminarUsuarioAdmin(id, email) {
     .admin-estado-badge{font-size:10px;font-weight:600;}
     .admin-estado-badge.activo{color:var(--verde-cl);}
     .admin-estado-badge.inactivo{color:var(--gris2);}
+    .admin-acciones{display:flex;gap:8px;flex-wrap:wrap;}
+    /* Botones de Editar/Eliminar con texto (no solo icono) y tamaño de
+       toque cómodo — antes eran dos iconos pegados de ~26px de alto, muy
+       fácil de tocar el que no tocaba en pantallas pequeñas. */
+    .admin-btn-accion{padding:8px 12px;font-size:12px;min-height:38px;white-space:nowrap;}
+    /* En móvil, la tabla se convierte en tarjetas apiladas: así el botón
+       de Eliminar queda siempre a la vista, sin tener que descubrir que
+       hay que deslizar la tabla hacia la derecha para llegar a él (que es
+       lo que hacía parecer que "no se podía eliminar" desde el móvil). */
+    @media(max-width:680px){
+      .admin-tabla thead{display:none;}
+      .admin-tabla, .admin-tabla tbody, .admin-tabla tr, .admin-tabla td{display:block;width:100%;}
+      .admin-tabla{border:none;}
+      .admin-tabla tr{margin-bottom:12px;border:1px solid var(--border);border-radius:10px;
+        padding:4px 0;background:var(--bg2);}
+      .admin-tabla td{border-bottom:1px solid var(--border);padding:8px 12px;
+        display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:right;}
+      .admin-tabla tr td:last-child{border-bottom:none;}
+      .admin-tabla td::before{content:attr(data-label);font-size:10px;font-weight:700;
+        color:var(--gris);text-transform:uppercase;letter-spacing:.5px;text-align:left;}
+      .admin-acciones{justify-content:flex-end;}
+    }
   `;
   document.head.appendChild(style);
 })();
@@ -10417,6 +10552,7 @@ function renderEClipsGC(){
 }
 
 function borrarEquipo(btn){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   const id = btn.getAttribute('data-del-equipo');
   if (!id) return;
   const eq = eDB.find(x => String(x.id) === String(id));
@@ -10448,6 +10584,7 @@ function borrarEquipoActual(){
   });
 }
 function borrarJugador(btn){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   const id = btn.getAttribute('data-del-jugador');
   if (!id) return;
   const j = jDB.find(x => String(x.id) === String(id));
