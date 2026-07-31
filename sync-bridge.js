@@ -130,16 +130,23 @@ async function scoutProcesarCola() {
 }
 
 // Pequeño indicador visual en la barra superior — no toca tu CSS,
-// se crea solo y se actualiza solo.
+// se crea solo y se actualiza solo. Se puede tocar/pulsar para forzar un
+// reintento inmediato (antes había que esperar hasta 60s, o recuperar
+// conexión, sin ninguna forma de decir "va, prueba ya").
 function _scoutActualizarBadge(pendientesCount) {
   let badge = document.getElementById('scout-sync-badge');
   if (!badge) {
     badge = document.createElement('span');
     badge.id = 'scout-sync-badge';
+    badge.title = 'Cambios que aún no se han podido subir a Google Sheets — toca para reintentar ahora';
     badge.style.cssText = `
       font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;
-      margin-left:8px;display:none;cursor:default;white-space:nowrap;
+      margin-left:8px;display:none;cursor:pointer;white-space:nowrap;
     `;
+    badge.onclick = () => {
+      _scoutToast('🔄 Reintentando sincronización...');
+      scoutProcesarCola();
+    };
     const topbar = document.querySelector('.topbar');
     if (topbar) topbar.appendChild(badge);
   }
