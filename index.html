@@ -551,6 +551,14 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 @media(max-width:680px){
   .card-sponsor-badge{ width:calc(44px * var(--patro-escala,1)); height:calc(44px * var(--patro-escala,1)); }
 }
+/* Varios anuncios del mismo club a la vez (hasta 4) — la insignia va en
+   fila junto al escudo/foto, la fila de tarjeta se apila, y la pastilla
+   de ficha pasa a envolver en varias líneas si no caben todas seguidas. */
+.card-sponsor-badges{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.card-sponsor-multi{ display:flex; flex-direction:column; }
+.card-sponsor-multi .card-sponsor{ border-top:1px solid var(--border); }
+.card-sponsor-multi .card-sponsor + .card-sponsor{ border-top:1px solid var(--border2,var(--border)); }
+.ficha-sponsor-multi{ display:flex; flex-wrap:wrap; gap:8px; }
 
 /* Banner de publicidad global (fijo abajo, visible en toda la app) */
 .ad-banner-global{
@@ -1986,6 +1994,7 @@ body.solo-lectura .ed-panel-form {
       <select id="goles-fil-origen" onchange="renderGolesView()" style="min-width:130px">
         <option value="">Todo tipo</option>
       </select>
+      <button class="btn-add-partido" onclick="abrirModalAddGol()">⚽ Añadir gol</button>
       <button class="btn-add-partido" onclick="exportarGolesPDF()">📄 Exportar PDF</button>
     </div>
 
@@ -2251,15 +2260,16 @@ body.solo-lectura .ed-panel-form {
       </div>
       <div class="apf">
         <label>Club patrocinado</label>
-        <select id="an-club"></select>
+        <select id="an-club" onchange="_actualizarContadorAnunciosClub()"></select>
         <p style="font-size:9px;color:var(--gris2);margin-top:4px">
           Si eliges un club, este anuncio también aparecerá integrado en las
           tarjetas y fichas de sus jugadores y en la ficha del propio club
           (además de en Inicio y el banner general). Si dejas "General" solo
-          se ve en Inicio y en el banner de abajo, como hasta ahora. Con
-          varios anuncios activos para el mismo club se muestra el más
-          reciente.
+          se ve en Inicio y en el banner de abajo, como hasta ahora. Cada
+          club admite hasta 4 anuncios activos a la vez — se muestran todos,
+          no solo el más reciente.
         </p>
+        <p id="an-club-contador" style="font-size:10px;color:var(--azul-cl);font-weight:700;margin-top:2px"></p>
       </div>
       <div class="apf">
         <label>🔍 Tamaño del logo</label>
@@ -2284,6 +2294,88 @@ body.solo-lectura .ed-panel-form {
     <div class="add-partido-footer">
       <button class="btn-cancel-partido" onclick="cerrarModalAnuncio()">Cancelar</button>
       <button class="btn-guardar-partido" onclick="guardarAnuncio()">💾 Guardar anuncio</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL AÑADIR GOL (desde la sección Goles) ═══════════════ -->
+<div class="add-partido-modal" id="modal-add-gol" onclick="if(event.target===this)cerrarModalAddGol()">
+  <div class="add-partido-box" style="max-width:480px">
+    <div class="add-partido-hdr">
+      <span>⚽ Añadir gol</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarModalAddGol()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <p style="font-size:10px;color:var(--gris2);margin:-2px 0 4px">
+        El gol se añade directamente a la ficha del jugador elegido. Escribe
+        el equipo para filtrar y que el campo "Jugador" solo sugiera a los
+        suyos.
+      </p>
+      <div class="apf">
+        <label>Equipo (filtra los jugadores de abajo)</label>
+        <input id="ag-equipo" list="ag-equipo-list" placeholder="Escribe o elige un equipo..." oninput="_agActualizarJugadores()">
+        <datalist id="ag-equipo-list"></datalist>
+      </div>
+      <div class="apf">
+        <label>Jugador *</label>
+        <input id="ag-jugador" list="ag-jugador-list" placeholder="Escribe el nombre del jugador...">
+        <datalist id="ag-jugador-list"></datalist>
+      </div>
+      <div class="apf">
+        <label>Minuto</label>
+        <input id="ag-min" type="number" placeholder="min" style="max-width:100px">
+      </div>
+      <div class="apf">
+        <label>Rival</label>
+        <input id="ag-rival" list="ag-equipo-list" placeholder="Equipo rival...">
+      </div>
+      <div class="apf">
+        <label>Origen táctico</label>
+        <select id="ag-origen" onchange="_agSyncFase()"></select>
+      </div>
+      <div class="apf" id="ag-subtipo-wrap">
+        <label>Subtipo ABP</label>
+        <select id="ag-subtipo">
+          <option value="">—</option>
+        </select>
+      </div>
+      <div class="apf">
+        <label>Fase de juego</label>
+        <input id="ag-fase" placeholder="Fase...">
+      </div>
+      <div class="apf">
+        <label>Zona de remate</label>
+        <select id="ag-zona"></select>
+      </div>
+      <div class="apf">
+        <label>Parte del cuerpo</label>
+        <select id="ag-cuerpo"></select>
+      </div>
+      <div class="apf">
+        <label>🧤 Portero rival batido</label>
+        <input id="ag-portero" placeholder="Nombre del portero...">
+      </div>
+      <div class="apf">
+        <label>Descripción</label>
+        <input id="ag-desc" placeholder="Breve descripción...">
+      </div>
+      <div class="apf" style="border-top:1px solid var(--border);padding-top:12px">
+        <label>🎬 Vídeo del gol (opcional) — se queda en la ficha del jugador y también sale listado en "Vídeos de los goles" de esta sección</label>
+        <div id="ag-portada-wrap"></div>
+        <label class="clip-file-lbl" style="margin-top:6px">
+          <input type="file" id="ag-video-file" accept="video/mp4,video/quicktime,video/webm,video/*" onchange="_agLoadVideoFile(event)">📁 Seleccionar vídeo MP4/MOV/WebM
+        </label>
+        <div class="clip-url-row" style="margin-top:6px">
+          <input type="text" id="ag-video-url" placeholder="URL YouTube / Drive / directa">
+          <button class="btn b-azul b-sm" type="button" onclick="_agApplyVideoURL()">Cargar</button>
+        </div>
+        <div style="margin-top:6px"><input id="ag-video-titulo" placeholder="Título del clip (opcional)"></div>
+        <div id="ag-video-estado" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="add-partido-footer">
+      <button class="btn-cancel-partido" onclick="cerrarModalAddGol()">Cancelar</button>
+      <button class="btn-guardar-partido" onclick="guardarGolNuevo()">💾 Guardar gol</button>
     </div>
   </div>
 </div>
@@ -2692,12 +2784,19 @@ function grupoDeEquipoPorNombre(nombre){
 // patrocina). Sin eqId es un anuncio "general" y se comporta como
 // siempre (Inicio + banner de abajo). Con eqId, ADEMÁS se muestra
 // integrado en la tarjeta y la ficha de cada jugador de ese club, y
-// en la ficha del propio club. Si hay varios anuncios activos para
-// el mismo club se usa el más reciente (adsDB.unshift los añade al
-// principio, así que basta con el primer match).
+// en la ficha del propio club. Cada club admite hasta 4 anuncios
+// activos simultáneos (tope aplicado en guardarAnuncio); aquí se
+// devuelven TODOS (hasta 4, por si algún dato antiguo tuviera más),
+// del más reciente al más antiguo (adsDB.unshift los añade al
+// principio).
+function _anunciosClubActivos(eqId){
+  if(!eqId) return [];
+  return adsDB.filter(a=>a.eqId===eqId && a.activo!==false && (a.img||a.texto)).slice(0,4);
+}
+// Compatibilidad: un único anuncio (el más reciente) para los sitios que
+// solo pueden mostrar uno, como el logo posicionable sobre el campograma.
 function _anuncioClubActivo(eqId){
-  if(!eqId) return null;
-  return adsDB.find(a=>a.eqId===eqId && a.activo!==false && (a.img||a.texto))||null;
+  return _anunciosClubActivos(eqId)[0]||null;
 }
 function _sponsorHTML(ad,cls,lbl){
   if(!ad) return '';
@@ -2712,6 +2811,13 @@ function _sponsorHTML(ad,cls,lbl){
     <span class="${cls}-lbl">${lbl}</span>${img}${txt}
   </a>`;
 }
+// Igual que _sponsorHTML pero para VARIOS anuncios a la vez (hasta 4 por
+// club) — pinta uno debajo de otro (fila de tarjeta) o uno junto a otro
+// con salto de línea (pastilla de ficha), según el propio CSS de cls.
+function _sponsorHTMLMulti(ads,cls,lbl){
+  if(!ads || !ads.length) return '';
+  return `<div class="${cls}-multi">${ads.map(ad=>_sponsorHTML(ad,cls,lbl)).join('')}</div>`;
+}
 // Insignia compacta (solo el logo) anclada a la esquina de una tarjeta
 // (jugador o equipo) — más visible que la fila de texto de abajo, para
 // que el patrocinio resalte de verdad justo donde se ve la tarjeta.
@@ -2721,6 +2827,14 @@ function _sponsorBadgeHTML(ad){
   return `<a class="card-sponsor-badge" ${abre} onclick="event.stopPropagation()" style="--patro-escala:${ad.escala||1}" title="Patrocina${ad.texto?': '+eH(ad.texto):''}">
     <img src="${ad.img}" alt="">
   </a>`;
+}
+// Varias insignias compactas en fila (hasta 4) — misma idea que
+// _sponsorHTMLMulti pero para la insignia de esquina de la tarjeta.
+function _sponsorBadgeHTMLMulti(ads){
+  if(!ads || !ads.length) return '';
+  const conImg=ads.filter(a=>a.img);
+  if(!conImg.length) return '';
+  return `<div class="card-sponsor-badges">${conImg.map(_sponsorBadgeHTML).join('')}</div>`;
 }
 // Pinta (o vacía) el hueco de patrocinio en la cabecera de una ficha
 // (jugador o equipo) — se llama cada vez que esa ficha se sincroniza.
@@ -2986,7 +3100,19 @@ function abrirModalAnuncio(){
   document.getElementById('pv-anuncio').innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';
   document.getElementById('uz-anuncio').classList.remove('has');
   _poblarSelectClubAnuncio('');
+  _actualizarContadorAnunciosClub();
   document.getElementById('modal-anuncio').classList.add('open');
+}
+// Muestra cuántos anuncios activos tiene ya el club elegido en el select
+// (de un máximo de 4), para que el admin lo vea antes de guardar. Al
+// editar un anuncio que ya pertenece a ese club, no se cuenta a sí mismo.
+function _actualizarContadorAnunciosClub(){
+  const p=document.getElementById('an-club-contador'); if(!p) return;
+  const eqId=document.getElementById('an-club')?.value||'';
+  const editId=document.getElementById('an-edit-id')?.value||'';
+  if(!eqId){ p.textContent=''; return; }
+  const n=adsDB.filter(a=>a.eqId===eqId && a.activo!==false && a.id!==editId).length;
+  p.textContent=n>=4?`⚠️ Este club ya tiene ${n}/4 anuncios activos — el máximo.`:`📌 Este club tiene ${n}/4 anuncios activos.`;
 }
 function editarAnuncio(id){
   const a=adsDB.find(x=>x.id===id); if(!a) return;
@@ -3001,6 +3127,7 @@ function editarAnuncio(id){
   if(a.img){pv.innerHTML=`<img src="${a.img}" class="uz-img">`;document.getElementById('uz-anuncio').classList.add('has');}
   else{pv.innerHTML='<div class="uz-ic">🖼️</div><div class="uz-tx"><strong>Subir imagen</strong><br>PNG JPG</div>';document.getElementById('uz-anuncio').classList.remove('has');}
   _poblarSelectClubAnuncio(a.eqId||'');
+  _actualizarContadorAnunciosClub();
   document.getElementById('modal-anuncio').classList.add('open');
 }
 function cerrarModalAnuncio(){ document.getElementById('modal-anuncio').classList.remove('open'); }
@@ -3025,6 +3152,16 @@ function guardarAnuncio(){
     escala:parseFloat(document.getElementById('an-escala')?.value)||1,
     eqId:document.getElementById('an-club')?.value||''
   };
+  // Tope de 4 anuncios activos simultáneos por club (no aplica a "General"
+  // ni a anuncios ocultos, que no cuentan). Al editar uno que ya era de
+  // ese club no se cuenta a sí mismo.
+  if(anuncio.eqId && anuncio.activo){
+    const otrosActivos=adsDB.filter(a=>a.eqId===anuncio.eqId && a.activo!==false && a.id!==anuncio.id).length;
+    if(otrosActivos>=4){
+      toast('❌ Este club ya tiene 4 anuncios activos (el máximo). Desactiva u oculta alguno antes de añadir otro.',true);
+      return;
+    }
+  }
   if(editId){ const idx=adsDB.findIndex(x=>x.id===editId); if(idx>=0)adsDB[idx]=anuncio; }
   else adsDB.unshift(anuncio);
   saveAds(); cerrarModalAnuncio(); renderAdsList(); renderBannerAdsGlobal();
@@ -3695,14 +3832,14 @@ function renderJDB(){
     const escudoJCard=escudoDeEquipoPorNombre(j.club);
     const avBadge=escudoJCard?`<div class="card-av-badge"><img loading="lazy" src="${eH(escudoJCard)}"></div>`:'';
     const avWrap=`<div class="card-av-wrap">${av}${avBadge}</div>`;
-    const _adJ=_anuncioClubActivo(idDeEquipoPorNombre(j.club));
+    const _adsJ=_anunciosClubActivos(idDeEquipoPorNombre(j.club));
     return `<div class="card">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editJ('${j.id}')">
-      ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTML(_adJ)}
-    </div>${_sponsorHTML(_adJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+      ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTMLMulti(_adsJ)}
+    </div>${_sponsorHTMLMulti(_adsJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
       <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
@@ -4358,11 +4495,15 @@ function buildJGoles(){
         <div class="fg"><label style="font-size:9px">Descripción</label>
           <input type="text" value="${eH(gl.desc||'')}" placeholder="Breve descripción..." oninput="jGoles[${i}].desc=this.value;renderJ()">
         </div>
+      </div><div class="g2" style="grid-template-columns:1fr">
+        <div class="fg"><label style="font-size:9px">🧤 Portero rival batido</label>
+          <input type="text" value="${eH(gl.portero||'')}" placeholder="Nombre del portero..." oninput="jGoles[${i}].portero=this.value;renderJ()">
+        </div>
       </div>`;
     c.appendChild(d);
   });
 }
-function addJGol(){jGoles.push({min:0,rival:'',origen:'Ataque Organizado',subtipo:'',fase:FASE['Ataque Organizado'],zona:'Área Grande',cuerpo:'Pie Derecho',desc:''});buildJGoles();renderJ();}
+function addJGol(){jGoles.push({min:0,rival:'',origen:'Ataque Organizado',subtipo:'',fase:FASE['Ataque Organizado'],zona:'Área Grande',cuerpo:'Pie Derecho',desc:'',portero:''});buildJGoles();renderJ();}
 
 // ── RADAR ─────────────────────────────────────────────────────────
 function buildJRadar(){
@@ -4512,8 +4653,8 @@ function renderJ(){
   // Patrocinio del club: se incrusta dentro de la propia ficha (no solo en
   // la barra de cabecera de la pestaña) para que también salga al
   // exportar el PDF, ya que este es exactamente el HTML que se captura.
-  const jAd=_anuncioClubActivo(idDeEquipoPorNombre(club));
-  const jSponsorH=_sponsorHTML(jAd,'ficha-sponsor','Patrocinado por');
+  const jAds=_anunciosClubActivos(idDeEquipoPorNombre(club));
+  const jSponsorH=_sponsorHTMLMulti(jAds,'ficha-sponsor','Patrocinado por');
   const escH=imgStore.jesc?`<div class="fesc"><img src="${imgStore.jesc}"></div>`:'';
   let clipsH='';
   if(jClips.length>0){
@@ -4746,14 +4887,14 @@ function renderEDB(){
     const typeTxt=eq.tipo==='propio'?'🔵 Propio':'🔴 Rival';
     const eqColor=eq.color||'#30363d';
     const av=eq.imgEsc?`<div class="card-av" style="border-radius:8px;background:var(--bg3)"><img loading="lazy" src="${eH(eq.imgEsc)}" onerror="this.parentNode.textContent='${eH(ini(eq.nom,''))||'?'}'"></div>`:`<div class="card-av" style="border-radius:8px;background:${typeClr}">${eH(eq.nom?.slice(0,2)||'?').toUpperCase()}</div>`;
-    const _adE=_anuncioClubActivo(eq.id);
+    const _adsE=_anunciosClubActivos(eq.id);
     return `<div class="card" style="border-left:4px solid ${eqColor}">
       <label class="card-cmp-chk" title="Seleccionar para comparar" onclick="event.stopPropagation()">
         <input type="checkbox" ${eComparar.has(eq.id)?'checked':''} onchange="toggleCompararE('${eq.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editE('${eq.id}')">
-      ${av}<div class="card-hdr-info"><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(vista.temp||eq.temp)} · ${eH(vista.sist||eq.sist)}</div></div>${_sponsorBadgeHTML(_adE)}
-    </div>${_sponsorHTML(_adE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+      ${av}<div class="card-hdr-info"><div class="card-nm">${eH(eq.nom||'Sin nombre')}</div><div class="card-mt">${typeTxt} · ${eH(vista.temp||eq.temp)} · ${eH(vista.sist||eq.sist)}</div></div>${_sponsorBadgeHTMLMulti(_adsE)}
+    </div>${_sponsorHTMLMulti(_adsE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde-cl)">${s.v||0}V</div><div class="ckl">Victorias</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.gf||0}</div><div class="ckl">GF</div></div>
@@ -6693,8 +6834,8 @@ function renderE(){
   // Patrocinio del club: se incrusta dentro de la propia ficha (no solo en
   // la barra de cabecera de la pestaña) para que también salga al
   // exportar el PDF, ya que este es exactamente el HTML que se captura.
-  const eAd=_anuncioClubActivo(eId);
-  const eSponsorH=_sponsorHTML(eAd,'ficha-sponsor','Patrocinado por');
+  const eAds=_anunciosClubActivos(eId);
+  const eSponsorH=_sponsorHTMLMulti(eAds,'ficha-sponsor','Patrocinado por');
 
   document.getElementById('e-ficha-container').innerHTML=`
   <div class="ficha-eq" id="e-ficha-pdf">
@@ -9671,6 +9812,7 @@ function calcularTodosLosGoles(){
         subtipo:g.subtipo||'',
         zona:g.zona||'',
         cuerpo:g.cuerpo||'',
+        portero:g.portero||'',
         asistencia:'',
         penalti:g.subtipo==='Penalti',
         fuente:'Ficha jugador'
@@ -9692,6 +9834,7 @@ function calcularTodosLosGoles(){
           subtipo:g.subtipo||'',
           zona:g.zona||'',
           cuerpo:g.cuerpo||'',
+          portero:g.portero||'',
           asistencia:'',
           penalti:g.subtipo==='Penalti',
           fuente:'Ficha equipo'
@@ -9715,6 +9858,7 @@ function calcularTodosLosGoles(){
         subtipo:'',
         zona:'',
         cuerpo:'',
+        portero:g.portero||'',
         asistencia:g.asistencia||'',
         penalti:!!g.penalti,
         fuente:'Partido'
@@ -9740,6 +9884,7 @@ function calcularTodosLosGoles(){
       subtipo:'',
       zona:'',
       cuerpo:'',
+      portero:'',
       asistencia:'',
       penalti:false,
       fuente:'Clip equipo'
@@ -9748,6 +9893,186 @@ function calcularTodosLosGoles(){
 
   // Filtro final por liga permitida — cubre las 4 fuentes de golpe.
   return lista.filter(g=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(g.equipo)));
+}
+
+// ── ALTA RÁPIDA DE GOL DESDE LA SECCIÓN GOLES ─────────────────────
+// Escribe directamente en la ficha (jDB) del jugador elegido, sin tener
+// que abrir su ficha — pensado para ir marcando goles rápido según se
+// juegan los partidos. Usa la misma taxonomía que el editor de goles de
+// la ficha del jugador (ORIGENES/SUB_ABP/FASE/ZONAS/CUERPOS).
+// Vídeo del gol que se está dando de alta — copia de trabajo aparte de
+// jClips (que pertenece a la ficha abierta), para no pisar nada si hay
+// una ficha distinta abierta a la vez. Mismo esquema que un jClip.
+let _agClipTmp={titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
+function abrirModalAddGol(){
+  if(!esAdminActual()){toast('Solo los administradores pueden añadir goles',true);return;}
+  document.getElementById('ag-equipo').value='';
+  document.getElementById('ag-jugador').value='';
+  document.getElementById('ag-min').value='';
+  document.getElementById('ag-rival').value='';
+  document.getElementById('ag-portero').value='';
+  document.getElementById('ag-desc').value='';
+  const selO=document.getElementById('ag-origen');
+  selO.innerHTML=ORIGENES.map(o=>`<option>${eH(o)}</option>`).join('');
+  selO.value='Ataque Organizado';
+  document.getElementById('ag-zona').innerHTML=ZONAS.map(z=>`<option>${eH(z)}</option>`).join('');
+  document.getElementById('ag-cuerpo').innerHTML=CUERPOS.map(c=>`<option>${eH(c)}</option>`).join('');
+  const eqList=document.getElementById('ag-equipo-list');
+  eqList.innerHTML=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'')).map(e=>`<option value="${eH(e.nom||'')}">`).join('');
+  _agActualizarJugadores();
+  _agSyncFase();
+  if(_agClipTmp.blobURL) URL.revokeObjectURL(_agClipTmp.blobURL);
+  _agClipTmp={titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
+  document.getElementById('ag-video-file').value='';
+  document.getElementById('ag-video-url').value='';
+  document.getElementById('ag-video-titulo').value='';
+  _agRefrescarPortadaPreview();
+  _agRefrescarEstadoVideo();
+  document.getElementById('modal-add-gol').classList.add('open');
+}
+function cerrarModalAddGol(){ document.getElementById('modal-add-gol').classList.remove('open'); }
+function _agLoadVideoFile(e){
+  const f=e.target.files[0]; if(!f) return;
+  if(_agClipTmp.blobURL) URL.revokeObjectURL(_agClipTmp.blobURL);
+  const url=URL.createObjectURL(f);
+  _agClipTmp.blobURL=url; _agClipTmp.src=url; _agClipTmp.srcType='blob';
+  if(!document.getElementById('ag-video-titulo').value) document.getElementById('ag-video-titulo').value=f.name.replace(/\.[^.]+$/,'');
+  _agRefrescarEstadoVideo();
+  toast('🎬 Vídeo cargado — se guardará junto con el gol');
+}
+function _agApplyVideoURL(){
+  let u=(document.getElementById('ag-video-url')?.value||'').trim(); if(!u) return;
+  const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;_agClipTmp.srcType='gdrive';}
+  else if(/youtube\.com|youtu\.be/.test(u)) _agClipTmp.srcType='youtube';
+  else _agClipTmp.srcType='direct';
+  if(_agClipTmp.blobURL){URL.revokeObjectURL(_agClipTmp.blobURL);_agClipTmp.blobURL=null;}
+  _agClipTmp.src=u;
+  _agRefrescarEstadoVideo();
+}
+async function _agLoadPortada(e){
+  const f=e.target.files[0]; if(!f) return;
+  const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});
+  if(!dataUrl) return;
+  _agClipTmp.portada=dataUrl;
+  _agRefrescarPortadaPreview();
+}
+function _agQuitarPortada(){ _agClipTmp.portada=null; _agRefrescarPortadaPreview(); }
+function _agRefrescarEstadoVideo(){
+  const el=document.getElementById('ag-video-estado'); if(!el) return;
+  if(_agClipTmp.srcType==='blob') el.innerHTML='<span class="clip-st cs-ok">✓ Archivo cargado</span>';
+  else if(_agClipTmp.srcType==='youtube') el.innerHTML='<span class="clip-st cs-ok">✓ YouTube</span>';
+  else if(_agClipTmp.srcType==='gdrive') el.innerHTML='<span class="clip-st cs-ok">✓ Google Drive</span>';
+  else if(_agClipTmp.srcType==='direct') el.innerHTML='<span class="clip-st cs-ok">✓ URL directa</span>';
+  else el.innerHTML='<span class="clip-st cs-inf">Sin vídeo — opcional</span>';
+}
+function _agRefrescarPortadaPreview(){
+  const wrap=document.getElementById('ag-portada-wrap'); if(!wrap) return;
+  wrap.innerHTML=_agClipTmp.portada
+    ?`<div class="clip-portada-zona has-portada"><button class="cp-rm" type="button" onclick="_agQuitarPortada()">✕</button><img src="${_agClipTmp.portada}" class="clip-portada-img"><div class="clip-portada-overlay"><span>📷 Cambiar</span></div><input type="file" accept="image/*" style="display:none" id="ag-portada-file" onchange="_agLoadPortada(event)"></div>`
+    :`<div class="clip-portada-zona" onclick="document.getElementById('ag-portada-file').click()"><div class="clip-portada-empty"><span>📸</span><p><strong style="color:var(--azul-cl)">Subir portada del clip</strong><br>Opcional — se ve en "Vídeos de los goles"</p></div><input type="file" accept="image/*" style="display:none" id="ag-portada-file" onchange="_agLoadPortada(event)"></div>`;
+  if(_agClipTmp.portada){ const pz=wrap.querySelector('.clip-portada-zona'); if(pz) pz.onclick=()=>document.getElementById('ag-portada-file').click(); }
+}
+// Filtra el datalist de jugadores según lo que se haya escrito en
+// "Equipo" — cada opción lleva el club para que no haya ambigüedad si
+// dos jugadores de distinto club comparten nombre.
+function _agActualizarJugadores(){
+  const eqVal=(document.getElementById('ag-equipo')?.value||'').trim().toLowerCase();
+  const dl=document.getElementById('ag-jugador-list'); if(!dl) return;
+  const candidatos=eqVal?jDB.filter(j=>(j.club||'').toLowerCase().includes(eqVal)):jDB;
+  const ordenados=[...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')));
+  dl.innerHTML=ordenados.map(j=>`<option value="${eH((j.nom+' '+j.ape).trim()+' — '+(j.club||'Sin club'))}">`).join('');
+}
+function _agSyncFase(){
+  const origen=document.getElementById('ag-origen')?.value||'';
+  const isABP=origen==='ABP Ofensiva';
+  const selSub=document.getElementById('ag-subtipo');
+  selSub.innerHTML='<option value="">—</option>'+(SUB_ABP[origen]||[]).map(s=>`<option>${eH(s)}</option>`).join('');
+  const wrap=document.getElementById('ag-subtipo-wrap');
+  if(wrap) wrap.style.cssText=isABP?'':'opacity:.4;pointer-events:none';
+  selSub.disabled=!isABP;
+  document.getElementById('ag-fase').value=FASE[origen]||'';
+}
+// Busca el jugador tecleado en el campo "Jugador" (formato "Nombre — Club",
+// tal y como lo rellena el datalist), o por coincidencia exacta del
+// nombre completo si lo han escrito a mano sin el club.
+function _agResolverJugador(){
+  const val=(document.getElementById('ag-jugador')?.value||'').trim();
+  if(!val) return null;
+  const partes=val.split(' — ');
+  if(partes.length>=2){
+    const nomBuscado=partes.slice(0,-1).join(' — ').trim().toLowerCase();
+    const clubBuscado=partes[partes.length-1].trim().toLowerCase();
+    const exacto=jDB.find(j=>((j.nom+' '+j.ape).trim().toLowerCase())===nomBuscado && (j.club||'Sin club').toLowerCase()===clubBuscado);
+    if(exacto) return exacto;
+  }
+  const porNombre=jDB.filter(j=>((j.nom+' '+j.ape).trim().toLowerCase())===val.toLowerCase());
+  if(porNombre.length===1) return porNombre[0];
+  return null;
+}
+function guardarGolNuevo(){
+  if(!esAdminActual()){toast('Solo los administradores pueden añadir goles',true);return;}
+  const jug=_agResolverJugador();
+  if(!jug){toast('❌ Elige un jugador de la lista de sugerencias (escribe su nombre y elige la opción que aparece)',true);return;}
+  const origen=document.getElementById('ag-origen').value;
+  const gol={
+    min:parseInt(document.getElementById('ag-min').value,10)||0,
+    rival:document.getElementById('ag-rival').value.trim(),
+    origen,
+    subtipo:document.getElementById('ag-subtipo').value||'',
+    fase:document.getElementById('ag-fase').value.trim()||FASE[origen]||'',
+    zona:document.getElementById('ag-zona').value,
+    cuerpo:document.getElementById('ag-cuerpo').value,
+    desc:document.getElementById('ag-desc').value.trim(),
+    portero:document.getElementById('ag-portero').value.trim()
+  };
+  const idx=jDB.findIndex(x=>x.id===jug.id);
+  if(idx<0){toast('Jugador no encontrado',true);return;}
+  if(!Array.isArray(jDB[idx].goles)) jDB[idx].goles=[];
+  jDB[idx].goles.push(gol);
+
+  // Si han adjuntado vídeo y/o portada, se guarda también como clip en la
+  // ficha del jugador (mismo esquema que jClips) — así sale a la vez en
+  // su ficha y en "Vídeos de los goles" de esta sección.
+  let clipGuardado=false, clipSoloArchivoSinPortada=false;
+  if(_agClipTmp.src || _agClipTmp.blobURL || _agClipTmp.portada){
+    const nuevoClip={
+      id:Date.now(),
+      titulo:document.getElementById('ag-video-titulo').value.trim()||`Gol min. ${gol.min||0}`,
+      rival:gol.rival,
+      tipo:origen,
+      srcType:_agClipTmp.srcType==='blob'?'blob_local':_agClipTmp.srcType,
+      src:_agClipTmp.srcType==='blob'?'':(_agClipTmp.src||''),
+      portada:_agClipTmp.portada||null
+    };
+    if(!Array.isArray(jDB[idx].clips)) jDB[idx].clips=[];
+    jDB[idx].clips.push(nuevoClip);
+    clipGuardado=true;
+    if(_agClipTmp.srcType==='blob' && !_agClipTmp.portada) clipSoloArchivoSinPortada=true;
+    // Si la ficha de este jugador está abierta, se añade también a su
+    // copia de trabajo (jClips) conservando el blob todavía activo, para
+    // poder verlo sin volver a subirlo en lo que dure esta sesión.
+    if(typeof jId!=='undefined' && jId===jug.id && typeof jClips!=='undefined'){
+      jClips.push({id:jClipCnt++,titulo:nuevoClip.titulo,rival:nuevoClip.rival,tipo:nuevoClip.tipo,
+        srcType:_agClipTmp.srcType,src:_agClipTmp.src,portada:_agClipTmp.portada||null,blobURL:_agClipTmp.blobURL||null});
+      _agClipTmp.blobURL=null; // ya no es responsabilidad de este modal revocarlo
+      if(typeof buildJClips==='function') buildJClips();
+    }
+  }
+  saveJDB();
+  // Si la ficha de este mismo jugador está abierta en edición, se
+  // actualiza también su copia de trabajo (jGoles) para que no se
+  // pierda el gol si luego pulsan "Guardar" en la ficha.
+  if(typeof jId!=='undefined' && jId===jug.id && typeof jGoles!=='undefined'){
+    jGoles.push({...gol});
+    if(typeof buildJGoles==='function') buildJGoles();
+    if(typeof renderJ==='function') renderJ();
+  }
+  cerrarModalAddGol();
+  toast(`✅ Gol de ${(jug.nom+' '+jug.ape).trim()} añadido${clipGuardado?' con vídeo':''}`);
+  if(clipSoloArchivoSinPortada) toast('⚠️ Ese archivo de vídeo no se podrá reproducir después de recargar la página salvo que le pongas también una portada, o lo vuelvas a subir luego desde la ficha del jugador',true);
+  initGolesView();
+  if(currentSection==='jugadores-db' && typeof renderJDB==='function') renderJDB();
 }
 
 function initGolesView(){
@@ -9793,7 +10118,7 @@ function renderGolesView(){
   }else{
   wrap.innerHTML=`<table class="tg-v2">
     <thead><tr>
-      <th>Jugador</th><th>Equipo</th><th>Rival</th><th>Min</th><th>Origen</th><th>Subtipo</th><th>Asist.</th><th>Penalti</th><th>Fuente</th>
+      <th>Jugador</th><th>Equipo</th><th>Rival</th><th>Min</th><th>Origen</th><th>Subtipo</th><th>Portero</th><th>Asist.</th><th>Penalti</th><th>Fuente</th>
     </tr></thead>
     <tbody>${lista.map(g=>`<tr>
       <td style="font-weight:700;color:var(--blanco);cursor:${g.jugadorId?'pointer':'default'}" ${g.jugadorId?`onclick="irAJugador('${g.jugadorId}')"`:''}>${eH(g.jugador)}</td>
@@ -9802,6 +10127,7 @@ function renderGolesView(){
       <td class="tg-min">${g.minuto!=null?'m.'+g.minuto:'—'}</td>
       <td>${g.origen?`<span class="tbdg ${OCSS[g.origen]||'to-atq'}">${eH(g.origen)}</span>`:'<span style="color:var(--gris2)">—</span>'}</td>
       <td>${g.subtipo?`<span class="tbdg ${OCSS[g.subtipo]||'to-abp'}">${eH(g.subtipo)}</span>`:'<span style="color:var(--gris2)">—</span>'}</td>
+      <td style="font-size:10px;color:var(--gris)">${eH(g.portero)||'—'}</td>
       <td style="font-size:10px;color:var(--gris)">${eH(g.asistencia)||'—'}</td>
       <td>${g.penalti?'⚽ Sí':'—'}</td>
       <td style="font-size:9px;color:var(--gris2)">${eH(g.fuente)}</td>
