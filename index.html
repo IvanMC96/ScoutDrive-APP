@@ -2608,7 +2608,7 @@ function toast(msg,err=false){
 // ══════════════════════════════════════════════════════════════════
 function renderInicio(){
   document.getElementById('inicio-stats-grid').innerHTML=`
-    <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--azul-cl)">${jDB.length}</div><div class="inicio-stat-l">Jugadores</div></div>
+    <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--azul-cl)">${jDB.filter(j=>!j._bajaPlantilla).length}</div><div class="inicio-stat-l">Jugadores</div></div>
     <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--verde-cl)">${eDB.length}</div><div class="inicio-stat-l">Equipos</div></div>
     <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--naranja-cl)">${pDB.length}</div><div class="inicio-stat-l">Partidos en videoteca</div></div>
   `;
@@ -3766,16 +3766,54 @@ function _trayectoriaProgresoHTML(){
 // ── Selección para comparar varios jugadores a la vez ──────────────
 let jComparar=new Set();
 
+// Trayectoria de Jugadores por FILA (temporada actual + histórico
+// archivado con "📅 Nueva Temporada" o con la cascada automática al
+// archivar el equipo) — mismo patrón que _eFilasTemporada, para que los
+// filtros y el propio filtrado incluyan también las temporadas pasadas
+// de cada jugador, no solo la que tiene ahora mismo.
+function _jFilasTemporada(j){
+  const catA=categoriaDeEquipoPorNombre(j.club)||'',grpA=grupoDeEquipoPorNombre(j.club)||'';
+  const actual={club:(j.club||'').trim(),categoria:catA,grupo:grpA,temp:(j.temp||'').trim()};
+  const historicas=(j.temporadas||[]).map(t=>({
+    club:(t.club||'').trim(),categoria:(t.categoria||'').trim(),grupo:(t.grupo||'').trim(),temp:(t.temp||'').trim()
+  }));
+  return [actual,...historicas];
+}
+// Dado un jugador y los filtros activos en Jugadores DB, decide qué fila
+// de su trayectoria mostrar en la tarjeta — igual que _eVistaParaFiltro,
+// para que al filtrar por una temporada archivada se vean SUS datos de
+// esa temporada (club/posición/dorsal/estadísticas), no los actuales.
+function _jVistaParaFiltro(j,fTemp,fCat,fGrupo,fEquipo){
+  const catA=categoriaDeEquipoPorNombre(j.club)||'',grpA=grupoDeEquipoPorNombre(j.club)||'';
+  const filas=[
+    {...j,dorsal:j.dor,categoria:catA,grupo:grpA,temp:(j.temp||'').trim(),club:(j.club||'').trim(),_esActual:true},
+    ...(j.temporadas||[]).map(t=>({...t,_esActual:false}))
+  ];
+  let candidatas=filas;
+  if(fTemp) candidatas=candidatas.filter(f=>(f.temp||'').trim()===fTemp);
+  if(fCat) candidatas=candidatas.filter(f=>(f.categoria||'').trim()===fCat);
+  if(fGrupo) candidatas=candidatas.filter(f=>(f.grupo||'').trim()===fGrupo);
+  if(fEquipo) candidatas=candidatas.filter(f=>(f.club||'').trim()===fEquipo);
+  if(!candidatas.length) candidatas=filas;
+  const actualEntre=candidatas.find(f=>f._esActual);
+  if(actualEntre) return actualEntre;
+  const anio=f=>{const m=(f.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):-1;};
+  return [...candidatas].sort((a,b)=>anio(b)-anio(a))[0];
+}
+
 // Rellena los desplegables de filtro de Jugadores (categoría/grupo del
 // club, equipo y temporada). La categoría y el grupo no viven en el propio
 // jugador — se sacan del equipo al que pertenece (j.club) — así que se
 // derivan aquí igual que en poblarFiltrosYDatalistsEquipos(), y el grupo
-// se acota en cascada a la categoría ya elegida.
+// se acota en cascada a la categoría ya elegida. Los desplegables incluyen
+// también el histórico archivado de cada jugador (j.temporadas), igual que
+// ya hace Equipos DB, para poder filtrar por una temporada que ya pasó.
 function poblarFiltrosJugadores(lista){
   const base=lista||jDB;
-  const cats=[...new Set(base.map(j=>categoriaDeEquipoPorNombre(j.club)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
-  const equipos=[...new Set(base.map(j=>(j.club||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
-  const temps=_valoresUnicos(base,'temp');
+  const filas=base.flatMap(_jFilasTemporada);
+  const cats=[...new Set(filas.map(f=>f.categoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const equipos=[...new Set(filas.map(f=>f.club).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  const temps=[...new Set(filas.map(f=>f.temp).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
 
   const selCat=document.getElementById('jdb-filtro-cat');
   const catActual=selCat?selCat.value:'';
@@ -3785,8 +3823,7 @@ function poblarFiltrosJugadores(lista){
   const selGrupo=document.getElementById('jdb-filtro-grupo');
   if(selGrupo){
     const grupoActual=selGrupo.value;
-    const baseGrupo=catActual?base.filter(j=>categoriaDeEquipoPorNombre(j.club)===catActual):base;
-    const gruposDeCat=[...new Set(baseGrupo.map(j=>grupoDeEquipoPorNombre(j.club)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+    const gruposDeCat=catActual?[...new Set(filas.filter(f=>f.categoria===catActual).map(f=>f.grupo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')):[...new Set(filas.map(f=>f.grupo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
     selGrupo.innerHTML=`<option value="">Todos los grupos</option>`+gruposDeCat.map(g=>`<option value="${eH(g)}"${g===grupoActual?' selected':''}>${eH(g)}</option>`).join('');
   }
   const selEquipo=document.getElementById('jdb-filtro-equipo');
@@ -3807,9 +3844,17 @@ function renderJDB(){
   jDB.forEach(j=>{ if(!j.id){ j.id='j_'+Date.now()+'_'+Math.random().toString(36).slice(2,8); _huboReparoJ=true; } });
   if(_huboReparoJ) saveJDB();
   // Solo jugadores cuyo club esté en una liga permitida para este usuario.
+  // OJO: esto incluye a los jugadores "de baja" (sacados de la plantilla
+  // actual pero con historial conservado, ver borrarJugador/
+  // _archivarJugadorDeLaPlantilla) porque sus temporadas archivadas deben
+  // seguir alimentando los desplegables de filtro y poder encontrarse al
+  // filtrar por una temporada/categoría/equipo antiguos.
   const jDBVisible=jDB.filter(j=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
-  document.getElementById('jst-n').textContent=jDBVisible.length;
-  document.getElementById('jst-g').textContent=jDBVisible.reduce((s,j)=>s+(j.stats?.g||0),0);
+  // Los contadores de cabecera reflejan la plantilla ACTUAL — un jugador
+  // de baja ya no cuenta aquí (aunque su historial siga vivo más abajo).
+  const jDBActivos=jDBVisible.filter(j=>!j._bajaPlantilla);
+  document.getElementById('jst-n').textContent=jDBActivos.length;
+  document.getElementById('jst-g').textContent=jDBActivos.reduce((s,j)=>s+(j.stats?.g||0),0);
   // Si algún jugador seleccionado para comparar ya no existe (o ya no es
   // visible para este usuario), lo quitamos de la selección.
   const idsVisibles=new Set(jDBVisible.map(j=>j.id));
@@ -3818,15 +3863,29 @@ function renderJDB(){
   const q=(G('jdb-q')||'').toLowerCase();
   const fCat=G('jdb-filtro-cat')||'',fGrupo=G('jdb-filtro-grupo')||'',fEquipo=G('jdb-filtro-equipo')||'',fTemp=G('jdb-filtro-temp')||'';
   let lst=jDBVisible;
-  if(fCat)lst=lst.filter(j=>categoriaDeEquipoPorNombre(j.club)===fCat);
-  if(fGrupo)lst=lst.filter(j=>grupoDeEquipoPorNombre(j.club)===fGrupo);
-  if(fEquipo)lst=lst.filter(j=>(j.club||'').trim()===fEquipo);
-  if(fTemp)lst=lst.filter(j=>(j.temp||'').trim()===fTemp);
+  // Sin ningún filtro de temporada/categoría/grupo/equipo activo, los
+  // jugadores de baja quedan ocultos (vista "actual" por defecto). En
+  // cuanto se activa alguno de esos filtros, los filtros de abajo ya se
+  // encargan de sacarlos a la luz si su historial encaja.
+  if(!(fCat||fGrupo||fEquipo||fTemp)) lst=lst.filter(j=>!j._bajaPlantilla);
+  // Cada filtro comprueba tanto los datos actuales del jugador como su
+  // histórico archivado (j.temporadas) — así, si estuvo en otra
+  // categoría/grupo/equipo/temporada en el pasado, sigue apareciendo al
+  // filtrar por esos datos antiguos en vez de "desaparecer".
+  if(fCat)lst=lst.filter(j=>_jFilasTemporada(j).some(f=>f.categoria===fCat));
+  if(fGrupo)lst=lst.filter(j=>_jFilasTemporada(j).some(f=>f.grupo===fGrupo));
+  if(fEquipo)lst=lst.filter(j=>_jFilasTemporada(j).some(f=>f.club===fEquipo));
+  if(fTemp)lst=lst.filter(j=>_jFilasTemporada(j).some(f=>f.temp===fTemp));
   if(q)lst=lst.filter(j=>_fuzzyMatch(j.nom+' '+j.ape+' '+j.pos+' '+j.club,q));
   const grid=document.getElementById('j-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;actualizarBarraComparar();return;}
   grid.innerHTML=lst.map(j=>{
-    const s=j.stats||{};
+    // Si hay un filtro de categoría/grupo/equipo/temporada activo, la
+    // tarjeta muestra los datos de ESA temporada del histórico del
+    // jugador (club/posición/dorsal/estadísticas de entonces) en vez de
+    // los actuales — igual que ya hace Equipos DB.
+    const vista=_jVistaParaFiltro(j,fTemp,fCat,fGrupo,fEquipo);
+    const s=vista.stats||j.stats||{};
     const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
     const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img loading="lazy" src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
     const escudoJCard=escudoDeEquipoPorNombre(j.club);
@@ -3838,7 +3897,7 @@ function renderJDB(){
         <input type="checkbox" ${jComparar.has(j.id)?'checked':''} onchange="toggleComparar('${j.id}',this.checked)">
       </label>
       <div class="card-hdr" onclick="editJ('${j.id}')">
-      ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${j.dor} · ${eH(j.pos)} · ${eH(j.temp)}</div></div>${_sponsorBadgeHTMLMulti(_adsJ)}
+      ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${vista.dorsal||j.dor} · ${eH(vista.pos||j.pos)} · ${eH(vista.temp||j.temp)}${vista._esActual?'':' · histórico'}</div></div>${_sponsorBadgeHTMLMulti(_adsJ)}
     </div>${_sponsorHTMLMulti(_adsJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
@@ -3847,7 +3906,10 @@ function renderJDB(){
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editJ('${j.id}')">✏️ Editar</button>
       <button class="btn b-ghost b-sm" onclick="xJExcel('${j.id}')">📊</button>
-      ${esAdminActual()?'<button class="btn b-rojo b-sm" data-del-jugador="'+eH(j.id)+'" onclick="borrarJugador(this)">🗑</button>':''}
+      ${esAdminActual()?(j._bajaPlantilla
+        ?'<button class="btn b-rojo b-sm" data-del-jugador-def="'+eH(j.id)+'" onclick="borrarJugadorDefinitivo(this)" title="Borrar del todo, incluido su historial">🗑 Borrar historial</button>'
+        :'<button class="btn b-rojo b-sm" data-del-jugador="'+eH(j.id)+'" onclick="borrarJugador(this)">🗑</button>'
+      ):''}
     </div></div>`;
   }).join('');
   actualizarBarraComparar();
@@ -4553,11 +4615,11 @@ function buildJClips(){
   });
 }
 function addJClip(){jClips.push({id:jClipCnt++,titulo:'',rival:'',tipo:'Ataque Organizado',srcType:'',src:'',portada:null,blobURL:null});buildJClips();renderJ();}
-function removeJClip(id){const c=jClips.find(x=>x.id===id);if(c?.blobURL)URL.revokeObjectURL(c.blobURL);jClips=jClips.filter(x=>x.id!==id);buildJClips();renderJ();}
+function removeJClip(id){const c=jClips.find(x=>x.id===id);if(c?.blobURL){URL.revokeObjectURL(c.blobURL);delete _clipBlobRegistro()[id];}jClips=jClips.filter(x=>x.id!==id);buildJClips();renderJ();}
 async function loadJPortada(e,cid){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl)return;const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=dataUrl;buildJClips();renderJ();}}
 function rmJPortada(cid,e){e.stopPropagation();const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=null;buildJClips();renderJ();}}
-function loadJVideoFile(e,i){const f=e.target.files[0];if(!f)return;if(jClips[i]?.blobURL)URL.revokeObjectURL(jClips[i].blobURL);const url=URL.createObjectURL(f);jClips[i].blobURL=url;jClips[i].src=url;jClips[i].srcType='blob';if(!jClips[i].titulo)jClips[i].titulo=f.name.replace(/\.[^.]+$/,'');buildJClips();renderJ();toast('🎬 Vídeo cargado — ya puedes reproducirlo abajo');}
-function applyJURL(i){let u=(document.getElementById('jcurl-'+jClips[i].id)||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jClips[i].srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jClips[i].srcType='youtube';else jClips[i].srcType='direct';if(jClips[i].blobURL)URL.revokeObjectURL(jClips[i].blobURL);jClips[i].blobURL=null;jClips[i].src=u;buildJClips();renderJ();}
+function loadJVideoFile(e,i){const f=e.target.files[0];if(!f)return;if(jClips[i]?.blobURL){URL.revokeObjectURL(jClips[i].blobURL);delete _clipBlobRegistro()[jClips[i].id];}const url=URL.createObjectURL(f);jClips[i].blobURL=url;jClips[i].src=url;jClips[i].srcType='blob';_clipBlobRegistro()[jClips[i].id]=url;if(!jClips[i].titulo)jClips[i].titulo=f.name.replace(/\.[^.]+$/,'');buildJClips();renderJ();toast('🎬 Vídeo cargado — ya puedes reproducirlo abajo');}
+function applyJURL(i){let u=(document.getElementById('jcurl-'+jClips[i].id)||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jClips[i].srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jClips[i].srcType='youtube';else jClips[i].srcType='direct';if(jClips[i].blobURL){URL.revokeObjectURL(jClips[i].blobURL);delete _clipBlobRegistro()[jClips[i].id];}jClips[i].blobURL=null;jClips[i].src=u;buildJClips();renderJ();}
 function getYTId(url){const m=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);return m?m[1]:null;}
 
 // ── RENDER FICHA JUGADOR ──────────────────────────────────────────
@@ -5154,11 +5216,54 @@ function _eTemporadaActualSnapshot(){
   };
 }
 
+// Archiva automáticamente la temporada de todos los jugadores de la
+// plantilla actual de un equipo, en el mismo momento en que se archiva
+// la temporada del propio equipo (desde eNuevaTemporada() o al fusionar
+// con un club ya existente en guardarE()) — así ningún jugador se queda
+// "suelto" con datos de la temporada vieja, su historial queda guardado
+// y filtrable (ver _jFilasTemporada/_jVistaParaFiltro), y todos avanzan
+// juntos a la temporada nueva sin tener que editarlos uno a uno.
+// Solo toca jugadores cuyo club Y temporada coincidan EXACTAMENTE con
+// los que se están archivando — así no se archivan por error jugadores
+// que ya llevaban otra temporada (p.ej. si se adelantaron a mano).
+function _cascadaNuevaTemporadaJugadores(nombreClub,tempAntigua,tempNueva){
+  if(!nombreClub) return 0;
+  const clubKey=nombreClub.trim().toLowerCase();
+  const tempAntiguaKey=(tempAntigua||'').trim();
+  let n=0;
+  jDB.forEach(j=>{
+    if((j.club||'').trim().toLowerCase()!==clubKey) return;
+    if(tempAntiguaKey && (j.temp||'').trim()!==tempAntiguaKey) return;
+    const snapshot={
+      temp:(j.temp||'').trim(),club:(j.club||'').trim(),
+      liga:ligaDeEquipoPorNombre(j.club)||'',categoria:categoriaDeEquipoPorNombre(j.club)||'',grupo:grupoDeEquipoPorNombre(j.club)||'',
+      pos:j.pos||'',dorsal:j.dor||'',edad:j.edad||'',
+      stats:{...(j.stats||{})}
+    };
+    if(!Array.isArray(j.temporadas)) j.temporadas=[];
+    j.temporadas.push(snapshot);
+    // Igual que jNuevaTemporada(): stats/goles/forma se reinician (son de
+    // ESTA temporada); club/posición/dorsal se dejan igual (lo normal es
+    // que sigan en el mismo club, que es justo el caso que cascadea aquí).
+    j.stats={g:0,a:0,p:0,m:0,ab:0,f:0,pz:0,gr:0,min:0};
+    j.forma=Array(10).fill('nada');
+    j.goles=[];
+    j.golesEncajados=[];
+    const edadNum=parseInt(j.edad,10);
+    if(!isNaN(edadNum)) j.edad=String(edadNum+1);
+    if(tempNueva) j.temp=tempNueva;
+    n++;
+  });
+  if(n>0) saveJDB();
+  return n;
+}
+
 function eNuevaTemporada(){
   if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
   if(!eId){ toast('Guarda el equipo antes de añadir una temporada nueva',true); return; }
   const tempActual=G('etemp')||'(sin temporada)';
-  askDel(`¿Archivar la temporada ${tempActual} de ${G('enom')||'este equipo'} y empezar una nueva? El nombre, el escudo y el color se mantienen; categoría, grupo, entrenador, sistema, estadísticas, partidos y clips quedan listos para editar en la temporada nueva.`,()=>{
+  const nombreClubActual=G('enom')||'';
+  askDel(`¿Archivar la temporada ${tempActual} de ${G('enom')||'este equipo'} y empezar una nueva? El nombre, el escudo y el color se mantienen; categoría, grupo, entrenador, sistema, estadísticas, partidos y clips quedan listos para editar en la temporada nueva. Los jugadores de la plantilla actual pasan también a la temporada nueva, con su temporada anterior guardada en su propio historial.`,()=>{
     eTemporadas.push(_eTemporadaActualSnapshot());
     // Stats/partidos/clips de la temporada se reinician — son datos de
     // ESTA temporada, no tendría sentido que la nueva empezara ya con los
@@ -5181,8 +5286,10 @@ function eNuevaTemporada(){
     // misma categoría; si asciende/desciende se cambia a mano).
     const nuevaTemp=_siguienteTemporada(G('etemp'));
     if(nuevaTemp) document.getElementById('etemp').value=nuevaTemp;
+    const nJugadores=_cascadaNuevaTemporadaJugadores(nombreClubActual,tempActual,nuevaTemp);
     renderE();
-    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}`);
+    if(currentSection==='jugadores-db' && typeof renderJDB==='function') renderJDB();
+    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}${nJugadores?` · ${nJugadores} jugador${nJugadores===1?'':'es'} de la plantilla archivado${nJugadores===1?'':'s'} también`:''}`);
   },{titulo:'Nueva temporada',okTexto:'📅 Archivar y continuar',okClase:'b-azul'});
 }
 
@@ -5302,7 +5409,21 @@ function guardarE(){
       // archivarla solo ensuciaría la trayectoria con una fila en blanco.
       const teniaAlgo=(prevSnapshot.stats.pj||0)>0 || prevSnapshot.partidos.length>0 || prevSnapshot.clips.length>0 || prevSnapshot.clipsGC.length>0 || !!prevSnapshot.temp;
       eTemporadas=[...(existente.temporadas||[])];
-      if(teniaAlgo){ eTemporadas.push(prevSnapshot); mensajeExtra=` · temporada ${prevSnapshot.temp||'anterior'} archivada en su trayectoria`; }
+      // Si de verdad hubo cambio de temporada, la plantilla de jugadores
+      // que tenía este club se archiva y avanza con él — igual que al
+      // pulsar "📅 Nueva Temporada" dentro de la ficha (ver
+      // _cascadaNuevaTemporadaJugadores). Solo tiene sentido si la
+      // temporada nueva es distinta de la que ya tenía guardada.
+      const nuevaTempMerge=G('etemp').trim();
+      let nJugadoresMerge=0;
+      if(teniaAlgo){
+        eTemporadas.push(prevSnapshot);
+        mensajeExtra=` · temporada ${prevSnapshot.temp||'anterior'} archivada en su trayectoria`;
+        if(nuevaTempMerge && nuevaTempMerge!==(prevSnapshot.temp||'').trim()){
+          nJugadoresMerge=_cascadaNuevaTemporadaJugadores(existente.nom,prevSnapshot.temp,nuevaTempMerge);
+          if(nJugadoresMerge) mensajeExtra+=` · ${nJugadoresMerge} jugador${nJugadoresMerge===1?'':'es'} de la plantilla archivado${nJugadoresMerge===1?'':'s'} también`;
+        }
+      }
       else mensajeExtra=' · ya existía esta ficha, se ha actualizado en vez de duplicarla';
       // El campograma/alineaciones de la temporada anterior ya han
       // quedado en el snapshot — la temporada nueva empieza sin ellos.
@@ -7661,7 +7782,7 @@ function addEClip(){
 }
 function removeEClip(id){
   const c=eClips.find(x=>x.id===id);
-  if(c?.blobURL) URL.revokeObjectURL(c.blobURL);
+  if(c?.blobURL){ URL.revokeObjectURL(c.blobURL); delete _clipBlobRegistro()[id]; }
   eClips=eClips.filter(x=>x.id!==id);
   buildEClips(); renderE();
 }
@@ -7765,9 +7886,10 @@ function rmEPortada(cid,e){
 }
 function loadEVideoFile(event,i){
   const file=event.target.files[0]; if(!file) return;
-  if(eClips[i]?.blobURL) URL.revokeObjectURL(eClips[i].blobURL);
+  if(eClips[i]?.blobURL){ URL.revokeObjectURL(eClips[i].blobURL); delete _clipBlobRegistro()[eClips[i].id]; }
   const url=URL.createObjectURL(file);
   eClips[i].blobURL=url; eClips[i].src=url; eClips[i].srcType='blob';
+  _clipBlobRegistro()[eClips[i].id]=url;
   if(!eClips[i].titulo) eClips[i].titulo=file.name.replace(/\.[^.]+$/,'');
   buildEClips(); renderE();
   toast('🎬 Vídeo cargado — ya puedes reproducirlo abajo');
@@ -7778,7 +7900,7 @@ function applyEURL(i){
   if(gd){ u=`https://drive.google.com/file/d/${gd[1]}/preview`; eClips[i].srcType='gdrive'; }
   else if(/youtube\.com|youtu\.be/.test(u)) eClips[i].srcType='youtube';
   else eClips[i].srcType='direct';
-  if(eClips[i].blobURL) URL.revokeObjectURL(eClips[i].blobURL);
+  if(eClips[i].blobURL){ URL.revokeObjectURL(eClips[i].blobURL); delete _clipBlobRegistro()[eClips[i].id]; }
   eClips[i].blobURL=null; eClips[i].src=u;
   buildEClips(); renderE();
 }
@@ -7962,6 +8084,15 @@ function _abrirDescargaVideoModal(){
   if (_videoModalUrlDescarga) window.open(_videoModalUrlDescarga, '_blank', 'noopener');
 }
 
+// Registro en memoria (vive solo mientras no se recargue la página) de
+// los vídeos subidos como archivo local, indexado por el id del clip.
+// Al guardar, cualquier clip "blob" se marca como "blob_local" porque un
+// blob: URL no sobrevive a una recarga — pero si el archivo se subió en
+// esta misma sesión, el blob: URL sigue siendo válido, así que lo
+// reutilizamos aquí para poder verlo igual desde cualquier sitio
+// (incluida la lista de "Vídeos de los goles", que siempre lee la copia
+// ya persistida) sin obligar a volver a subirlo hasta que se recargue.
+function _clipBlobRegistro(){ return (window._clipBlobRegistrySesion=window._clipBlobRegistrySesion||{}); }
 function abrirVideoModal(cl){
   // Si había otro vídeo en pantalla completa, salimos primero — si no,
   // al reemplazar el contenido del reproductor con el nuevo vídeo, el
@@ -7993,11 +8124,16 @@ function abrirVideoModal(cl){
   } else if (cl.srcType === 'direct' && cl.src) {
     html = `<video controls autoplay preload="metadata"><source src="${cl.src}"></video>`;
   } else if (cl.srcType === 'blob_local') {
-    html = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:8px;color:var(--naranja-cl);background:var(--bg3);padding:20px;text-align:center">
-      <span style="font-size:32px">⚠️</span>
-      <p style="font-size:13px">Este clip era un archivo de tu ordenador.<br>Vuelve a subirlo desde el editor para poder verlo (la portada sí está guardada).</p>
-    </div>`;
+    const liveBlob = cl.id!=null ? _clipBlobRegistro()[cl.id] : null;
+    if (liveBlob) {
+      html = `<video controls autoplay preload="metadata"><source src="${liveBlob}"></video>`;
+    } else {
+      html = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:8px;color:var(--naranja-cl);background:var(--bg3);padding:20px;text-align:center">
+        <span style="font-size:32px">⚠️</span>
+        <p style="font-size:13px">Este clip era un archivo de tu ordenador.<br>Vuelve a subirlo desde el editor para poder verlo (la portada sí está guardada).</p>
+      </div>`;
+    }
   }
 
   if (!html) {
@@ -9903,7 +10039,7 @@ function calcularTodosLosGoles(){
 // Vídeo del gol que se está dando de alta — copia de trabajo aparte de
 // jClips (que pertenece a la ficha abierta), para no pisar nada si hay
 // una ficha distinta abierta a la vez. Mismo esquema que un jClip.
-let _agClipTmp={titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
+let _agClipTmp={id:null,titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
 function abrirModalAddGol(){
   if(!esAdminActual()){toast('Solo los administradores pueden añadir goles',true);return;}
   document.getElementById('ag-equipo').value='';
@@ -9921,8 +10057,8 @@ function abrirModalAddGol(){
   eqList.innerHTML=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'')).map(e=>`<option value="${eH(e.nom||'')}">`).join('');
   _agActualizarJugadores();
   _agSyncFase();
-  if(_agClipTmp.blobURL) URL.revokeObjectURL(_agClipTmp.blobURL);
-  _agClipTmp={titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
+  if(_agClipTmp.blobURL){ URL.revokeObjectURL(_agClipTmp.blobURL); if(_agClipTmp.id!=null) delete _clipBlobRegistro()[_agClipTmp.id]; }
+  _agClipTmp={id:null,titulo:'',rival:'',tipo:'',srcType:'',src:'',portada:null,blobURL:null};
   document.getElementById('ag-video-file').value='';
   document.getElementById('ag-video-url').value='';
   document.getElementById('ag-video-titulo').value='';
@@ -9933,9 +10069,11 @@ function abrirModalAddGol(){
 function cerrarModalAddGol(){ document.getElementById('modal-add-gol').classList.remove('open'); }
 function _agLoadVideoFile(e){
   const f=e.target.files[0]; if(!f) return;
-  if(_agClipTmp.blobURL) URL.revokeObjectURL(_agClipTmp.blobURL);
+  if(_agClipTmp.blobURL){ URL.revokeObjectURL(_agClipTmp.blobURL); if(_agClipTmp.id!=null) delete _clipBlobRegistro()[_agClipTmp.id]; }
+  if(_agClipTmp.id==null) _agClipTmp.id=Date.now();
   const url=URL.createObjectURL(f);
   _agClipTmp.blobURL=url; _agClipTmp.src=url; _agClipTmp.srcType='blob';
+  _clipBlobRegistro()[_agClipTmp.id]=url;
   if(!document.getElementById('ag-video-titulo').value) document.getElementById('ag-video-titulo').value=f.name.replace(/\.[^.]+$/,'');
   _agRefrescarEstadoVideo();
   toast('🎬 Vídeo cargado — se guardará junto con el gol');
@@ -9946,7 +10084,7 @@ function _agApplyVideoURL(){
   if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;_agClipTmp.srcType='gdrive';}
   else if(/youtube\.com|youtu\.be/.test(u)) _agClipTmp.srcType='youtube';
   else _agClipTmp.srcType='direct';
-  if(_agClipTmp.blobURL){URL.revokeObjectURL(_agClipTmp.blobURL);_agClipTmp.blobURL=null;}
+  if(_agClipTmp.blobURL){URL.revokeObjectURL(_agClipTmp.blobURL);_agClipTmp.blobURL=null;if(_agClipTmp.id!=null) delete _clipBlobRegistro()[_agClipTmp.id];}
   _agClipTmp.src=u;
   _agRefrescarEstadoVideo();
 }
@@ -9979,7 +10117,7 @@ function _agRefrescarPortadaPreview(){
 function _agActualizarJugadores(){
   const eqVal=(document.getElementById('ag-equipo')?.value||'').trim().toLowerCase();
   const dl=document.getElementById('ag-jugador-list'); if(!dl) return;
-  const candidatos=eqVal?jDB.filter(j=>(j.club||'').toLowerCase().includes(eqVal)):jDB;
+  const candidatos=(eqVal?jDB.filter(j=>(j.club||'').toLowerCase().includes(eqVal)):jDB).filter(j=>!j._bajaPlantilla);
   const ordenados=[...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')));
   dl.innerHTML=ordenados.map(j=>`<option value="${eH((j.nom+' '+j.ape).trim()+' — '+(j.club||'Sin club'))}">`).join('');
 }
@@ -10003,10 +10141,10 @@ function _agResolverJugador(){
   if(partes.length>=2){
     const nomBuscado=partes.slice(0,-1).join(' — ').trim().toLowerCase();
     const clubBuscado=partes[partes.length-1].trim().toLowerCase();
-    const exacto=jDB.find(j=>((j.nom+' '+j.ape).trim().toLowerCase())===nomBuscado && (j.club||'Sin club').toLowerCase()===clubBuscado);
+    const exacto=jDB.find(j=>!j._bajaPlantilla && ((j.nom+' '+j.ape).trim().toLowerCase())===nomBuscado && (j.club||'Sin club').toLowerCase()===clubBuscado);
     if(exacto) return exacto;
   }
-  const porNombre=jDB.filter(j=>((j.nom+' '+j.ape).trim().toLowerCase())===val.toLowerCase());
+  const porNombre=jDB.filter(j=>!j._bajaPlantilla && ((j.nom+' '+j.ape).trim().toLowerCase())===val.toLowerCase());
   if(porNombre.length===1) return porNombre[0];
   return null;
 }
@@ -10036,8 +10174,13 @@ function guardarGolNuevo(){
   // su ficha y en "Vídeos de los goles" de esta sección.
   let clipGuardado=false, clipSoloArchivoSinPortada=false;
   if(_agClipTmp.src || _agClipTmp.blobURL || _agClipTmp.portada){
+    // Mismo id tanto en la copia persistida (jDB) como en la copia de
+    // trabajo (jClips) si la ficha está abierta — así son "el mismo
+    // clip" visto desde los dos sitios, y el registro de blobs en
+    // memoria (indexado por id) sirve para ambos por igual.
+    const clipId=_agClipTmp.id!=null?_agClipTmp.id:Date.now();
     const nuevoClip={
-      id:Date.now(),
+      id:clipId,
       titulo:document.getElementById('ag-video-titulo').value.trim()||`Gol min. ${gol.min||0}`,
       rival:gol.rival,
       tipo:origen,
@@ -10053,11 +10196,13 @@ function guardarGolNuevo(){
     // copia de trabajo (jClips) conservando el blob todavía activo, para
     // poder verlo sin volver a subirlo en lo que dure esta sesión.
     if(typeof jId!=='undefined' && jId===jug.id && typeof jClips!=='undefined'){
-      jClips.push({id:jClipCnt++,titulo:nuevoClip.titulo,rival:nuevoClip.rival,tipo:nuevoClip.tipo,
+      jClips.push({id:clipId,titulo:nuevoClip.titulo,rival:nuevoClip.rival,tipo:nuevoClip.tipo,
         srcType:_agClipTmp.srcType,src:_agClipTmp.src,portada:_agClipTmp.portada||null,blobURL:_agClipTmp.blobURL||null});
-      _agClipTmp.blobURL=null; // ya no es responsabilidad de este modal revocarlo
       if(typeof buildJClips==='function') buildJClips();
     }
+    // El blob (si lo hay) queda "en adopción" del registro en memoria —
+    // ya no lo revoca este modal al cerrarse/reabrirse.
+    _agClipTmp.blobURL=null;
   }
   saveJDB();
   // Si la ficha de este mismo jugador está abierta en edición, se
@@ -10138,23 +10283,32 @@ function renderGolesView(){
 }
 
 // ── Vídeos de los goles: junta los clips de jugadores y equipos ──
+// Un clip sin portada ni "src" persistido normalmente no tiene nada que
+// mostrar en la lista — salvo que sea un vídeo local subido en ESTA
+// misma sesión (srcType "blob_local" pero con el blob todavía vivo en
+// _clipBlobRegistro, ver abrirVideoModal), en cuyo caso sí se puede ver.
+function _clipTieneAlgoQueMostrar(c){
+  if(c.portada || c.src) return true;
+  if(c.srcType==='blob_local' && c.id!=null) return !!_clipBlobRegistro()[c.id];
+  return false;
+}
 function calcularTodosLosClips(){
   const lista=[];
   jDB.forEach(j=>{
     (j.clips||[]).forEach(c=>{
-      if(!c.portada && !c.src) return;
+      if(!_clipTieneAlgoQueMostrar(c)) return;
       lista.push(Object.assign({},c,{jugador:(j.nom+' '+j.ape).trim()||'—',jugadorId:j.id,equipo:j.club||'—',fuente:'Jugador'}));
     });
   });
   eDB.forEach(eq=>{
     (eq.clips||[]).forEach(c=>{
-      if(!c.portada && !c.src) return;
+      if(!_clipTieneAlgoQueMostrar(c)) return;
       const nomJug=(c.jugador||'').trim();
       const jid=nomJug?jugadorIdPorNombre(nomJug):null;
       lista.push(Object.assign({},c,{jugador:nomJug,jugadorId:jid,equipo:eq.nom||'—',fuente:'Equipo · A favor'}));
     });
     (eq.clipsGC||[]).forEach(c=>{
-      if(!c.portada && !c.src) return;
+      if(!_clipTieneAlgoQueMostrar(c)) return;
       lista.push(Object.assign({},c,{jugador:(c.jugador||'').trim(),jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
     });
   });
@@ -10382,9 +10536,11 @@ async function loadGCPortada(e,i){
 function cargarGCVideoFile(i){ document.getElementById('gcvf-'+i)?.click(); }
 function loadGCVideoFile(e,i){
   const f=e.target.files[0]; if(!f) return;
+  if(eClipsGC[i]?.blobURL){ URL.revokeObjectURL(eClipsGC[i].blobURL); delete _clipBlobRegistro()[eClipsGC[i].id]; }
   const url=URL.createObjectURL(f);
   eClipsGC[i].blobURL=url; eClipsGC[i].srcType='blob';
   eClipsGC[i].src=f.name;
+  _clipBlobRegistro()[eClipsGC[i].id]=url;
   renderE();
 }
 
@@ -10909,15 +11065,63 @@ function borrarEquipoActual(){
     if(typeof _apiAdmin==='function') _apiAdmin('eliminarEquipo',{id:idBorrado});
   });
 }
+// Saca a un jugador de la plantilla/temporada actual PERO conserva su
+// historial (j.temporadas) intacto — usado cuando se borra a alguien que
+// ya tiene temporadas archivadas, para no perder sus datos antiguos (p.ej.
+// goles/stats de la 25-26) solo porque este año ya no está en el club.
+// Si el jugador tenía algo puesto en la temporada actual (club/temp), esa
+// última foto también se archiva antes de vaciarla, así nunca se pierde
+// nada aunque no se haya archivado todavía "a mano".
+function _archivarJugadorDeLaPlantilla(j){
+  const teniaAlgoActual = !!((j.club||'').trim() || (j.temp||'').trim());
+  if(teniaAlgoActual){
+    if(!Array.isArray(j.temporadas)) j.temporadas=[];
+    j.temporadas.push({
+      temp:(j.temp||'').trim(), club:(j.club||'').trim(),
+      liga: ligaDeEquipoPorNombre(j.club)||'', categoria: categoriaDeEquipoPorNombre(j.club)||'', grupo: grupoDeEquipoPorNombre(j.club)||'',
+      pos: j.pos||'', dorsal: j.dor||'', edad: j.edad||'',
+      stats: {...(j.stats||{})}
+    });
+  }
+  j.club=''; j.temp='';
+  j.stats={g:0,a:0,p:0,m:0,ab:0,f:0,pz:0,gr:0,min:0};
+  j.forma=Array.isArray(j.forma)&&j.forma.length?Array(j.forma.length).fill('nada'):[];
+  j.goles=[];
+  j.golesEncajados=[];
+  j._bajaPlantilla=true;
+}
 function borrarJugador(btn){
   if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
   const id = btn.getAttribute('data-del-jugador');
   if (!id) return;
   const j = jDB.find(x => String(x.id) === String(id));
   const nom = j ? ((j.nom||'') + ' ' + (j.ape||'')).trim() || 'este jugador' : 'este jugador';
-  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+  const tieneHistorial = !!(j && Array.isArray(j.temporadas) && j.temporadas.length>0);
+  if(tieneHistorial){
+    askDel(`"${nom}" ya tiene temporadas archivadas. Al borrarlo se sacará de la plantilla/temporada actual, pero su historial se conserva y se podrá seguir viendo filtrando por las temporadas antiguas en las que jugó. ¿Continuar?`, () => {
+      _archivarJugadorDeLaPlantilla(j);
+      saveJDB(); renderJDB(); toast('🗑 Sacado de la plantilla actual (su historial se conserva)');
+    }, {okTexto:'Sacar de la plantilla'});
+  } else {
+    askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+      jDB = jDB.filter(x => String(x.id) !== String(id));
+      saveJDB(); renderJDB(); toast('🗑 Eliminado');
+    });
+  }
+}
+// Borrado total y definitivo de un jugador "de baja" (sin plantilla actual),
+// incluido TODO su historial archivado. Separado de borrarJugador() a
+// propósito, para que borrar del día a día nunca destruya sin querer el
+// histórico — este botón solo aparece ya sobre jugadores que están de baja.
+function borrarJugadorDefinitivo(btn){
+  if(!esAdminActual()){toast('Solo los administradores pueden borrar',true);return;}
+  const id = btn.getAttribute('data-del-jugador-def');
+  if (!id) return;
+  const j = jDB.find(x => String(x.id) === String(id));
+  const nom = j ? ((j.nom||'') + ' ' + (j.ape||'')).trim() || 'este jugador' : 'este jugador';
+  askDel(`¿Borrar "${nom}" DEL TODO, incluido su historial de temporadas archivadas? No se puede deshacer.`, () => {
     jDB = jDB.filter(x => String(x.id) !== String(id));
-    saveJDB(); renderJDB(); toast('🗑 Eliminado');
+    saveJDB(); renderJDB(); toast('🗑 Eliminado del todo');
   });
 }
 
