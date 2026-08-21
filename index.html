@@ -46,6 +46,28 @@
 })();
 </script>
 
+<!-- ── INSTALACIÓN COMO APP (PWA) — captura el evento de Chrome/Edge/
+     Android en cuanto está disponible (puede dispararse muy pronto,
+     antes de que exista el botón en el DOM, así que hay que engancharlo
+     aquí arriba y guardarlo para usarlo luego cuando el usuario pulse
+     "Instalar la app"). En Safari (Mac o iPhone/iPad) este evento no
+     existe nunca — Apple no lo soporta — así que ahí el botón mostrará
+     en su lugar las instrucciones manuales (ver mostrarInstalarApp). ── -->
+<script>
+  window._pwaDeferredPrompt = null;
+  window._pwaYaInstalada = false;
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    window._pwaDeferredPrompt = e;
+    document.dispatchEvent(new Event('scout-pwa-disponible'));
+  });
+  window.addEventListener('appinstalled', function(){
+    window._pwaDeferredPrompt = null;
+    window._pwaYaInstalada = true;
+    document.dispatchEvent(new Event('scout-pwa-instalada'));
+  });
+</script>
+
 <!-- PWA: permite instalar Scoutdrive como app en escritorio, tablet y móvil -->
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0d1117">
@@ -8274,9 +8296,31 @@ function guardarEConFeedback(){
 
     </form>
 
+    <!-- Botón de instalación como app (PWA). Oculto por defecto hasta que
+         _pwaInitBoton() decide si tiene sentido mostrarlo (no se muestra
+         si la app ya se está ejecutando instalada). Funciona en TODOS los
+         dispositivos: en Chrome/Edge/Android lanza el instalador nativo;
+         en Safari (Mac o iPhone/iPad), donde ese instalador no existe,
+         abre en su lugar un modal con los pasos manuales — así el botón
+         nunca se queda "sin hacer nada" al pulsarlo. -->
+    <button type="button" id="login-pwa-btn" onclick="mostrarInstalarApp()" style="display:none">
+      ⬇ Instalar la app en este dispositivo
+    </button>
+
     <p id="login-footer">Acceso restringido · Solo personal autorizado</p>
 
   </div><!-- /login-card -->
+
+  <!-- Modal con los pasos manuales de instalación (Safari en Mac/iPhone/
+       iPad, o cualquier navegador donde no exista el instalador nativo). -->
+  <div id="pwa-install-modal-bg" onclick="if(event.target===this) cerrarInstalarApp()">
+    <div id="pwa-install-modal-box">
+      <button type="button" id="pwa-install-modal-close" onclick="cerrarInstalarApp()">✕</button>
+      <h3 id="pwa-install-modal-titulo">Instalar Scoutdrive</h3>
+      <ol id="pwa-install-modal-pasos"></ol>
+      <p id="pwa-install-modal-nota"></p>
+    </div>
+  </div>
 
 </div><!-- /login-overlay -->
 
@@ -9143,6 +9187,40 @@ function guardarEConFeedback(){
 
 .cmpx-footer{ text-align:center; font-size:10px; color:#484f58; margin-top:8px; }
 
+/* ── BOTÓN "INSTALAR LA APP" (login) + MODAL DE PASOS MANUALES ── */
+#login-pwa-btn{
+  width:100%; margin-top:16px; padding:11px 14px; border-radius:8px;
+  background:#161b22; border:1px solid #238636; color:#7ee787;
+  font-size:12.5px; font-weight:700; cursor:pointer;
+  -webkit-appearance:none; appearance:none; transition:background .15s,border-color .15s;
+}
+#login-pwa-btn:hover{ background:#1c2230; border-color:#3fb950; }
+
+#pwa-install-modal-bg{
+  display:none; position:fixed; inset:0; z-index:10000;
+  background:rgba(3,6,12,.72); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+  align-items:center; justify-content:center; padding:16px;
+}
+#pwa-install-modal-bg.open{ display:flex; }
+#pwa-install-modal-box{
+  width:100%; max-width:380px; max-height:86vh; overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  background:#161b22; border:1px solid #30363d; border-radius:14px;
+  padding:26px 22px 22px; position:relative; box-shadow:0 20px 60px rgba(0,0,0,.5);
+}
+#pwa-install-modal-close{
+  position:absolute; top:12px; right:12px; width:28px; height:28px; border-radius:50%;
+  background:#21262d; border:1px solid #30363d; color:#8b949e; font-size:13px; cursor:pointer;
+  -webkit-appearance:none; appearance:none;
+}
+#pwa-install-modal-close:hover{ background:#30363d; color:#e6edf3; }
+#pwa-install-modal-titulo{ font-size:16px; font-weight:800; color:#e6edf3; margin:0 0 14px; padding-right:26px; }
+#pwa-install-modal-pasos{ margin:0; padding:0 0 0 22px; display:flex; flex-direction:column; gap:10px; }
+#pwa-install-modal-pasos li{ font-size:12.5px; line-height:1.5; color:#c9d1d9; padding-left:2px; }
+#pwa-install-modal-pasos li::marker{ color:#3fb950; font-weight:800; }
+#pwa-install-modal-nota{ margin:14px 0 0; font-size:11px; color:#8b949e; line-height:1.5; }
+#pwa-install-modal-nota:empty{ display:none; }
+
 </style>
 
 
@@ -9348,9 +9426,100 @@ function guardarEConFeedback(){
     }
   }
 
+  // ────────────────────────────────────────────────────────────
+  //  INSTALAR COMO APP (PWA) — botón real en la pantalla de login.
+  //  ────────────────────────────────────────────────────────────
+  //  Antes, la única forma de instalar era que el usuario encontrara
+  //  por su cuenta el icono/menú del navegador. En Chrome/Edge/Android
+  //  ahora hay un botón que lanza el instalador nativo directamente.
+  //  En Safari (Mac, iPhone o iPad) ese instalador nativo NO EXISTE
+  //  — es una restricción de Apple, no un fallo de la app — así que
+  //  ahí el mismo botón abre un modal con los pasos manuales exactos
+  //  para ese dispositivo, en vez de quedarse sin hacer nada al
+  //  pulsarlo (que es justo lo que le pasaba antes a un usuario).
+
+  function _pwaYaInstaladaComoApp() {
+    try {
+      return window.matchMedia('(display-mode: standalone)').matches
+        || window.navigator.standalone === true; // Safari iOS
+    } catch (e) { return false; }
+  }
+
+  function _pwaDetectarPlataforma() {
+    const ua = navigator.userAgent || '';
+    const esTouchMac = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1; // iPadOS 13+
+    if (/iPhone|iPod/.test(ua) || (/iPad/.test(ua)) || esTouchMac) return 'ios';
+    if (/Macintosh/.test(ua)) return 'mac';
+    if (/Android/.test(ua)) return 'android';
+    return 'otro';
+  }
+
+  function _pwaInitBoton() {
+    const btn = document.getElementById('login-pwa-btn');
+    if (!btn) return;
+    if (_pwaYaInstaladaComoApp()) { btn.style.display = 'none'; return; }
+    btn.style.display = '';
+    document.addEventListener('scout-pwa-instalada', () => { btn.style.display = 'none'; });
+  }
+
+  function mostrarInstalarApp() {
+    // Chrome / Edge / Android: si el navegador ya nos dio el evento de
+    // instalación nativo, usamos ESE — es la mejor experiencia posible.
+    if (window._pwaDeferredPrompt) {
+      window._pwaDeferredPrompt.prompt();
+      window._pwaDeferredPrompt.userChoice.finally(() => { window._pwaDeferredPrompt = null; });
+      return;
+    }
+    // Cualquier otro caso (sobre todo Safari en Mac/iPhone/iPad, donde
+    // ese evento nativo no existe nunca): mostramos los pasos a mano,
+    // ya elegidos según el dispositivo desde el que se pulsa el botón.
+    const plataforma = _pwaDetectarPlataforma();
+    const pasosPorPlataforma = {
+      ios: [
+        'Abre esta misma página con <b>Safari</b> (tiene que ser Safari, no Chrome — desde Chrome en iPhone/iPad este botón no puede instalar nada).',
+        'Toca el botón de <b>compartir</b> (el cuadrado con la flecha hacia arriba), en la barra de abajo o de arriba de Safari.',
+        'Baja en el menú y toca <b>"Añadir a pantalla de inicio"</b>.',
+        'Confirma. Ya tienes el icono de Scoutdrive en tu pantalla de inicio, como una app normal.',
+      ],
+      mac: [
+        'Abre esta misma página con <b>Safari</b> (este botón no puede instalar nada en Safari — es una restricción de Apple, no un fallo de la app).',
+        'En la barra de menú de arriba del todo, pulsa <b>"Archivo" → "Añadir al Dock…"</b> (macOS Sonoma o más nuevo).',
+        'Si no ves esa opción, toca el icono de compartir en la barra de direcciones de Safari y busca "Añadir al Dock".',
+        'Confirma el nombre y pulsa "Añadir". Ya tienes Scoutdrive como una app en tu Dock.',
+      ],
+      android: [
+        'Abre esta misma página con <b>Chrome</b>.',
+        'Toca los tres puntos (arriba a la derecha).',
+        'Toca <b>"Añadir a pantalla de inicio"</b> (o "Instalar aplicación" si te aparece esa opción).',
+        'Confirma. Ya tienes el icono de Scoutdrive en tu pantalla de inicio.',
+      ],
+      otro: [
+        'Abre esta misma página con <b>Chrome</b> o <b>Edge</b>.',
+        'Mira en la barra de direcciones, a la derecha del todo: hay un icono para instalar.',
+        'Haz clic en <b>Instalar</b>.',
+        'Si no lo ves, prueba el menú de arriba a la derecha, "Instalar Scoutdrive…".',
+      ],
+    };
+    const notaPorPlataforma = {
+      mac: '¿Tu Mac es más antiguo y no aparece "Añadir al Dock" en ningún sitio? Abre esta página con Chrome en el Mac — ahí el botón sí lanza la instalación con un solo clic.',
+      ios: '',
+      android: '',
+      otro: '',
+    };
+    const lista = document.getElementById('pwa-install-modal-pasos');
+    lista.innerHTML = (pasosPorPlataforma[plataforma] || pasosPorPlataforma.otro).map(p => `<li>${p}</li>`).join('');
+    document.getElementById('pwa-install-modal-nota').textContent = notaPorPlataforma[plataforma] || '';
+    document.getElementById('pwa-install-modal-bg').classList.add('open');
+  }
+
+  function cerrarInstalarApp() {
+    document.getElementById('pwa-install-modal-bg').classList.remove('open');
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     loginSyncBrand();
     document.getElementById('login-email').focus();
+    _pwaInitBoton();
   });
 
 
