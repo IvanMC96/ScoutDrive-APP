@@ -235,7 +235,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .psec{border-bottom:1px solid var(--border);}
 .phdr{padding:10px 14px;font-size:10px;font-weight:700;letter-spacing:1.1px;color:var(--azul-cl);
   text-transform:uppercase;cursor:pointer;display:flex;justify-content:space-between;align-items:center;
-  background:var(--bg3);user-select:none;transition:background .15s;}
+  background:var(--bg3);-webkit-user-select:none;user-select:none;transition:background .15s;}
 .phdr:hover{background:#2d333b;}
 .phdr .arr{transition:transform .2s;}
 .phdr.closed .arr{transform:rotate(-90deg);}
@@ -246,10 +246,18 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .fg3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;}
 label{font-size:10px;font-weight:700;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;}
 input,select,textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:6px;
-  padding:6px 9px;font-size:12px;color:var(--blanco);font-family:inherit;width:100%;transition:border-color .15s;}
+  padding:6px 9px;font-size:12px;color:var(--blanco);font-family:inherit;width:100%;transition:border-color .15s;
+  -webkit-appearance:none;appearance:none;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--azul);}
 textarea{resize:vertical;min-height:50px;}
-select option{background:var(--bg3);}
+select option{background:var(--bg3);color:var(--blanco);}
+/* Safari/macOS pinta los <select> con su propio "chrome" nativo (fondo
+   claro, flecha redondeada) e ignora el fondo/borde oscuro de arriba a
+   menos que se le quite explícitamente el appearance nativo — por eso
+   este bloque es solo para select: sin él, los desplegables se ven
+   correctos en Windows/Chrome pero "rotos" (claros) en Mac/Safari. */
+select{background-image:url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238a93a6' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;background-size:10px 6px;padding-right:26px;}
 .nbig{font-size:16px!important;font-weight:800!important;text-align:center;color:var(--azul-cl)!important;}
 
 /* Upload zones */
@@ -3605,10 +3613,10 @@ function buildJHighlight(){
   const h=jHighlight||{};
   const hasVideo=(h.blobURL&&h.srcType==='blob')||(h.src&&(h.srcType==='youtube'||h.srcType==='gdrive'||h.srcType==='direct'))||h.srcType==='blob_local';
   let playerH='';
-  if(h.blobURL&&h.srcType==='blob') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.blobURL}"></video>`;
+  if(h.blobURL&&h.srcType==='blob') playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.blobURL}"></video>`;
   else if(h.src&&h.srcType==='youtube'){const yid=getYTId(h.src);playerH=yid?`<iframe src="https://www.youtube.com/embed/${yid}?rel=0" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`:`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--gris2);font-size:11px">URL inválida</div>`;}
   else if(h.src&&h.srcType==='gdrive') playerH=`<iframe src="${h.src}" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
-  else if(h.src&&h.srcType==='direct') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.src}"></video>`;
+  else if(h.src&&h.srcType==='direct') playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${h.src}"></video>`;
   else if(h.srcType==='blob_local') playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--naranja-cl);text-align:center;padding:0 10px"><span style="font-size:22px">⚠️</span><p style="font-size:10px">Archivo local: vuelve a subirlo</p></div>`;
   else playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--gris2)"><span style="font-size:22px">🌟</span><p style="font-size:10px;text-align:center;padding:0 10px">Sube archivo o pega URL</p></div>`;
   let stH=`<span class="clip-st cs-inf">Sin fuente</span>`;
@@ -4587,10 +4595,10 @@ function buildJClips(){
   const cont=document.getElementById('j-clips-list');if(!cont)return;cont.innerHTML='';
   jClips.forEach((cl,i)=>{
     let playerH='';
-    if(cl.blobURL&&cl.srcType==='blob') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.blobURL}"></video>`;
+    if(cl.blobURL&&cl.srcType==='blob') playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.blobURL}"></video>`;
     else if(cl.src&&cl.srcType==='youtube'){const yid=getYTId(cl.src);playerH=yid?`<iframe src="https://www.youtube.com/embed/${yid}?rel=0" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`:`<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--gris2);font-size:11px">URL inválida</div>`;}
     else if(cl.src&&cl.srcType==='gdrive') playerH=`<iframe src="${cl.src}" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
-    else if(cl.src&&cl.srcType==='direct') playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.src}"></video>`;
+    else if(cl.src&&cl.srcType==='direct') playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.src}"></video>`;
     else playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--gris2)"><span style="font-size:22px">🎬</span><p style="font-size:10px;text-align:center;padding:0 10px">Sube archivo o pega URL</p></div>`;
     let stH=`<span class="clip-st cs-inf">Sin fuente</span>`;
     if(cl.srcType==='blob')stH=`<span class="clip-st cs-ok">✓ Archivo cargado</span>`;
@@ -6755,10 +6763,17 @@ async function descargarCampogramaImagen(){
     // sale siempre con el mismo trazado limpio y sin recortes que en
     // ordenador, sea cual sea el dispositivo desde el que se pulse.
     const canvas=await html2canvas(el,{scale:2.2,backgroundColor:'#0a0d13',useCORS:true,logging:false,onclone:_cmpAplicarFallbackCORS,windowWidth:1100,windowHeight:Math.max(1400,el.scrollHeight||0)});
-    const url=canvas.toDataURL('image/png');
+    // Safari/macOS a menudo ignora el atributo download cuando el href es
+    // un data:URL directo (canvas.toDataURL) — en vez de descargar el
+    // archivo, abre la imagen en una pestaña nueva. Usar un blob: URL
+    // (canvas.toBlob + URL.createObjectURL) es lo que Safari respeta de
+    // forma fiable como descarga real, igual que en Chrome/Windows.
+    const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    const url=URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;a.download=`Campograma_${(eq.nom||'Equipo').replace(/\s+/g,'_')}.png`;
     document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
     toast('📷 Imagen del campograma descargada');
   }catch(err){
     toast('No se pudo generar la imagen',true);
@@ -7794,7 +7809,7 @@ function buildEClips(){
     // Player
     let playerH='';
     if(cl.blobURL&&cl.srcType==='blob')
-      playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.blobURL}"></video>`;
+      playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.blobURL}"></video>`;
     else if(cl.src&&cl.srcType==='youtube'){
       const yid=getYTId(cl.src);
       playerH=yid?`<iframe src="https://www.youtube.com/embed/${yid}?rel=0" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`
@@ -7802,7 +7817,7 @@ function buildEClips(){
     } else if(cl.src&&cl.srcType==='gdrive')
       playerH=`<iframe src="${cl.src}" style="position:absolute;inset:0;width:100%;height:100%;border:none"></iframe>`;
     else if(cl.src&&cl.srcType==='direct')
-      playerH=`<video controls preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.src}"></video>`;
+      playerH=`<video controls playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${cl.src}"></video>`;
     else
       playerH=`<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--gris2)"><span style="font-size:22px">🎬</span><p style="font-size:10px;text-align:center;padding:0 10px">Sube archivo o pega URL</p></div>`;
 
@@ -8111,7 +8126,7 @@ function abrirVideoModal(cl){
   // servidor).
   _setVideoModalDescarga(cl.srcType === 'gdrive' ? _urlDescargaDriveClip(cl) : null);
   if (cl.blobURL && cl.srcType === 'blob') {
-    html = `<video controls autoplay preload="metadata"><source src="${cl.blobURL}"></video>`;
+    html = `<video controls autoplay playsinline webkit-playsinline preload="metadata"><source src="${cl.blobURL}"></video>`;
   } else if (cl.srcType === 'youtube' && cl.src) {
     const yid = getYTId(cl.src);
     html = yid
@@ -8122,11 +8137,11 @@ function abrirVideoModal(cl){
     html = `<iframe src="${cl.src}" allow="autoplay" allowfullscreen></iframe>`;
     _setVideoModalExterno(cl.src.replace(/\/preview(\?.*)?$/, '/view'));
   } else if (cl.srcType === 'direct' && cl.src) {
-    html = `<video controls autoplay preload="metadata"><source src="${cl.src}"></video>`;
+    html = `<video controls autoplay playsinline webkit-playsinline preload="metadata"><source src="${cl.src}"></video>`;
   } else if (cl.srcType === 'blob_local') {
     const liveBlob = cl.id!=null ? _clipBlobRegistro()[cl.id] : null;
     if (liveBlob) {
-      html = `<video controls autoplay preload="metadata"><source src="${liveBlob}"></video>`;
+      html = `<video controls autoplay playsinline webkit-playsinline preload="metadata"><source src="${liveBlob}"></video>`;
     } else {
       html = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;
         align-items:center;justify-content:center;gap:8px;color:var(--naranja-cl);background:var(--bg3);padding:20px;text-align:center">
@@ -8925,7 +8940,7 @@ function guardarEConFeedback(){
 .campo-chip-pos{
   position:absolute; z-index:2; transform:translate(-50%,-50%);
   display:flex; flex-direction:column; align-items:center; width:64px;
-  touch-action:none; user-select:none;
+  touch-action:none; -webkit-user-select:none; user-select:none;
 }
 .campo-chip-pos.editable{ cursor:grab; }
 .campo-chip-pos.editable:active,.campo-chip-pos.dragging{ cursor:grabbing; z-index:5; }
@@ -8967,7 +8982,7 @@ function guardarEConFeedback(){
   min-width:104px; max-width:168px;
   background:rgba(13,17,23,.94); border:1.5px solid rgba(255,255,255,.55);
   border-radius:9px; box-shadow:0 3px 12px rgba(0,0,0,.5);
-  padding:4px 6px; user-select:none; touch-action:none;
+  padding:4px 6px; -webkit-user-select:none; user-select:none; touch-action:none;
 }
 .campo-chip-grupo.editable{ cursor:grab; }
 .campo-chip-grupo.editable:active,.campo-chip-grupo.dragging{ cursor:grabbing; z-index:5; }
@@ -9564,7 +9579,7 @@ function verPartido(id){
     if(tipo==='drive') _setVideoModalExterno(p.urlNorm.replace(/\/preview(\?.*)?$/, '/view'));
     else { const yid=(p.urlNorm.match(/embed\/([a-zA-Z0-9_-]{11})/)||[])[1]; if(yid) _setVideoModalExterno(`https://www.youtube.com/watch?v=${yid}`); }
   } else {
-    playerH=`<video controls autoplay preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
+    playerH=`<video controls autoplay playsinline webkit-playsinline preload="metadata" style="position:absolute;inset:0;width:100%;height:100%"><source src="${p.urlNorm}"></video>`;
   }
   const jornadaTxt = p.jornada ? (/^\d+$/.test(p.jornada)?'J'+p.jornada:p.jornada) : '';
   const compTxt=p.comp?(p.comp+(p.grupo?' '+p.grupo:'')):'';
