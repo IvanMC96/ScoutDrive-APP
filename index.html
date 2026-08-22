@@ -5581,7 +5581,13 @@ function eNuevaTemporada(){
     const nJugadores=_cascadaNuevaTemporadaJugadores(nombreClubActual,tempActual,nuevaTemp);
     renderE();
     if(currentSection==='jugadores-db' && typeof renderJDB==='function') renderJDB();
-    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}${nJugadores?` · ${nJugadores} jugador${nJugadores===1?'':'es'} de la plantilla archivado${nJugadores===1?'':'s'} también`:''}`);
+    // Recordatorio explícito: categoría/grupo NO se tocan aquí a propósito
+    // (se asume que el club sigue en la misma, ver comentario arriba) —
+    // pero si ha ascendido/descendido de categoría, hay que cambiarlo a
+    // mano ahora mismo. Los jugadores de la plantilla heredan la
+    // categoría del club automáticamente (se calcula en vivo, no hay que
+    // tocarla también en cada uno).
+    toast(`📅 Temporada ${tempActual} archivada — completa los datos de ${nuevaTemp||'la nueva temporada'}${nJugadores?` · ${nJugadores} jugador${nJugadores===1?'':'es'} de la plantilla archivado${nJugadores===1?'':'s'} también`:''} · Revisa "Categoría" y "Grupo" arriba si el equipo ha cambiado de categoría — los jugadores la heredan sola`);
   },{titulo:'Nueva temporada',okTexto:'📅 Archivar y continuar',okClase:'b-azul'});
 }
 
@@ -10185,18 +10191,35 @@ function jugadorIdPorNombre(nombreCompleto){
 function recalcularStatsDesdePartidos(){
   const tally={};
   const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0}; tally[id][campo]++; };
+  // "➕ Nueva Temporada" NO crea una fila nueva de jugador — reutiliza la
+  // MISMA fila para la temporada que empieza (archiva un snapshot aparte
+  // en j.temporadas). Eso significa que un partido de la videoteca (pDB)
+  // de una temporada YA ARCHIVADA sigue coincidiendo por NOMBRE con ese
+  // mismo jugador, y sin este filtro se colaría en el total de la
+  // temporada en curso aunque no se haya jugado ni un partido todavía.
+  // Si a alguna de las dos temporadas le falta el dato, se cuenta igual
+  // (compatibilidad con datos antiguos sin temporada rellenada).
+  const sumarSiTemporadaOk=(nombreJugador,campo,tempPartido)=>{
+    const id=jugadorIdPorNombre(nombreJugador);
+    if(!id) return;
+    const j=jDB.find(x=>x.id===id);
+    if(!j) return;
+    const tempJ=(j.temp||'').trim(), tempP=(tempPartido||'').trim();
+    if(tempJ && tempP && tempJ!==tempP) return;
+    sumar(id,campo);
+  };
 
   // Fuente 1: goles registrados en Partidos (videoteca) — jugador/asistencia
   pDB.forEach(p=>{
     (p.goles||[]).forEach(g=>{
-      if(g.jugador) sumar(jugadorIdPorNombre(g.jugador),'g');
-      if(g.asistencia) sumar(jugadorIdPorNombre(g.asistencia),'a');
+      if(g.jugador) sumarSiTemporadaOk(g.jugador,'g',p.temp);
+      if(g.asistencia) sumarSiTemporadaOk(g.asistencia,'a',p.temp);
     });
     // Portería a cero: se deduce del marcador — si el rival no marca,
     // el portero de ese equipo suma una.
     if(p.gf!=null && p.gc!=null){
-      if(p.gc===0 && p.porteroLocal) sumar(jugadorIdPorNombre(p.porteroLocal),'pz');
-      if(p.gf===0 && p.porteroVisitante) sumar(jugadorIdPorNombre(p.porteroVisitante),'pz');
+      if(p.gc===0 && p.porteroLocal) sumarSiTemporadaOk(p.porteroLocal,'pz',p.temp);
+      if(p.gf===0 && p.porteroVisitante) sumarSiTemporadaOk(p.porteroVisitante,'pz',p.temp);
     }
   });
 
@@ -10271,6 +10294,21 @@ function sincronizarTacticaDesdePartidos(){
   });
 
   // 3) Volver a generar desde pDB.
+  // IMPORTANTE — alcance por temporada: igual que en recalcularStatsDesde-
+  // Partidos, tanto jDB como eDB guardan UNA SOLA fila por jugador/equipo
+  // que representa la temporada ACTUAL ("➕ Nueva Temporada" reutiliza esa
+  // misma fila, no crea una aparte). Por eso hay que comprobar que la
+  // temporada del partido de la videoteca coincide con la temporada
+  // actual de esa fila antes de sincronizar nada en ella — si no, un
+  // partido de una temporada ya archivada (p.ej. 3ª RFEF del año pasado)
+  // se colaría en la ficha de la temporada nueva (2ª RFEF) solo por
+  // compartir el mismo nombre de equipo/jugador. Si a alguna de las dos
+  // temporadas le falta el dato, se sincroniza igual (compatibilidad con
+  // datos antiguos sin temporada rellenada).
+  const mismaTemporada=(tempA,tempB)=>{
+    const a=(tempA||'').trim(), b=(tempB||'').trim();
+    return !a || !b || a===b;
+  };
   pDB.forEach(p=>{
     if(!p.local || !p.visitante) return;
     [['local',p.visitante,p.gf,p.gc],['visitante',p.local,p.gc,p.gf]].forEach(([lado,rivalNom,gf,gc])=>{
@@ -10278,12 +10316,14 @@ function sincronizarTacticaDesdePartidos(){
       const golesLado = (p.goles||[]).filter(g=>(g.equipo||'local')===lado);
 
       // 3a) Ficha del jugador — solo los goles a los que se les puso
-      // origen táctico (si no se especificó, no se inventa uno).
+      // origen táctico (si no se especificó, no se inventa uno), y solo
+      // si el partido es de SU temporada actual.
       golesLado.forEach((g,i)=>{
         if(!g.jugador || !g.origen) return;
         const jid=jugadorIdPorNombre(g.jugador);
         if(!jid) return;
         const j=jDB.find(x=>x.id===jid); if(!j) return;
+        if(!mismaTemporada(j.temp,p.temp)) return;
         if(!j.goles) j.goles=[];
         j.goles.push({min:g.minuto??0,rival:rivalNom,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:'',cuerpo:'',desc:'',srcPartido:p.id+'_'+i});
         cambiosJ=true;
@@ -10291,10 +10331,12 @@ function sincronizarTacticaDesdePartidos(){
 
       // 3b) Ficha del equipo — se sincroniza el marcador siempre que el
       // equipo exista en Equipos (aunque a los goles no se les haya
-      // puesto origen todavía), fusionando con un partido ya existente
-      // en su ficha si coincide rival+fecha, o creando uno nuevo si no.
+      // puesto origen todavía) Y el partido sea de SU temporada actual,
+      // fusionando con un partido ya existente en su ficha si coincide
+      // rival+fecha, o creando uno nuevo si no.
       const eq=_buscarEquipoPorNombre(equipoNom,p.temp);
       if(!eq) return;
+      if(!mismaTemporada(eq.temp,p.temp)) return;
       if(!eq.partidos) eq.partidos=[];
       let entry=eq.partidos.find(x=>(x.rival||'').trim().toLowerCase()===(rivalNom||'').trim().toLowerCase() && (x.fecha||'')===(p.fecha||''));
       if(!entry){
