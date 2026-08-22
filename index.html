@@ -2247,7 +2247,10 @@ body.solo-lectura .ed-panel-form {
       <div class="db-title">🛡️ Administración de usuarios</div>
       <div class="db-sub">Solo visible para administradores · Los cambios se aplican en tiempo real</div>
     </div>
-    <button class="btn b-verde" onclick="abrirModalNuevoUsuario()">+ Nuevo usuario</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn b-ghost" onclick="descargarListaUsuarios()">⬇ Descargar lista</button>
+      <button class="btn b-verde" onclick="abrirModalNuevoUsuario()">+ Nuevo usuario</button>
+    </div>
   </div>
 
   <!-- Almacenamiento de Google Drive de la cuenta que aloja el backend —
@@ -2426,6 +2429,13 @@ body.solo-lectura .ed-panel-form {
       <div class="apf">
         <label>Nombre completo</label>
         <input id="mu-nombre" placeholder="Nombre y apellidos">
+      </div>
+      <div class="apf">
+        <label>Equipo al que corresponde esta cuenta</label>
+        <select id="mu-equipo">
+          <option value="">— Sin equipo asignado —</option>
+        </select>
+        <p style="font-size:9px;color:var(--gris2);margin:4px 0 0">Útil sobre todo si la cuenta es un Gmail personal de alguien (no un correo del club) — así sabes de un vistazo a qué equipo pertenece esa persona.</p>
       </div>
       <div class="apf">
         <label>Contraseña <span id="mu-pass-hint" style="color:var(--gris);font-weight:400">(dejar vacío para no cambiar)</span></label>
@@ -10884,6 +10894,10 @@ async function cargarUsuariosAdmin() {
   }
 
   const usuarios = resultado.usuarios || [];
+  // Se guarda la última lista cargada para que "Descargar lista" pueda
+  // exportar exactamente lo que se ve en pantalla sin tener que volver
+  // a pedirla al backend.
+  window._usuariosAdminUltimos = usuarios;
   if (!usuarios.length) {
     wrap.innerHTML = '<div style="color:var(--gris);font-size:12px;padding:20px">No hay usuarios registrados.</div>';
     return;
@@ -10894,7 +10908,7 @@ async function cargarUsuariosAdmin() {
   <table class="admin-tabla">
     <thead>
       <tr>
-        <th>Email</th><th>Nombre</th><th>Rol</th><th>Estado</th>
+        <th>Email</th><th>Nombre</th><th>Equipo</th><th>Rol</th><th>Estado</th>
         <th>Último acceso</th><th>Acciones</th>
       </tr>
     </thead>
@@ -10911,6 +10925,7 @@ async function cargarUsuariosAdmin() {
         return `<tr class="${u.activo?'':'admin-fila-inactiva'}">
           <td data-label="Email"><strong>${u.email}</strong>${esMiCuenta?' <span class="admin-yo-badge">TÚ</span>':''}${esSuperAdmin?' <span class="admin-yo-badge" style="background:var(--dorado,#c99a2e)" title="Cuenta protegida: nadie puede eliminarla, bajarle el rol ni desactivarla">👑 Super Admin</span>':''}</td>
           <td data-label="Nombre">${u.nombre||'—'}</td>
+          <td data-label="Equipo">${u.equipo||'—'}</td>
           <td data-label="Rol"><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
           <td data-label="Estado"><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
           <td data-label="Último acceso" style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
@@ -10924,10 +10939,54 @@ async function cargarUsuariosAdmin() {
   </table>`;
 }
 
+/** Descarga en Excel la lista de cuentas de usuario (email, nombre,
+ *  equipo, rol, estado y último acceso) — pensado para tener un control
+ *  rápido de quién tiene acceso sin tener que abrir la app cada vez.
+ *  Usa la última lista ya cargada en el panel; si todavía no se ha
+ *  cargado ninguna en esta sesión, la pide primero. */
+async function descargarListaUsuarios(){
+  if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
+  let usuarios = window._usuariosAdminUltimos;
+  if(!usuarios){
+    toast('⏳ Cargando usuarios...');
+    const resultado = await _apiAdmin('listarUsuarios', {});
+    if(!resultado.ok){ toast('No se pudo descargar la lista: '+(resultado.motivo||'desconocido'),true); return; }
+    usuarios = resultado.usuarios || [];
+  }
+  if(!usuarios.length){ toast('No hay usuarios registrados',true); return; }
+  const rows=[
+    ['Email','Nombre','Equipo','Rol','Estado','Último acceso','Acceso restringido a']
+  ];
+  usuarios.forEach(u=>{
+    const fechaAcceso = u.fechaUltimoAcceso ? new Date(u.fechaUltimoAcceso).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    const ligas = (u.ligasPermitidas||[]).length ? u.ligasPermitidas.join(', ') : 'Ver todo';
+    rows.push([u.email||'', u.nombre||'', u.equipo||'', u.rol==='admin'?'Administrador':'Usuario', u.activo?'Activo':'Desactivado', fechaAcceso, ligas]);
+  });
+  const WB=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:28},{wch:22},{wch:20},{wch:14},{wch:12},{wch:14},{wch:26}];
+  XLSX.utils.book_append_sheet(WB,ws,'Usuarios');
+  XLSX.writeFile(WB,'Scoutdrive_Usuarios_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast('📊 Lista de usuarios descargada');
+}
+
 // ── Modal nuevo/editar usuario ───────────────────────────────────
 function _ligasDisponibles(){
   const deEquipos=eDB.map(e=>(e.liga||'').trim()).filter(Boolean);
   return [...new Set(deEquipos)].sort();
+}
+/** Rellena el desplegable "Equipo" del modal de usuario con los equipos
+ *  que ya existen en la app (mismo criterio que jugadores/partidos: el
+ *  nombre del equipo tal cual está guardado en eDB). Si el equipo que
+ *  tenía asignado un usuario ya no existe (se borró/renombró), se añade
+ *  igualmente como opción para no perder el dato al editarlo. */
+function renderMuEquipoOptions(seleccionado){
+  const nombres=[...new Set(eDB.map(e=>(e.nom||'').trim()).filter(Boolean))].sort();
+  if(seleccionado && !nombres.includes(seleccionado)) nombres.push(seleccionado);
+  const sel=document.getElementById('mu-equipo');
+  sel.innerHTML='<option value="">— Sin equipo asignado —</option>'
+    + nombres.map(n=>`<option value="${eH(n)}">${eH(n)}</option>`).join('');
+  sel.value=seleccionado||'';
 }
 function renderMuLigasCheckboxes(seleccionadas){
   const sel=new Set(seleccionadas||[]);
@@ -10985,6 +11044,7 @@ function abrirModalNuevoUsuario() {
   document.getElementById('mu-email').value = '';
   document.getElementById('mu-email').disabled = false;
   document.getElementById('mu-nombre').value = '';
+  renderMuEquipoOptions('');
   document.getElementById('mu-pass').value = '';
   document.getElementById('mu-rol').value = 'usuario';
   document.getElementById('mu-rol').disabled = false;
@@ -11014,6 +11074,7 @@ async function editarUsuarioAdmin(id) {
   document.getElementById('mu-email').value = u.email;
   document.getElementById('mu-email').disabled = true; // no se puede cambiar el email
   document.getElementById('mu-nombre').value = u.nombre || '';
+  renderMuEquipoOptions(u.equipo || '');
   document.getElementById('mu-pass').value = '';
   document.getElementById('mu-rol').value = u.rol || 'usuario';
   document.getElementById('mu-activo').value = String(u.activo);
@@ -11045,6 +11106,7 @@ async function guardarUsuario() {
   const editId  = document.getElementById('mu-edit-id').value;
   const email   = document.getElementById('mu-email').value.trim().toLowerCase();
   const nombre  = document.getElementById('mu-nombre').value.trim();
+  const equipo  = document.getElementById('mu-equipo').value;
   const pass    = document.getElementById('mu-pass').value;
   let   rol     = document.getElementById('mu-rol').value;
   let   activo  = document.getElementById('mu-activo').value === 'true';
@@ -11078,7 +11140,7 @@ async function guardarUsuario() {
   let resultado;
   if (editId) {
     // Editar usuario existente
-    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas } });
+    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas, equipo } });
     // Cambiar contraseña si se proporcionó
     if (resultado.ok && hashPass) {
       await _apiAdmin('cambiarPassword', { id: editId, hashPassNuevo: hashPass });
@@ -11086,7 +11148,7 @@ async function guardarUsuario() {
   } else {
     // Crear nuevo usuario
     if (!pass) { toast('La contraseña es obligatoria para nuevos usuarios', true); return; }
-    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol, ligasPermitidas } });
+    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol, ligasPermitidas, equipo } });
   }
 
   if (resultado && resultado.ok) {
