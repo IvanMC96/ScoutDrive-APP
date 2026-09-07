@@ -11750,11 +11750,22 @@ function borrarJugador(btn){
     askDel(`"${nom}" ya tiene temporadas archivadas. Al borrarlo se sacará de la plantilla/temporada actual, pero su historial se conserva y se podrá seguir viendo filtrando por las temporadas antiguas en las que jugó. ¿Continuar?`, () => {
       _archivarJugadorDeLaPlantilla(j);
       saveJDB(); renderJDB(); toast('🗑 Sacado de la plantilla actual (su historial se conserva)');
+      // El jugador sigue existiendo (solo se archiva, no se borra), así
+      // que hay que volver a subirlo al Sheet para que el archivado se
+      // vea también en los demás dispositivos — si no, en cualquier otro
+      // sitio seguiría apareciendo como si todavía estuviera en la
+      // plantilla actual.
+      if(typeof scoutSincronizarJugador==='function') scoutSincronizarJugador(j);
     }, {okTexto:'Sacar de la plantilla'});
   } else {
     askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
       jDB = jDB.filter(x => String(x.id) !== String(id));
       saveJDB(); renderJDB(); toast('🗑 Eliminado');
+      // Se borra también en el Sheet — si no, la próxima sincronización lo
+      // volvería a traer de vuelta como si fuera nuevo, y en los demás
+      // dispositivos ni siquiera llegaría a desaparecer nunca (mismo
+      // problema que tenía borrarEquipo antes de arreglarlo).
+      if(typeof _apiAdmin==='function') _apiAdmin('eliminarJugador',{id});
     });
   }
 }
@@ -11771,6 +11782,7 @@ function borrarJugadorDefinitivo(btn){
   askDel(`¿Borrar "${nom}" DEL TODO, incluido su historial de temporadas archivadas? No se puede deshacer.`, () => {
     jDB = jDB.filter(x => String(x.id) !== String(id));
     saveJDB(); renderJDB(); toast('🗑 Eliminado del todo');
+    if(typeof _apiAdmin==='function') _apiAdmin('eliminarJugador',{id});
   });
 }
 
