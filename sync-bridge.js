@@ -218,7 +218,18 @@ setInterval(scoutProcesarCola, 60000);
     _guardarPartido_original();
     const id = editIdAntes || (typeof pDB !== 'undefined' && pDB.length ? pDB[0].id : null);
     const p = (typeof pDB !== 'undefined') ? pDB.find(x => String(x.id) === String(id)) : null;
-    if (p) scoutSincronizarPartidoVideo(p);
+    if (p) {
+      scoutSincronizarPartidoVideo(p);
+      // guardarPartido() ya reparte la taxonomía/clips de cada gol a la
+      // ficha del jugador (jDB) y del equipo (eDB) que marcó
+      // (sincronizarTacticaDesdePartidos(), dentro de index.html) — pero
+      // eso solo actualiza jDB/eDB en este dispositivo (localStorage). Si
+      // no subimos también esos jugadores/equipos aquí, el cambio se
+      // queda solo en este dispositivo y nunca llega a los demás — mismo
+      // tipo de fallo de sincronización que el de borrar equipos/jugadores
+      // que ya se corrigió antes.
+      scoutSincronizarJugadoresYEquiposDePartido(p);
+    }
   };
 
   // borrarPartido() NO se envuelve aquí: el borrado es asíncrono (espera
@@ -305,6 +316,29 @@ async function scoutSincronizarPartidoVideo(p) {
     console.warn('[Scoutdrive sync] Error al sincronizar partido:', detalle);
     _scoutToast('⚠️ No se pudo subir el partido al Sheet: ' + detalle, true);
   }
+}
+
+// Tras guardar un partido, sube a Google Sheets los jugadores y equipos
+// que sincronizarTacticaDesdePartidos() acaba de actualizar en local
+// (goles con taxonomía + clips en jDB, golesGF en eDB) — si no, esos
+// cambios se quedan solo en este dispositivo. Se recalculan los
+// afectados a partir de los propios goles/equipos del partido (misma
+// resolución jugadorIdPorNombre()/_buscarEquipoPorNombre() que usa
+// sincronizarTacticaDesdePartidos(), para subir justo a quien haya
+// podido cambiar).
+async function scoutSincronizarJugadoresYEquiposDePartido(p) {
+  if (typeof jDB === 'undefined' || typeof eDB === 'undefined') return;
+  const nombresJugadores = new Set();
+  (p.goles || []).forEach(g => { if (g.jugador) nombresJugadores.add(g.jugador); if (g.portero) nombresJugadores.add(g.portero); });
+  nombresJugadores.forEach(nom => {
+    const jid = (typeof jugadorIdPorNombre === 'function') ? jugadorIdPorNombre(nom) : null;
+    const j = jid ? jDB.find(x => String(x.id) === String(jid)) : null;
+    if (j) scoutSincronizarJugador(j);
+  });
+  [p.local, p.visitante].forEach(nomEq => {
+    const eq = (typeof _buscarEquipoPorNombre === 'function') ? _buscarEquipoPorNombre(nomEq, p.temp) : null;
+    if (eq) scoutSincronizarEquipo(eq);
+  });
 }
 
 async function scoutEliminarPartidoVideoRemoto(id) {
