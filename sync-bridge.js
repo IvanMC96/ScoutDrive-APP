@@ -270,6 +270,19 @@ setInterval(scoutProcesarCola, 60000);
   console.log('[Scoutdrive sync] Conectado: guardarAnuncio()/borrarAnuncio() ahora sincronizan con Google Sheets.');
 })();
 
+(function engancharConfig() {
+  if (typeof guardarCfg !== 'function') {
+    setTimeout(engancharConfig, 50);
+    return;
+  }
+  const _guardarCfg_original = guardarCfg;
+  guardarCfg = function () {
+    _guardarCfg_original();
+    if (typeof cfg !== 'undefined') scoutSincronizarConfig(cfg);
+  };
+  console.log('[Scoutdrive sync] Conectado: guardarCfg() ahora sincroniza con Google Sheets.');
+})();
+
 async function scoutSincronizarJugador(j) {
   const resultado = await scoutApiPost('guardarJugador', j);
   if (!resultado.ok && resultado.offline) {
@@ -347,6 +360,26 @@ async function scoutEliminarPartidoVideoRemoto(id) {
     scoutEncolar('eliminarPartidoVideo', { id });
   } else if (!resultado.ok) {
     console.warn('[Scoutdrive sync] Error al eliminar partido en el Sheet:', resultado.motivo || resultado.error);
+  }
+}
+
+// Nombre/subtítulo/pie/logo de la plataforma (Configuración › "Guardar
+// configuración") — antes solo se guardaba en el localStorage de quien
+// lo tocaba, así que el resto de dispositivos/usuarios nunca lo veían.
+async function scoutSincronizarConfig(c) {
+  const resultado = await scoutApiPost('guardarConfig', c);
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('guardarConfig', c);
+  } else if (resultado.ok) {
+    _scoutToast('☁️ Configuración sincronizada con Google Sheets');
+    if (resultado.resultado && resultado.resultado.logoURL && typeof cfg !== 'undefined') {
+      cfg.logo = resultado.resultado.logoURL;
+      if (typeof saveCfg === 'function') saveCfg();
+    }
+  } else {
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar configuración:', detalle);
+    _scoutToast('⚠️ No se pudo subir la configuración al Sheet: ' + detalle, true);
   }
 }
 
@@ -825,6 +858,30 @@ async function scoutSyncCompleto(silencioso) {
   if (Array.isArray(respuesta.anuncios) && typeof adsDB !== 'undefined') {
     const idsRemotos = new Set(respuesta.anuncios.map(r => String(r.id)));
     cambios += _scoutPodarBorrados(adsDB, idsRemotos, idsPendientes);
+  }
+
+  // Nombre/subtítulo/pie/logo de la plataforma — objeto único (no un
+  // array con ids como todo lo demás), así que se compara y aplica
+  // aparte en vez de pasar por _scoutFusionarSeguro/_scoutPodarBorrados.
+  // Si el Sheet aún no tiene ninguna configuración guardada (nadie ha
+  // usado "Guardar configuración" todavía), respuesta.cfg viene null y
+  // no se toca nada de lo que ya hubiera en local.
+  let cambioCfg = false;
+  if (respuesta.cfg && typeof cfg !== 'undefined') {
+    const remotoCfg = respuesta.cfg;
+    cambioCfg = (remotoCfg.nombre || '') !== (cfg.nombre || '')
+      || (remotoCfg.sub || '') !== (cfg.sub || '')
+      || (remotoCfg.footer || '') !== (cfg.footer || '')
+      || (remotoCfg.logo || '') !== (cfg.logo || '');
+    if (cambioCfg) {
+      cfg.nombre = remotoCfg.nombre || cfg.nombre;
+      cfg.sub = remotoCfg.sub || cfg.sub;
+      cfg.footer = remotoCfg.footer || cfg.footer;
+      cfg.logo = remotoCfg.logo || null;
+      if (typeof saveCfg === 'function') saveCfg();
+      if (typeof applyCfg === 'function') applyCfg();
+      cambios++;
+    }
   }
 
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
