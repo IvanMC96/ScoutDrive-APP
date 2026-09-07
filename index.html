@@ -2141,8 +2141,9 @@ body.solo-lectura .ed-panel-form {
     </div>
     <div class="add-partido-body">
       <div class="apf-row">
-        <div class="apf"><label>Equipo local</label><input id="ap-local" placeholder="C.D. Don Benito"></div>
-        <div class="apf"><label>Equipo visitante</label><input id="ap-visitante" placeholder="Rival"></div>
+        <div class="apf"><label>Equipo local</label><input id="ap-local" list="ap-equipo-list" placeholder="C.D. Don Benito" oninput="buildApGoles()"></div>
+        <div class="apf"><label>Equipo visitante</label><input id="ap-visitante" list="ap-equipo-list" placeholder="Rival" oninput="buildApGoles()"></div>
+        <datalist id="ap-equipo-list"></datalist>
       </div>
       <div class="apf-row3">
         <div class="apf"><label>Jornada</label><input id="ap-jornada" placeholder="J1" type="text"></div>
@@ -2191,7 +2192,9 @@ body.solo-lectura .ed-panel-form {
       </div>
       <div class="apf">
         <label>⚽ Goles del partido</label>
-        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Registra quién marcó cada gol, si hubo asistencia, el minuto y si fue de penalti.</p>
+        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Registra quién marcó cada gol y quién dio la asistencia — elige entre los jugadores del equipo que marca —, el minuto y si fue de penalti. Pulsa "Más detalles" en cada gol para añadir la taxonomía táctica completa y el vídeo del recorte: se guarda a la vez en la ficha del jugador y en la del equipo, sin tener que repetirlo.</p>
+        <datalist id="ap-jugador-list-local"></datalist>
+        <datalist id="ap-jugador-list-visitante"></datalist>
         <div id="ap-goles-list"></div>
         <button class="badd" type="button" onclick="addApGol()">+ Añadir gol</button>
       </div>
@@ -10047,6 +10050,11 @@ function poblarFiltrosYDatalistsPartidos(lista){
   if(dlComp)dlComp.innerHTML=ligas.map(c=>`<option value="${eH(c)}">`).join('');
   const dlGrupo=document.getElementById('ap-grupo-list');
   if(dlGrupo)dlGrupo.innerHTML=grupos.map(g=>`<option value="${eH(g)}">`).join('');
+  // "Equipo local"/"Equipo visitante" se sugieren tal cual están dados de
+  // alta en Equipos (eDB), para que sea el mismo nombre exacto el que luego
+  // permite enlazar autómaticamente los goles con la ficha del equipo.
+  const dlEquipo=document.getElementById('ap-equipo-list');
+  if(dlEquipo)dlEquipo.innerHTML=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'')).map(e=>`<option value="${eH(e.nom||'')}">`).join('');
 
   const selComp=document.getElementById('p-fil-comp');
   const compActual=selComp?selComp.value:'';
@@ -10102,18 +10110,44 @@ function verPartido(id){
   _ajustarAlturaVideoModal();
 }
 
-// ── GOLES DEL PARTIDO (quién marcó, asistencia, minuto, penalti) ──
+// ── GOLES DEL PARTIDO (quién marcó, asistencia, minuto, taxonomía y vídeo) ──
+// Cada fila lleva, además del minuto/equipo/jugador/asistencia rápidos que
+// se ven siempre, la misma taxonomía táctica y el mismo vídeo de recorte
+// que la "Alta rápida de gol" de la sección Goles (detrás de "Más
+// detalles", para no ralentizar el registro rápido de un partido) — pero
+// desde aquí, al guardar el partido, se reparte automáticamente a la
+// ficha del jugador Y a la ficha del equipo que marcó, sin tener que
+// rellenarlo dos veces en dos sitios distintos (ver
+// sincronizarTacticaDesdePartidos()).
 let apGoles=[];
+
+// Datalist de jugadores de cada lado (local/visitante), filtrado por el
+// nombre de equipo escrito arriba — mismo criterio que
+// _agActualizarJugadores() en "Alta rápida de gol".
+function _apPoblarJugadorDatalists(nomLocal,nomVisit){
+  const porEquipo=(nom)=>{
+    const val=(nom||'').trim().toLowerCase();
+    const candidatos=(val?jDB.filter(j=>(j.club||'').toLowerCase().includes(val)):jDB).filter(j=>!j._bajaPlantilla);
+    return [...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')))
+      .map(j=>`<option value="${eH((j.nom+' '+j.ape).trim())}">`).join('');
+  };
+  const dlL=document.getElementById('ap-jugador-list-local'); if(dlL) dlL.innerHTML=porEquipo(nomLocal);
+  const dlV=document.getElementById('ap-jugador-list-visitante'); if(dlV) dlV.innerHTML=porEquipo(nomVisit);
+}
 
 function buildApGoles(){
   const cont=document.getElementById('ap-goles-list');
   if(!cont) return;
   const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
   const nomVisit=document.getElementById('ap-visitante').value.trim()||'Visitante';
+  _apPoblarJugadorDatalists(nomLocal,nomVisit);
   if(!apGoles.length){ cont.innerHTML='<p style="font-size:10px;color:var(--gris2);padding:4px 0">Sin goles añadidos todavía</p>'; return; }
   cont.innerHTML=apGoles.map((g,i)=>{
     const isABP=g.origen==='ABP Ofensiva';
     const subOpts=(SUB_ABP[g.origen]||[]).map(s=>`<option${g.subtipo===s?' selected':''}>${s}</option>`).join('');
+    const listaJug=g.equipo==='visitante'?'ap-jugador-list-visitante':'ap-jugador-list-local';
+    const tieneClip=!!(g.clip && (g.clip.src || g.clip.blobURL || g.clip.portada));
+    const detalleAbierto=!!g._abierto;
     return `
     <div class="gr" style="border-left-color:${g.equipo==='visitante'?'var(--rojo)':'var(--verde-dk)'}">
       <div class="g1">
@@ -10122,11 +10156,11 @@ function buildApGoles(){
           <option value="local"${g.equipo!=='visitante'?' selected':''}>${eH(nomLocal)}</option>
           <option value="visitante"${g.equipo==='visitante'?' selected':''}>${eH(nomVisit)}</option>
         </select>
-        <button class="brm2" type="button" onclick="apGoles.splice(${i},1);buildApGoles()">✕</button>
+        <button class="brm2" type="button" onclick="_apQuitarGol(${i})">✕</button>
       </div>
       <div class="g2">
-        <input type="text" placeholder="Jugador (quién marca)" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value">
-        <input type="text" placeholder="Asistencia (opcional)" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value">
+        <input type="text" placeholder="Jugador (quién marca)" list="${listaJug}" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value">
+        <input type="text" placeholder="Asistencia (opcional)" list="${listaJug}" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value">
       </div>
       <div class="g2">
         <div class="fg"><label style="font-size:9px">Cómo fue el gol</label>
@@ -10140,20 +10174,171 @@ function buildApGoles(){
           </select>
         </div>
       </div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);margin-top:5px;cursor:pointer">
-        <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
-      </label>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);cursor:pointer">
+          <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
+        </label>
+        <button type="button" class="btn b-ghost b-sm" style="font-size:10px;padding:3px 8px" onclick="apGoles[${i}]._abierto=!apGoles[${i}]._abierto;buildApGoles()">
+          ${detalleAbierto?'▾':'▸'} Más detalles${tieneClip?' 🎬':''}
+        </button>
+      </div>
+      ${detalleAbierto?_apDetalleGolHTML(g,i):''}
     </div>`;
   }).join('');
+  // El HTML de arriba ya incluye los bloques de detalle abiertos, pero
+  // _apRefrescarEstadoVideo/_apRefrescarPortadaPreview leen del DOM con
+  // document.getElementById, así que hace falta pintarlos después de que
+  // ese HTML exista de verdad.
+  apGoles.forEach((g,i)=>{ if(g._abierto){ _apRefrescarEstadoVideo(i); _apRefrescarPortadaPreview(i); } });
+}
+
+function _apDetalleGolHTML(g,i){
+  return `
+  <div class="apg-detalle" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
+    <div class="g2">
+      <div class="fg"><label style="font-size:9px">Zona de remate</label>
+        <select onchange="apGoles[${i}].zona=this.value">${ZONAS.map(z=>`<option${g.zona===z?' selected':''}>${z}</option>`).join('')}</select>
+      </div>
+      <div class="fg"><label style="font-size:9px">Parte del cuerpo</label>
+        <select onchange="apGoles[${i}].cuerpo=this.value">${CUERPOS.map(c=>`<option${g.cuerpo===c?' selected':''}>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="fg" style="margin-top:6px"><label style="font-size:9px">🧤 Portero rival batido</label>
+      <input type="text" placeholder="Nombre del portero..." value="${eH(g.portero||'')}" oninput="apGoles[${i}].portero=this.value">
+    </div>
+    <div class="fg" style="margin-top:6px"><label style="font-size:9px">Descripción</label>
+      <input type="text" placeholder="Breve descripción..." value="${eH(g.desc||'')}" oninput="apGoles[${i}].desc=this.value">
+    </div>
+    <div class="fg" style="margin-top:8px">
+      <label style="font-size:9px">🎬 Vídeo del gol (opcional) — se guarda a la vez en la ficha del jugador y sale también en "Vídeos de los goles"</label>
+      <div id="apg-portada-wrap-${i}"></div>
+      <label class="clip-file-lbl" style="margin-top:6px">
+        <input type="file" id="apg-video-file-${i}" accept="video/mp4,video/quicktime,video/webm,video/*" onchange="_apLoadVideoFile(${i},event)">📁 Seleccionar vídeo MP4/MOV/WebM
+      </label>
+      <div class="clip-url-row" style="margin-top:6px">
+        <input type="text" id="apg-video-url-${i}" placeholder="URL YouTube / Drive / directa">
+        <button class="btn b-azul b-sm" type="button" onclick="_apApplyVideoURL(${i})">Cargar</button>
+      </div>
+      <div style="margin-top:6px"><input id="apg-video-titulo-${i}" placeholder="Título del clip (opcional)" value="${eH((g.clip&&g.clip.titulo)||'')}" oninput="if(!apGoles[${i}].clip)apGoles[${i}].clip={};apGoles[${i}].clip.titulo=this.value"></div>
+      <div id="apg-video-estado-${i}" style="margin-top:6px"></div>
+    </div>
+  </div>`;
 }
 
 function addApGol(){
-  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false});
+  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
   buildApGoles();
+}
+
+function _apQuitarGol(i){
+  const g=apGoles[i];
+  if(g && g.clip && g.clip.blobURL){ URL.revokeObjectURL(g.clip.blobURL); if(g.clip.id!=null) delete _clipBlobRegistro()[g.clip.id]; }
+  apGoles.splice(i,1);
+  buildApGoles();
+}
+
+// ── Vídeo/portada por gol — mismo patrón que _agLoadVideoFile /
+// _agApplyVideoURL / _agLoadPortada de "Alta rápida de gol", pero con una
+// copia de trabajo independiente por cada fila (apGoles[i].clip) en vez
+// de una sola copia global, porque aquí puede haber varios goles a la vez.
+function _apLoadVideoFile(i,e){
+  const f=e.target.files[0]; if(!f) return;
+  const g=apGoles[i]; if(!g) return;
+  if(!g.clip) g.clip={};
+  if(g.clip.blobURL){ URL.revokeObjectURL(g.clip.blobURL); if(g.clip.id!=null) delete _clipBlobRegistro()[g.clip.id]; }
+  if(g.clip.id==null) g.clip.id='ap_'+Date.now()+'_'+i;
+  const url=URL.createObjectURL(f);
+  g.clip.blobURL=url; g.clip.src=url; g.clip.srcType='blob';
+  _clipBlobRegistro()[g.clip.id]=url;
+  const tituloEl=document.getElementById('apg-video-titulo-'+i);
+  if(tituloEl && !tituloEl.value){ tituloEl.value=f.name.replace(/\.[^.]+$/,''); g.clip.titulo=tituloEl.value; }
+  _apRefrescarEstadoVideo(i);
+  toast('🎬 Vídeo cargado — se guardará junto con el gol');
+}
+function _apApplyVideoURL(i){
+  const g=apGoles[i]; if(!g) return;
+  let u=(document.getElementById('apg-video-url-'+i)?.value||'').trim(); if(!u) return;
+  if(!g.clip) g.clip={};
+  const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;g.clip.srcType='gdrive';}
+  else if(/youtube\.com|youtu\.be/.test(u)) g.clip.srcType='youtube';
+  else g.clip.srcType='direct';
+  if(g.clip.blobURL){URL.revokeObjectURL(g.clip.blobURL);g.clip.blobURL=null;if(g.clip.id!=null) delete _clipBlobRegistro()[g.clip.id];}
+  g.clip.src=u;
+  _apRefrescarEstadoVideo(i);
+}
+async function _apLoadPortada(i,e){
+  const f=e.target.files[0]; if(!f) return;
+  const g=apGoles[i]; if(!g) return;
+  const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});
+  if(!dataUrl) return;
+  if(!g.clip) g.clip={};
+  g.clip.portada=dataUrl;
+  _apRefrescarPortadaPreview(i);
+}
+function _apQuitarPortada(i){ const g=apGoles[i]; if(g && g.clip) g.clip.portada=null; _apRefrescarPortadaPreview(i); }
+function _apRefrescarEstadoVideo(i){
+  const el=document.getElementById('apg-video-estado-'+i); if(!el) return;
+  const c=(apGoles[i]||{}).clip;
+  if(!c || (!c.src && !c.blobURL)) el.innerHTML='<span class="clip-st cs-inf">Sin vídeo — opcional</span>';
+  else if(c.srcType==='blob') el.innerHTML='<span class="clip-st cs-ok">✓ Archivo cargado</span>';
+  else if(c.srcType==='youtube') el.innerHTML='<span class="clip-st cs-ok">✓ YouTube</span>';
+  else if(c.srcType==='gdrive') el.innerHTML='<span class="clip-st cs-ok">✓ Google Drive</span>';
+  else if(c.srcType==='direct'||c.srcType==='blob_local') el.innerHTML='<span class="clip-st cs-ok">✓ Vídeo cargado</span>';
+  else el.innerHTML='<span class="clip-st cs-inf">Sin vídeo — opcional</span>';
+}
+function _apRefrescarPortadaPreview(i){
+  const wrap=document.getElementById('apg-portada-wrap-'+i); if(!wrap) return;
+  const c=(apGoles[i]||{}).clip;
+  const portada=c&&c.portada;
+  wrap.innerHTML=portada
+    ?`<div class="clip-portada-zona has-portada"><button class="cp-rm" type="button" onclick="_apQuitarPortada(${i})">✕</button><img src="${portada}" class="clip-portada-img"><div class="clip-portada-overlay"><span>📷 Cambiar</span></div><input type="file" accept="image/*" style="display:none" id="apg-portada-file-${i}" onchange="_apLoadPortada(${i},event)"></div>`
+    :`<div class="clip-portada-zona" onclick="document.getElementById('apg-portada-file-${i}').click()"><div class="clip-portada-empty"><span>📸</span><p><strong style="color:var(--azul-cl)">Subir portada del clip</strong><br>Opcional</p></div><input type="file" accept="image/*" style="display:none" id="apg-portada-file-${i}" onchange="_apLoadPortada(${i},event)"></div>`;
+  if(portada){ const pz=wrap.querySelector('.clip-portada-zona'); if(pz) pz.onclick=()=>document.getElementById('apg-portada-file-'+i).click(); }
+}
+
+// Convierte una fila de trabajo de apGoles en el objeto plano que se
+// guarda de verdad en pDB — quita el estado de UI (_abierto) y, si hay
+// vídeo, el blobURL (que no sobrevive a un recargar la página ni pasa al
+// backend; solo vale mientras dura esta sesión del navegador, igual que
+// en "Alta rápida de gol").
+function _apGolParaGuardar(g){
+  const out={
+    equipo:g.equipo,
+    minuto:g.minuto,
+    jugador:g.jugador,
+    asistencia:g.asistencia,
+    origen:g.origen,
+    subtipo:g.subtipo||'',
+    penalti:!!g.penalti,
+    zona:g.zona||'',
+    cuerpo:g.cuerpo||'',
+    portero:g.portero||'',
+    desc:g.desc||''
+  };
+  if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob')){
+    out.clip={
+      titulo:g.clip.titulo||'',
+      srcType: g.clip.srcType==='blob'?'blob_local':(g.clip.srcType||''),
+      src: g.clip.srcType==='blob'?'':(g.clip.src||''),
+      portada: g.clip.portada||null
+    };
+  }
+  return out;
+}
+
+// Revoca los blobs de vídeo que se hayan cargado en los goles del
+// formulario y que se van a descartar (modal cerrado sin guardar, o
+// vuelto a abrir para otro partido) — mismo cuidado que _agClipTmp.
+function _apLimpiarBlobsGoles(){
+  apGoles.forEach(g=>{
+    if(g && g.clip && g.clip.blobURL){ URL.revokeObjectURL(g.clip.blobURL); if(g.clip.id!=null) delete _clipBlobRegistro()[g.clip.id]; }
+  });
 }
 
 function abrirAddPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden añadir partidos',true);return;}
+  _apLimpiarBlobsGoles();
   ['ap-local','ap-visitante','ap-jornada','ap-url','ap-thumb','ap-notas','ap-portero-local','ap-portero-visitante'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.value='';
   });
@@ -10176,6 +10361,7 @@ function abrirAddPartido(){
 
 function editarPartido(id){
   const p=pDB.find(x=>x.id===id); if(!p) return;
+  _apLimpiarBlobsGoles();
   poblarFiltrosYDatalistsPartidos();
   document.getElementById('ap-local').value=p.local||'';
   document.getElementById('ap-visitante').value=p.visitante||'';
@@ -10210,6 +10396,7 @@ function cerrarAddPartido(){
   document.getElementById('add-partido-modal').classList.remove('open');
   // Limpiar preview de thumb
   _resetThumbPreview();
+  _apLimpiarBlobsGoles();
 }
 
 function _resetThumbPreview(){
@@ -10342,12 +10529,21 @@ function recalcularStatsDesdePartidos(){
 function sincronizarTacticaDesdePartidos(){
   let cambiosJ=false, cambiosE=false;
 
-  // 1) Quitar del jugador todo lo sincronizado la vez anterior.
+  // 1) Quitar del jugador todo lo sincronizado la vez anterior (goles Y
+  // los clips de vídeo que se hubieran adjuntado a esos goles desde
+  // "Editar partido" — mismo marcador srcPartido en ambos, para poder
+  // regenerarlos limpio cada vez sin duplicar ni dejar huérfanos).
   jDB.forEach(j=>{
-    if(!j.goles||!j.goles.length) return;
-    const antes=j.goles.length;
-    j.goles=j.goles.filter(g=>!g.srcPartido);
-    if(j.goles.length!==antes) cambiosJ=true;
+    if(j.goles && j.goles.length){
+      const antes=j.goles.length;
+      j.goles=j.goles.filter(g=>!g.srcPartido);
+      if(j.goles.length!==antes) cambiosJ=true;
+    }
+    if(j.clips && j.clips.length){
+      const antesC=j.clips.length;
+      j.clips=j.clips.filter(c=>!c.srcPartido);
+      if(j.clips.length!==antesC) cambiosJ=true;
+    }
   });
 
   // 2) Quitar del equipo: los goles sincronizados de partidos manuales,
@@ -10389,16 +10585,36 @@ function sincronizarTacticaDesdePartidos(){
 
       // 3a) Ficha del jugador — solo los goles a los que se les puso
       // origen táctico (si no se especificó, no se inventa uno), y solo
-      // si el partido es de SU temporada actual.
+      // si el partido es de SU temporada actual. Se lleva también la
+      // taxonomía completa (zona/cuerpo/portero/desc) y, si el gol trae
+      // vídeo o portada adjuntos desde "Editar partido", se guarda a la
+      // vez como clip en la ficha del jugador — mismo esquema que "Alta
+      // rápida de gol" — marcado con el mismo srcPartido para poder
+      // quitarlo y regenerarlo sin duplicar en el siguiente guardado.
       golesLado.forEach((g,i)=>{
         if(!g.jugador || !g.origen) return;
         const jid=jugadorIdPorNombre(g.jugador);
         if(!jid) return;
         const j=jDB.find(x=>x.id===jid); if(!j) return;
         if(!mismaTemporada(j.temp,p.temp)) return;
+        const srcTag=p.id+'_'+i;
         if(!j.goles) j.goles=[];
-        j.goles.push({min:g.minuto??0,rival:rivalNom,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:'',cuerpo:'',desc:'',srcPartido:p.id+'_'+i});
+        j.goles.push({min:g.minuto??0,rival:rivalNom,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',desc:g.desc||'',srcPartido:srcTag});
         cambiosJ=true;
+        if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
+          if(!j.clips) j.clips=[];
+          j.clips.push({
+            id:'ap_'+srcTag,
+            titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+            rival:rivalNom,
+            tipo:g.origen,
+            srcType:g.clip.srcType||'',
+            src:g.clip.src||'',
+            portada:g.clip.portada||null,
+            srcPartido:srcTag
+          });
+          cambiosJ=true;
+        }
       });
 
       // 3b) Ficha del equipo — se sincroniza el marcador siempre que el
@@ -10418,7 +10634,7 @@ function sincronizarTacticaDesdePartidos(){
       if(!entry.golesGF) entry.golesGF=[];
       golesLado.forEach((g,i)=>{
         if(!g.jugador || !g.origen) return;
-        entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:'',cuerpo:'',srcPartido:p.id+'_'+i});
+        entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',srcPartido:p.id+'_'+i});
       });
       cambiosE=true;
     });
@@ -10447,7 +10663,7 @@ function guardarPartido(){
     urlNorm: _normalizarURLPartido(urlOrig),
     thumb: window._thumbBase64 || document.getElementById('ap-thumb').value.trim(),
     notas: document.getElementById('ap-notas').value.trim(),
-    goles: apGoles.map(g=>({...g})),
+    goles: apGoles.map(_apGolParaGuardar),
     porteroLocal: document.getElementById('ap-portero-local').value.trim(),
     porteroVisitante: document.getElementById('ap-portero-visitante').value.trim(),
     fechaReg: new Date().toISOString()
