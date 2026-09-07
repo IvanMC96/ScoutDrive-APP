@@ -1343,9 +1343,9 @@ body.solo-lectura .ed-panel-form {
   <button class="btn b-ghost b-sm" id="btn-atras" onclick="volverAtras()" style="display:none;flex-shrink:0" title="Volver atrás">← Atrás</button>
   <div class="brand" onclick="navTo('inicio')">
     <div class="brand-logo" id="brand-logo-wrap">
-      <img src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png" 
+      <img src="https://ivanmc96.github.io/ScoutDrive-APP/logo.png"
            style="width:36px;height:36px;border-radius:7px;object-fit:contain"
-           onerror="this.outerHTML='<div id=&quot;brand-logo-default&quot;>⚽</div>'">
+           onerror="if(this.parentNode){this.outerHTML='<div id=&quot;brand-logo-default&quot;>⚽</div>'}">
     </div>
     <div class="brand-txt">
       <h1 id="brand-nombre">Scoutdrive</h1>
@@ -9595,26 +9595,82 @@ function guardarEConFeedback(){
   window._esAdmin = false;
 
   // ── Sincronizar logo y nombre del login con la config ────────
+  // "cfg" (nombre/subtítulo/pie/logo de la plataforma) vivía solo en el
+  // localStorage de cada dispositivo — quien lo ponía en Configuración
+  // era el único que lo veía, en su propia tablet, nadie más. Por eso
+  // esta función hace DOS cosas: (1) pinta al instante lo que ya haya en
+  // este dispositivo (localStorage), para no dejar la pantalla en blanco
+  // mientras carga; y (2) refresca desde el Sheet (obtenerConfig, sin
+  // necesidad de haber iniciado sesión) para que un dispositivo nuevo, o
+  // donde nadie lo haya tocado nunca, también vea el nombre/logo real que
+  // puso el admin — no solo quien lo puso.
   function loginSyncBrand() {
     try {
-      const cfg = JSON.parse(localStorage.getItem('scout_cfg_v1') || '{}');
-      if (cfg.nombre) { document.getElementById('login-titulo').textContent = cfg.nombre; document.title = cfg.nombre; }
-      if (cfg.sub)    document.getElementById('login-subtitulo').textContent = cfg.sub;
-      if (cfg.logo) {
+      const c = JSON.parse(localStorage.getItem('scout_cfg_v1') || '{}');
+      const tituloEl = document.getElementById('login-titulo');
+      const subEl = document.getElementById('login-subtitulo');
+      if (c.nombre && tituloEl) { tituloEl.textContent = c.nombre; document.title = c.nombre; }
+      if (c.sub && subEl) subEl.textContent = c.sub;
+      if (c.logo) {
         // Precargamos el logo personalizado antes de mostrarlo: si está
         // roto o caducado, el logo por defecto se queda tal cual en vez
         // de dejar el hueco en blanco.
         const probe = new Image();
         probe.onload = () => {
-          document.getElementById('login-logo').src = cfg.logo;
-          document.getElementById('login-logo-emoji').style.display = 'none';
+          const logoEl = document.getElementById('login-logo');
+          const emojiEl = document.getElementById('login-logo-emoji');
+          if (logoEl) logoEl.src = c.logo;
+          if (emojiEl) emojiEl.style.display = 'none';
         };
         probe.onerror = () => {
           console.warn('[Scoutdrive] Logo personalizado no disponible, se mantiene el logo por defecto.');
         };
-        probe.src = cfg.logo;
+        probe.src = c.logo;
       }
     } catch(e) {}
+    _loginRefrescarBrandDesdeSheet();
+  }
+  // Una sola vez por carga de página: evita golpear el backend en cada
+  // llamada a loginSyncBrand() (se llama también justo después de
+  // guardar la configuración, cuando ya no hace falta refrescar nada).
+  let _loginBrandRefrescada = false;
+  async function _loginRefrescarBrandDesdeSheet() {
+    if (_loginBrandRefrescada) return;
+    try {
+      const res = await fetch(`${SCOUT_API_LOGIN}?accion=obtenerConfig`);
+      if (!res.ok) return;
+      const respuesta = await res.json();
+      if (!respuesta.ok || !respuesta.cfg) return;
+      _loginBrandRefrescada = true;
+      const remoto = respuesta.cfg;
+      // Se guarda también en la variable global "cfg" (si ya existe en
+      // este punto de la carga) para que quede aplicado dentro de la app
+      // entera, no solo en esta pantalla de login.
+      if (typeof cfg !== 'undefined') {
+        cfg.nombre = remoto.nombre || cfg.nombre;
+        cfg.sub = remoto.sub || cfg.sub;
+        cfg.footer = remoto.footer || cfg.footer;
+        cfg.logo = remoto.logo || cfg.logo;
+        if (typeof saveCfg === 'function') saveCfg();
+        if (typeof applyCfg === 'function') applyCfg();
+      } else {
+        localStorage.setItem('scout_cfg_v1', JSON.stringify(remoto));
+      }
+      const tituloEl2 = document.getElementById('login-titulo');
+      const subEl2 = document.getElementById('login-subtitulo');
+      if (remoto.nombre && tituloEl2) { tituloEl2.textContent = remoto.nombre; document.title = remoto.nombre; }
+      if (remoto.sub && subEl2) subEl2.textContent = remoto.sub;
+      if (remoto.logo) {
+        const probe = new Image();
+        probe.onload = () => {
+          const logoEl2 = document.getElementById('login-logo');
+          const emojiEl2 = document.getElementById('login-logo-emoji');
+          if (logoEl2) logoEl2.src = remoto.logo;
+          if (emojiEl2) emojiEl2.style.display = 'none';
+        };
+        probe.src = remoto.logo;
+      }
+    } catch(e) { /* sin conexión: se queda con lo que ya hubiera en local */ }
   }
 
   // ── Mostrar / ocultar contraseña ─────────────────────────────
