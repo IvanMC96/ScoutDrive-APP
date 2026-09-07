@@ -10606,14 +10606,19 @@ function jugadorIdPorNombre(nombreCompleto){
   return j?j.id:null;
 }
 
-/** Recalcula Goles/Asistencias de cada jugador sumando lo registrado en
- *  "Goles del partido" (Partidos) por encima de su base manual histórica.
- *  La base (statsManualBase) se congela la primera vez que se ejecuta
- *  esto para cada jugador, así nunca se pierden los goles que ya tenías
- *  metidos a mano — solo se suma lo nuevo que venga de los partidos. */
+/** Recalcula Goles/Asistencias/ABP goles/Porterías a cero/Goles recibidos
+ *  de cada jugador sumando lo registrado en "Goles del partido" (Partidos)
+ *  por encima de su base manual histórica. La base (statsManualBase) se
+ *  congela la primera vez que se ejecuta esto para cada jugador, así
+ *  nunca se pierden los datos que ya tenías metidos a mano — solo se
+ *  suma lo nuevo que venga de los partidos.
+ *  "Partidos jugados" y "Minutos jugados" NO se tocan aquí: la videoteca
+ *  de Partidos no registra quién estuvo en el once de cada equipo, así
+ *  que no hay de dónde deducirlos sin añadir una convocatoria/alineación
+ *  por partido — de momento se siguen rellenando a mano. */
 function recalcularStatsDesdePartidos(){
   const tally={};
-  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0}; tally[id][campo]++; };
+  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0}; tally[id][campo]++; };
   // "➕ Nueva Temporada" NO crea una fila nueva de jugador — reutiliza la
   // MISMA fila para la temporada que empieza (archiva un snapshot aparte
   // en j.temporadas). Eso significa que un partido de la videoteca (pDB)
@@ -10631,16 +10636,37 @@ function recalcularStatsDesdePartidos(){
     if(tempJ && tempP && tempJ!==tempP) return;
     sumar(id,campo);
   };
+  // Igual que sumarSiTemporadaOk, pero sumando una cantidad concreta en
+  // vez de +1 — para "Goles recibidos" del portero, que no es un evento
+  // puntual sino el marcador completo de cada partido que jugó.
+  const sumarCantidadSiTemporadaOk=(nombreJugador,campo,cantidad,tempPartido)=>{
+    if(!cantidad) return;
+    const id=jugadorIdPorNombre(nombreJugador);
+    if(!id) return;
+    const j=jDB.find(x=>x.id===id);
+    if(!j) return;
+    const tempJ=(j.temp||'').trim(), tempP=(tempPartido||'').trim();
+    if(tempJ && tempP && tempJ!==tempP) return;
+    if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0};
+    tally[id][campo]=(tally[id][campo]||0)+cantidad;
+  };
 
   // Fuente 1: goles registrados en Partidos (videoteca) — jugador/asistencia
   pDB.forEach(p=>{
     (p.goles||[]).forEach(g=>{
       if(g.jugador) sumarSiTemporadaOk(g.jugador,'g',p.temp);
       if(g.asistencia) sumarSiTemporadaOk(g.asistencia,'a',p.temp);
+      // "ABP goles" — mismo origen táctico que ya se elige por cada gol
+      // en "Editar partido" (Más detalles → Origen), sin pedir nada nuevo.
+      if(g.jugador && g.origen==='ABP Ofensiva') sumarSiTemporadaOk(g.jugador,'ab',p.temp);
     });
-    // Portería a cero: se deduce del marcador — si el rival no marca,
-    // el portero de ese equipo suma una.
+    // Portería a cero y goles recibidos: se deducen del marcador — si el
+    // rival no marca, el portero de ese equipo suma una portería a cero;
+    // en cualquier caso, todo lo que encaje ese partido se le suma a sus
+    // "Goles recibidos" de la temporada.
     if(p.gf!=null && p.gc!=null){
+      if(p.porteroLocal) sumarCantidadSiTemporadaOk(p.porteroLocal,'gr',p.gc,p.temp);
+      if(p.porteroVisitante) sumarCantidadSiTemporadaOk(p.porteroVisitante,'gr',p.gf,p.temp);
       if(p.gc===0 && p.porteroLocal) sumarSiTemporadaOk(p.porteroLocal,'pz',p.temp);
       if(p.gf===0 && p.porteroVisitante) sumarSiTemporadaOk(p.porteroVisitante,'pz',p.temp);
     }
@@ -10667,15 +10693,70 @@ function recalcularStatsDesdePartidos(){
       cambios=true;
     }
     if(j.statsManualBase.pz===undefined){ j.statsManualBase.pz=j.stats.pz||0; cambios=true; }
-    const t=tally[j.id]||{g:0,a:0,pz:0};
+    if(j.statsManualBase.ab===undefined){ j.statsManualBase.ab=j.stats.ab||0; cambios=true; }
+    if(j.statsManualBase.gr===undefined){ j.statsManualBase.gr=j.stats.gr||0; cambios=true; }
+    const t=tally[j.id]||{g:0,a:0,pz:0,ab:0,gr:0};
     const nuevoG=(j.statsManualBase.g||0)+t.g;
     const nuevoA=(j.statsManualBase.a||0)+t.a;
     const nuevoPz=(j.statsManualBase.pz||0)+t.pz;
-    if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz){
-      j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; cambios=true;
+    const nuevoAb=(j.statsManualBase.ab||0)+(t.ab||0);
+    const nuevoGr=(j.statsManualBase.gr||0)+(t.gr||0);
+    if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz || j.stats.ab!==nuevoAb || j.stats.gr!==nuevoGr){
+      j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; j.stats.ab=nuevoAb; j.stats.gr=nuevoGr; cambios=true;
     }
   });
   if(cambios) saveJDB();
+
+  // ── PJ/V/E/D/GF/GC del EQUIPO, a partir de los marcadores de Partidos ──
+  // Mismo patrón additivo que arriba para jugadores: "estatsManualBase"
+  // congela lo que ya hubiera metido a mano en la ficha del equipo
+  // (Editar datos → Partidos jugados/Victorias/etc.) la primera vez que
+  // se ejecuta esto, y a partir de ahí solo se le suma lo que se derive
+  // de los marcadores registrados en la videoteca de Partidos — así la
+  // ficha del equipo deja de depender de que alguien rellene esos
+  // números a mano cada vez que se sube un partido nuevo.
+  const mismaTemporadaEq=(tempA,tempB)=>{
+    const a=(tempA||'').trim(), b=(tempB||'').trim();
+    return !a || !b || a===b;
+  };
+  const tallyEq={};
+  const sumarEq=(id,gf,gc)=>{
+    if(!id) return;
+    if(!tallyEq[id]) tallyEq[id]={pj:0,v:0,e:0,d:0,gf:0,gc:0};
+    const t=tallyEq[id];
+    t.pj++; t.gf+=gf; t.gc+=gc;
+    if(gf>gc) t.v++; else if(gf===gc) t.e++; else t.d++;
+  };
+  pDB.forEach(p=>{
+    if(!p.local || !p.visitante || p.gf==null || p.gc==null) return;
+    [['local',p.local,p.gf,p.gc],['visitante',p.visitante,p.gc,p.gf]].forEach(([lado,nomEq,gf,gc])=>{
+      const eq=_buscarEquipoPorNombre(nomEq,p.temp);
+      if(!eq) return;
+      if(!mismaTemporadaEq(eq.temp,p.temp)) return;
+      sumarEq(eq.id,gf,gc);
+    });
+  });
+  let cambiosEq=false;
+  eDB.forEach(eq=>{
+    if(!eq.stats) eq.stats={};
+    if(eq.statsManualBase===undefined){
+      eq.statsManualBase={pj:eq.stats.pj||0,v:eq.stats.v||0,e:eq.stats.e||0,d:eq.stats.d||0,gf:eq.stats.gf||0,gc:eq.stats.gc||0};
+      cambiosEq=true;
+    }
+    const t=tallyEq[eq.id]||{pj:0,v:0,e:0,d:0,gf:0,gc:0};
+    const nuevo={
+      pj:(eq.statsManualBase.pj||0)+t.pj,
+      v:(eq.statsManualBase.v||0)+t.v,
+      e:(eq.statsManualBase.e||0)+t.e,
+      d:(eq.statsManualBase.d||0)+t.d,
+      gf:(eq.statsManualBase.gf||0)+t.gf,
+      gc:(eq.statsManualBase.gc||0)+t.gc
+    };
+    if(eq.stats.pj!==nuevo.pj || eq.stats.v!==nuevo.v || eq.stats.e!==nuevo.e || eq.stats.d!==nuevo.d || eq.stats.gf!==nuevo.gf || eq.stats.gc!==nuevo.gc){
+      Object.assign(eq.stats,nuevo); cambiosEq=true;
+    }
+  });
+  if(cambiosEq) saveEDB();
 }
 
 // ── SINCRONIZAR "CÓMO FUE EL GOL" DE PARTIDOS → FICHA JUGADOR Y EQUIPO ──
