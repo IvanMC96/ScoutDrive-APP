@@ -271,6 +271,19 @@ input,select,textarea{background:var(--bg3);border:1px solid var(--border2);bord
   padding:6px 9px;font-size:12px;color:var(--blanco);font-family:inherit;width:100%;transition:border-color .15s;
   -webkit-appearance:none;appearance:none;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--azul);}
+/* La regla general de arriba pone appearance:none en TODOS los <input>,
+   pensada para los campos de texto — pero de paso también se lo quitaba a
+   las casillas (checkbox/radio), dejándolas sin ningún dibujo nativo y sin
+   ningún estilo propio que muestre el "check". Resultado: al marcarlas no
+   se ve NINGÚN cambio visual (solo el anillo azul de :focus al tocarlas,
+   que desaparece en cuanto se toca otra cosa) — parece que no se han
+   marcado aunque por dentro sí lo estén. Aquí se les devuelve su dibujo
+   nativo (con la marca de verificación) y el color de acento del tema. */
+input[type="checkbox"],input[type="radio"]{
+  -webkit-appearance:auto;appearance:auto;
+  width:auto;padding:0;background:none;border:none;border-radius:0;
+  accent-color:var(--azul);
+}
 textarea{resize:vertical;min-height:50px;}
 select option{background:var(--bg3);color:var(--blanco);}
 /* Safari/macOS pinta los <select> con su propio "chrome" nativo (fondo
@@ -8586,6 +8599,19 @@ function guardarEConFeedback(){
       <button type="button" id="pwa-install-modal-close" onclick="cerrarInstalarApp()">✕</button>
       <h3 id="pwa-install-modal-titulo">Instalar Scoutdrive</h3>
       <ol id="pwa-install-modal-pasos"></ol>
+      <!-- Enlace directo a la página, visible y copiable — para cuando el
+           paso "ábrelo con Safari" no basta porque el navegador por
+           defecto del dispositivo no es Safari: así se puede copiar y
+           pegar a mano en la barra de direcciones de Safari en vez de
+           tener que teclear la URL de memoria. Solo se muestra en
+           plataformas donde Safari es obligatorio (Mac/iPhone/iPad). -->
+      <div id="pwa-install-modal-link-row" style="display:none">
+        <p id="pwa-install-modal-link-lbl">O copia este enlace y pégalo en Safari:</p>
+        <div id="pwa-install-modal-link-box">
+          <input type="text" id="pwa-install-modal-link-input" readonly onclick="this.select()">
+          <button type="button" id="pwa-install-modal-link-copy" onclick="_pwaCopiarEnlaceInstalacion()">Copiar</button>
+        </div>
+      </div>
       <p id="pwa-install-modal-nota"></p>
     </div>
   </div>
@@ -9488,6 +9514,21 @@ function guardarEConFeedback(){
 #pwa-install-modal-pasos li::marker{ color:#3fb950; font-weight:800; }
 #pwa-install-modal-nota{ margin:14px 0 0; font-size:11px; color:#8b949e; line-height:1.5; }
 #pwa-install-modal-nota:empty{ display:none; }
+#pwa-install-modal-link-row{ margin:16px 0 0; }
+#pwa-install-modal-link-lbl{ margin:0 0 6px; font-size:11px; color:#8b949e; }
+#pwa-install-modal-link-box{ display:flex; gap:6px; }
+#pwa-install-modal-link-input{
+  flex:1; min-width:0; padding:8px 9px; font-size:11px; color:#7ee787;
+  background:#0d1117; border:1px solid #30363d; border-radius:7px;
+  -webkit-appearance:none; appearance:none; font-family:monospace;
+}
+#pwa-install-modal-link-copy{
+  flex-shrink:0; padding:8px 12px; border-radius:7px; font-size:11.5px; font-weight:700;
+  background:#161b22; border:1px solid #238636; color:#7ee787; cursor:pointer;
+  -webkit-appearance:none; appearance:none; transition:background .15s;
+}
+#pwa-install-modal-link-copy:hover{ background:#1c2230; }
+#pwa-install-modal-link-copy.copiado{ border-color:#3fb950; background:#0d2818; }
 
 </style>
 
@@ -9744,13 +9785,13 @@ function guardarEConFeedback(){
     const plataforma = _pwaDetectarPlataforma();
     const pasosPorPlataforma = {
       ios: [
-        'Abre esta misma página con <b>Safari</b> (tiene que ser Safari, no Chrome — desde Chrome en iPhone/iPad este botón no puede instalar nada).',
+        'Abre esta misma página con <b>Safari</b> (tiene que ser Safari, no Chrome — desde Chrome en iPhone/iPad este botón no puede instalar nada). Si no estás ya en Safari, copia el enlace de aquí abajo y pégalo ahí.',
         'Toca el botón de <b>compartir</b> (el cuadrado con la flecha hacia arriba), en la barra de abajo o de arriba de Safari.',
         'Baja en el menú y toca <b>"Añadir a pantalla de inicio"</b>.',
         'Confirma. Ya tienes el icono de Scoutdrive en tu pantalla de inicio, como una app normal.',
       ],
       mac: [
-        'Abre esta misma página con <b>Safari</b> (este botón no puede instalar nada en Safari — es una restricción de Apple, no un fallo de la app).',
+        'Abre esta misma página con <b>Safari</b> (este botón no puede instalar nada en Safari — es una restricción de Apple, no un fallo de la app). Si no estás ya en Safari, copia el enlace de aquí abajo y pégalo en su barra de direcciones.',
         'En la barra de menú de arriba del todo, pulsa <b>"Archivo" → "Añadir al Dock…"</b> (macOS Sonoma o más nuevo).',
         'Si no ves esa opción, toca el icono de compartir en la barra de direcciones de Safari y busca "Añadir al Dock".',
         'Confirma el nombre y pulsa "Añadir". Ya tienes Scoutdrive como una app en tu Dock.',
@@ -9777,7 +9818,38 @@ function guardarEConFeedback(){
     const lista = document.getElementById('pwa-install-modal-pasos');
     lista.innerHTML = (pasosPorPlataforma[plataforma] || pasosPorPlataforma.otro).map(p => `<li>${p}</li>`).join('');
     document.getElementById('pwa-install-modal-nota').textContent = notaPorPlataforma[plataforma] || '';
+    // El enlace copiable solo hace falta donde Safari es OBLIGATORIO
+    // (Mac/iPhone/iPad) — si el usuario pulsó el botón desde un
+    // navegador que no es Safari, el paso 1 le pide abrirlo en Safari,
+    // pero no hay forma de abrir Safari por código: lo máximo que se
+    // puede hacer es ponerle el enlace exacto a mano para copiar y pegar.
+    const linkRow = document.getElementById('pwa-install-modal-link-row');
+    if (plataforma === 'mac' || plataforma === 'ios') {
+      document.getElementById('pwa-install-modal-link-input').value = location.href.split('?')[0].split('#')[0];
+      linkRow.style.display = '';
+    } else {
+      linkRow.style.display = 'none';
+    }
     document.getElementById('pwa-install-modal-bg').classList.add('open');
+  }
+
+  function _pwaCopiarEnlaceInstalacion() {
+    const input = document.getElementById('pwa-install-modal-link-input');
+    const btn = document.getElementById('pwa-install-modal-link-copy');
+    const marcarCopiado = () => {
+      btn.textContent = '✓ Copiado';
+      btn.classList.add('copiado');
+      setTimeout(() => { btn.textContent = 'Copiar'; btn.classList.remove('copiado'); }, 1800);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(input.value).then(marcarCopiado).catch(() => {
+        input.select(); document.execCommand('copy'); marcarCopiado();
+      });
+    } else {
+      input.select();
+      document.execCommand('copy');
+      marcarCopiado();
+    }
   }
 
   function cerrarInstalarApp() {
@@ -11740,24 +11812,6 @@ function edTabSwitch(tipo, tab) {
   if (tab === 'campograma' && tipo === 'e' && typeof renderCampograma === 'function') {
     renderCampograma();
   }
-}
-
-/** Copia el HTML renderizado al contenedor full de la pestaña Ficha */
-function sincronizarFichaJFull() {
-  const src = document.getElementById('j-ficha-container');
-  const dst = document.getElementById('j-ficha-container-full');
-  if (!src || !dst) return;
-  dst.innerHTML = src.innerHTML;
-
-  // Actualizar título
-  const nom = (document.getElementById('jnom')?.value || '') + ' ' +
-              (document.getElementById('jape')?.value || '');
-  const titulo = document.getElementById('j-ficha-titulo-bar');
-  if (titulo) titulo.textContent = nom.trim() || 'Ficha del Jugador';
-  if (typeof _renderFichaSponsor === 'function') _renderFichaSponsor('j');
-
-  // Reasignar eventos de clips (onclick de portadas)
-  _reasignarEventosClips(dst, 'j');
 }
 
 function sincronizarFichaEFull() {
