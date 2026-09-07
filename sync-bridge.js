@@ -454,7 +454,24 @@ function _scoutActualizarURLsImagen(arrayName, id, resultadoBackend) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  SINCRONIZACIÓN AL ABRIR LA APP
+//  SINCRONIZACIÓN AL ABRIR LA APP (INCREMENTAL — YA NO SE USA SOLA)
+// ════════════════════════════════════════════════════════════════
+//  IMPORTANTE: esta versión solo trae lo CREADO/EDITADO desde la última
+//  vez (accion "cambiosDesde"), nunca lo BORRADO — el Sheet no guarda
+//  ningún rastro de una fila que ya se borró, así que una respuesta
+//  incremental nunca puede decir "esto ya no existe". Por eso, si algo
+//  se borraba en un dispositivo, en cualquier otro que ya lo tuviera
+//  cacheado localmente se quedaba ahí para siempre, aunque el resto de
+//  cambios sí llegaran bien — es el bug que reportó Iván ("borro un
+//  equipo y le sigue saliendo a los demás").
+//  Se deja esta función definida por si en el futuro hace falta un
+//  sync ligero, pero scoutSyncInicial() ya NO la llama: ahora usa
+//  siempre scoutSyncCompleto(), que trae el listado COMPLETO y actual
+//  del Sheet y por tanto sí puede podar lo que ya no está (ver
+//  _scoutPodarBorrados en scoutSyncCompleto). Con los tamaños de datos
+//  de este club (unos pocos cientos de filas como mucho) traer todo en
+//  cada apertura es perfectamente rápido, y así un borrado sí llega de
+//  verdad a todos los dispositivos la siguiente vez que abran la app.
 // ════════════════════════════════════════════════════════════════
 async function scoutSincronizarAlAbrir() {
   if (!SCOUT_SYNC_ENABLED) return;
@@ -660,9 +677,42 @@ function _normalizarRegistro(r) {
   return normalizado;
 }
 
+/** Quita de "arr" cualquier registro cuyo id ya NO exista en el Sheet
+ *  (idsRemotos) — es decir, que otro dispositivo/usuario lo borró desde
+ *  que este dispositivo lo cacheó. Sin esto, un borrado nunca "llegaba"
+ *  a los demás dispositivos: sync completo y cambiosDesde solo sabían
+ *  AÑADIR o ACTUALIZAR por id, nunca quitar algo que ya no estaba en la
+ *  respuesta remota, así que lo borrado localmente en un sitio seguía
+ *  viéndose para siempre en cualquier otro dispositivo que ya lo tuviera
+ *  cacheado (aunque el borrado sí se hubiera guardado bien en el Sheet).
+ *  idsPendientes protege lo creado offline y aún no subido: si un id
+ *  tiene un envío pendiente en la cola, NUNCA se poda, aunque todavía no
+ *  aparezca en el Sheet (si no, se borraría localmente algo que el
+ *  usuario acaba de crear sin conexión, antes de que le diera tiempo a
+ *  subirse). */
+function _scoutPodarBorrados(arr, idsRemotos, idsPendientes) {
+  if (!Array.isArray(arr)) return 0;
+  let podados = 0;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const id = arr[i] && arr[i].id;
+    if (id === undefined || id === null) continue;
+    const idStr = String(id);
+    if (!idsRemotos.has(idStr) && !idsPendientes.has(idStr)) {
+      arr.splice(i, 1);
+      podados++;
+    }
+  }
+  return podados;
+}
+
 // ════════════════════════════════════════════════════════════════
 //  SINCRONIZACIÓN COMPLETA — trae TODO del Sheet
-//  (útil al abrir desde un dispositivo nuevo)
+//  (útil al abrir desde un dispositivo nuevo, y también en cada
+//  apertura normal — ver scoutSyncInicial más abajo: es la única forma
+//  de que un borrado hecho en otro dispositivo se refleje aquí, porque
+//  es la única llamada que trae la lista COMPLETA y actual de lo que
+//  existe de verdad en el Sheet, así que es la única que puede podar
+//  con seguridad lo que ya no está)
 // ════════════════════════════════════════════════════════════════
 async function scoutSyncCompleto(silencioso) {
   if (!SCOUT_SYNC_ENABLED) return;
@@ -680,6 +730,12 @@ async function scoutSyncCompleto(silencioso) {
 
   let cambios = 0;
 
+  // Ids con un envío aún pendiente (creado/editado offline, todavía sin
+  // llegar al Sheet) — nunca se podan aunque el Sheet aún no los tenga.
+  const idsPendientes = new Set(
+    _scoutCargarCola().map(item => item && item.datos && item.datos.id).filter(Boolean).map(String)
+  );
+
   if (respuesta.jugadores && respuesta.jugadores.length) {
     const reconstruidos = respuesta.jugadores.map(_normalizarRegistro);
     // Reemplazar o añadir — el Sheet es la fuente de verdad en sync completo
@@ -689,6 +745,10 @@ async function scoutSyncCompleto(silencioso) {
       if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig']); cambios++; }
       else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
+  }
+  if (Array.isArray(respuesta.jugadores) && typeof jDB !== 'undefined') {
+    const idsRemotos = new Set(respuesta.jugadores.map(r => String(r.id)));
+    cambios += _scoutPodarBorrados(jDB, idsRemotos, idsPendientes);
   }
 
   if (respuesta.equipos && respuesta.equipos.length) {
@@ -700,6 +760,10 @@ async function scoutSyncCompleto(silencioso) {
       else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
+  if (Array.isArray(respuesta.equipos) && typeof eDB !== 'undefined') {
+    const idsRemotos = new Set(respuesta.equipos.map(r => String(r.id)));
+    cambios += _scoutPodarBorrados(eDB, idsRemotos, idsPendientes);
+  }
 
   if (respuesta.partidosVideo && respuesta.partidosVideo.length && typeof pDB !== 'undefined') {
     const reconstruidos = respuesta.partidosVideo.map(_normalizarRegistro);
@@ -710,6 +774,10 @@ async function scoutSyncCompleto(silencioso) {
       else { pDB.unshift(remoto); cambios++; }
     });
   }
+  if (Array.isArray(respuesta.partidosVideo) && typeof pDB !== 'undefined') {
+    const idsRemotos = new Set(respuesta.partidosVideo.map(r => String(r.id)));
+    cambios += _scoutPodarBorrados(pDB, idsRemotos, idsPendientes);
+  }
 
   if (respuesta.anuncios && respuesta.anuncios.length && typeof adsDB !== 'undefined') {
     const reconstruidos = respuesta.anuncios.map(_normalizarRegistro);
@@ -719,6 +787,10 @@ async function scoutSyncCompleto(silencioso) {
       if (idx >= 0) { adsDB[idx] = remoto; cambios++; }
       else { adsDB.unshift(remoto); cambios++; }
     });
+  }
+  if (Array.isArray(respuesta.anuncios) && typeof adsDB !== 'undefined') {
+    const idsRemotos = new Set(respuesta.anuncios.map(r => String(r.id)));
+    cambios += _scoutPodarBorrados(adsDB, idsRemotos, idsPendientes);
   }
 
   localStorage.setItem(SYNC_META_KEY, respuesta.timestamp || new Date().toISOString());
@@ -757,11 +829,17 @@ window.scoutSyncInicial = async function scoutSyncInicial() {
                     (!tieneEquipos   || tieneEquipos   === '[]');
 
   if (estaVacio) {
-    // Dispositivo nuevo: sync completo automático
+    // Dispositivo nuevo: sync completo automático (con mensajes, para
+    // que se note que está trayendo todos los datos por primera vez)
     await scoutSyncCompleto(false);
   } else {
-    // Dispositivo conocido: solo cambios recientes
-    await scoutSincronizarAlAbrir();
+    // Dispositivo conocido: TAMBIÉN sync completo (en silencio) — no el
+    // incremental scoutSincronizarAlAbrir(). Ver el comentario grande
+    // encima de scoutSincronizarAlAbrir() para el motivo: solo el sync
+    // completo trae el listado actual entero, así que es el único que
+    // puede darse cuenta de que algo se borró en otro dispositivo y
+    // quitarlo también de aquí.
+    await scoutSyncCompleto(true);
   }
   await scoutProcesarCola();
 };
