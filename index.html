@@ -1595,7 +1595,10 @@ body.solo-lectura .ed-panel-form {
           </div>
         </div>
         <div class="fg2">
-          <div class="fg"><label>Club</label><input id="jclub" oninput="_autoescudoJugadorDesdeClub();renderJ()"></div>
+          <div class="fg"><label>Club</label>
+            <select id="jclub-sel" onchange="if(this.value){document.getElementById('jclub').value=this.value;_autoescudoJugadorDesdeClub();renderJ();}this.value=''"><option value="">▾ Elegir de la lista...</option></select>
+            <input id="jclub" oninput="_autoescudoJugadorDesdeClub();renderJ()" style="margin-top:4px">
+          </div>
           <div class="fg"><label>Pie</label>
             <select id="jpie" onchange="renderJ()"><option>Derecho</option><option>Izquierdo</option><option>Ambidiestro</option></select>
           </div>
@@ -2141,8 +2144,14 @@ body.solo-lectura .ed-panel-form {
     </div>
     <div class="add-partido-body">
       <div class="apf-row">
-        <div class="apf"><label>Equipo local</label><input id="ap-local" list="ap-equipo-list" placeholder="C.D. Don Benito" oninput="buildApGoles()"></div>
-        <div class="apf"><label>Equipo visitante</label><input id="ap-visitante" list="ap-equipo-list" placeholder="Rival" oninput="buildApGoles()"></div>
+        <div class="apf"><label>Equipo local</label>
+          <select id="ap-local-sel" onchange="if(this.value){document.getElementById('ap-local').value=this.value;buildApGoles();}this.value=''"><option value="">▾ Elegir de la lista...</option></select>
+          <input id="ap-local" list="ap-equipo-list" placeholder="C.D. Don Benito" oninput="buildApGoles()" style="margin-top:4px">
+        </div>
+        <div class="apf"><label>Equipo visitante</label>
+          <select id="ap-visitante-sel" onchange="if(this.value){document.getElementById('ap-visitante').value=this.value;buildApGoles();}this.value=''"><option value="">▾ Elegir de la lista...</option></select>
+          <input id="ap-visitante" list="ap-equipo-list" placeholder="Rival" oninput="buildApGoles()" style="margin-top:4px">
+        </div>
         <datalist id="ap-equipo-list"></datalist>
       </div>
       <div class="apf-row3">
@@ -4717,6 +4726,7 @@ function nuevoJ(){
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   poblarDatalistTemporadasJugador();
+  poblarSelectClubJugador();
   document.getElementById('jtemp').value=_valoresUnicos(jDB,'temp').slice(-1)[0]||'2025-26';
   document.getElementById('jdor').value='9';
   document.getElementById('javcolor').value='#2f81f7';
@@ -4735,6 +4745,7 @@ function editJ(id){
   jId=id;
   const S=(eid,v)=>{const e=document.getElementById(eid);if(e)e.value=v??'';};
   poblarDatalistTemporadasJugador();
+  poblarSelectClubJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
   S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
@@ -5153,6 +5164,20 @@ function _eVistaParaFiltro(e,fTemp,fCat,fGrupo){
 // con sugerencias (datalist), igual que Equipos y Partidos: se puede
 // escribir cualquier temporada nueva (ej. "2026-2027") y a partir de ahí
 // queda sugerida también aquí, sin tener que tocar el código.
+// <select> de elección rápida para "Club" en la ficha de jugador — mismo
+// motivo que en "Editar partido" (_apSelectRapidoHTML): un datalist
+// apenas se ve en Chrome Android, así que un <select> nativo es el
+// método fiable para elegir un club ya dado de alta en Equipos sin tener
+// que escribirlo a mano letra por letra. El campo de texto de abajo
+// sigue admitiendo escribir cualquier nombre (por si el club de este
+// jugador todavía no está dado de alta en Equipos).
+function poblarSelectClubJugador(){
+  const sel=document.getElementById('jclub-sel');
+  if(!sel || typeof eDB==='undefined') return;
+  const opts=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'')).map(e=>`<option value="${eH(e.nom||'')}">${eH(e.nom||'')}</option>`).join('');
+  sel.innerHTML='<option value="">▾ Elegir de la lista...</option>'+opts;
+}
+
 function poblarDatalistTemporadasJugador(){
   const dl=document.getElementById('jtemp-list');
   if(!dl) return;
@@ -10055,6 +10080,15 @@ function poblarFiltrosYDatalistsPartidos(lista){
   // permite enlazar autómaticamente los goles con la ficha del equipo.
   const dlEquipo=document.getElementById('ap-equipo-list');
   if(dlEquipo)dlEquipo.innerHTML=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||'')).map(e=>`<option value="${eH(e.nom||'')}">`).join('');
+  // <select> de elección rápida (ver _apSelectRapidoHTML) para "Equipo
+  // local"/"Equipo visitante" — el datalist de arriba apenas se ve en
+  // Chrome Android, así que este <select> nativo es el método principal.
+  const equiposOrdenados=[...eDB].sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
+  const equipoOptsHTML=equiposOrdenados.map(e=>`<option value="${eH(e.nom||'')}">${eH(e.nom||'')}</option>`).join('');
+  const selLocal=document.getElementById('ap-local-sel');
+  if(selLocal) selLocal.innerHTML='<option value="">▾ Elegir de la lista...</option>'+equipoOptsHTML;
+  const selVisit=document.getElementById('ap-visitante-sel');
+  if(selVisit) selVisit.innerHTML='<option value="">▾ Elegir de la lista...</option>'+equipoOptsHTML;
 
   const selComp=document.getElementById('p-fil-comp');
   const compActual=selComp?selComp.value:'';
@@ -10121,18 +10155,33 @@ function verPartido(id){
 // sincronizarTacticaDesdePartidos()).
 let apGoles=[];
 
-// Datalist de jugadores de cada lado (local/visitante), filtrado por el
-// nombre de equipo escrito arriba — mismo criterio que
-// _agActualizarJugadores() en "Alta rápida de gol".
-function _apPoblarJugadorDatalists(nomLocal,nomVisit){
-  const porEquipo=(nom)=>{
-    const val=(nom||'').trim().toLowerCase();
-    const candidatos=(val?jDB.filter(j=>(j.club||'').toLowerCase().includes(val)):jDB).filter(j=>!j._bajaPlantilla);
-    return [...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')))
-      .map(j=>`<option value="${eH((j.nom+' '+j.ape).trim())}">`).join('');
-  };
-  const dlL=document.getElementById('ap-jugador-list-local'); if(dlL) dlL.innerHTML=porEquipo(nomLocal);
-  const dlV=document.getElementById('ap-jugador-list-visitante'); if(dlV) dlV.innerHTML=porEquipo(nomVisit);
+// Nombres de los jugadores de un equipo (filtrado por el nombre de
+// equipo escrito arriba, mismo criterio que _agActualizarJugadores() en
+// "Alta rápida de gol") — se usa tanto para el <select> de elección
+// rápida como para el datalist de apoyo del campo de texto.
+function _apJugadoresDeEquipo(nom){
+  const val=(nom||'').trim().toLowerCase();
+  const candidatos=(val?jDB.filter(j=>(j.club||'').toLowerCase().includes(val)):jDB).filter(j=>!j._bajaPlantilla);
+  return [...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')))
+    .map(j=>(j.nom+' '+j.ape).trim());
+}
+function _apPoblarJugadorDatalists(nomLocal,nomVisit,jugadoresLocal,jugadoresVisit){
+  const dlL=document.getElementById('ap-jugador-list-local'); if(dlL) dlL.innerHTML=jugadoresLocal.map(n=>`<option value="${eH(n)}">`).join('');
+  const dlV=document.getElementById('ap-jugador-list-visitante'); if(dlV) dlV.innerHTML=jugadoresVisit.map(n=>`<option value="${eH(n)}">`).join('');
+}
+// <select> de elección rápida: al elegir una opción rellena el campo de
+// texto correspondiente (que sigue siendo el dato real) y se resetea a
+// "— Elegir... —", para poder usarlo otra vez sin quedarse "pegado" en el
+// último jugador escogido. Los <select> nativos son mucho más fiables en
+// Chrome Android que el <input list> con datalist (que ahí apenas
+// muestra sugerencias), así que es el método principal para elegir
+// rápido — el campo de texto de abajo sigue admitiendo escribir a mano
+// un nombre que todavía no esté dado de alta como jugador.
+function _apSelectRapidoHTML(nombres,onPick,vacioTexto){
+  const opts=nombres.length
+    ? `<option value="">▾ Elegir de la lista...</option>`+nombres.map(n=>`<option value="${eH(n)}">${eH(n)}</option>`).join('')
+    : `<option value="">${eH(vacioTexto)}</option>`;
+  return `<select ${nombres.length?'':'disabled'} onchange="if(this.value){${onPick}}this.value=''">${opts}</select>`;
 }
 
 function buildApGoles(){
@@ -10140,12 +10189,21 @@ function buildApGoles(){
   if(!cont) return;
   const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
   const nomVisit=document.getElementById('ap-visitante').value.trim()||'Visitante';
-  _apPoblarJugadorDatalists(nomLocal,nomVisit);
+  const jugadoresLocal=_apJugadoresDeEquipo(nomLocal);
+  const jugadoresVisit=_apJugadoresDeEquipo(nomVisit);
+  _apPoblarJugadorDatalists(nomLocal,nomVisit,jugadoresLocal,jugadoresVisit);
   if(!apGoles.length){ cont.innerHTML='<p style="font-size:10px;color:var(--gris2);padding:4px 0">Sin goles añadidos todavía</p>'; return; }
   cont.innerHTML=apGoles.map((g,i)=>{
     const isABP=g.origen==='ABP Ofensiva';
     const subOpts=(SUB_ABP[g.origen]||[]).map(s=>`<option${g.subtipo===s?' selected':''}>${s}</option>`).join('');
-    const listaJug=g.equipo==='visitante'?'ap-jugador-list-visitante':'ap-jugador-list-local';
+    const esVisit=g.equipo==='visitante';
+    const listaJug=esVisit?'ap-jugador-list-visitante':'ap-jugador-list-local';
+    const nombresEquipo=esVisit?jugadoresVisit:jugadoresLocal;
+    const nomEquipoActual=esVisit?nomVisit:nomLocal;
+    // El "portero rival batido" es del equipo CONTRARIO al que marca —
+    // si marca el visitante, el portero batido es del local, y viceversa.
+    const nombresRival=esVisit?jugadoresLocal:jugadoresVisit;
+    const nomRival=esVisit?nomLocal:nomVisit;
     const tieneClip=!!(g.clip && (g.clip.src || g.clip.blobURL || g.clip.portada));
     const detalleAbierto=!!g._abierto;
     return `
@@ -10159,8 +10217,14 @@ function buildApGoles(){
         <button class="brm2" type="button" onclick="_apQuitarGol(${i})">✕</button>
       </div>
       <div class="g2">
-        <input type="text" placeholder="Jugador (quién marca)" list="${listaJug}" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value">
-        <input type="text" placeholder="Asistencia (opcional)" list="${listaJug}" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value">
+        <div class="fg">
+          ${_apSelectRapidoHTML(nombresEquipo,`apGoles[${i}].jugador=this.value;buildApGoles()`,'— Sin jugadores en '+nomEquipoActual+' —')}
+          <input type="text" placeholder="Jugador (quién marca)" list="${listaJug}" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value" style="margin-top:4px">
+        </div>
+        <div class="fg">
+          ${_apSelectRapidoHTML(nombresEquipo,`apGoles[${i}].asistencia=this.value;buildApGoles()`,'— Sin jugadores en '+nomEquipoActual+' —')}
+          <input type="text" placeholder="Asistencia (opcional)" list="${listaJug}" value="${eH(g.asistencia||'')}" oninput="apGoles[${i}].asistencia=this.value" style="margin-top:4px">
+        </div>
       </div>
       <div class="g2">
         <div class="fg"><label style="font-size:9px">Cómo fue el gol</label>
@@ -10182,7 +10246,7 @@ function buildApGoles(){
           ${detalleAbierto?'▾':'▸'} Más detalles${tieneClip?' 🎬':''}
         </button>
       </div>
-      ${detalleAbierto?_apDetalleGolHTML(g,i):''}
+      ${detalleAbierto?_apDetalleGolHTML(g,i,nombresRival,nomRival):''}
     </div>`;
   }).join('');
   // El HTML de arriba ya incluye los bloques de detalle abiertos, pero
@@ -10192,7 +10256,21 @@ function buildApGoles(){
   apGoles.forEach((g,i)=>{ if(g._abierto){ _apRefrescarEstadoVideo(i); _apRefrescarPortadaPreview(i); } });
 }
 
-function _apDetalleGolHTML(g,i){
+function _apDetalleGolHTML(g,i,nombresRival,nomRival){
+  const altaAbierta=!!g._altaPorteroAbierta;
+  const porteroAltaHTML=altaAbierta
+    ? `<div style="margin-top:6px;padding:8px;border:1px dashed var(--border);border-radius:6px">
+        <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Nuevo jugador para ${eH(nomRival)}:</p>
+        <div class="g2">
+          <input type="text" id="apg-alta-portero-nom-${i}" placeholder="Nombre">
+          <input type="text" id="apg-alta-portero-ape-${i}" placeholder="Apellidos">
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" class="btn b-azul b-sm" onclick="_apAltaRapidaPortero(${i})">💾 Guardar jugador</button>
+          <button type="button" class="btn b-ghost b-sm" onclick="apGoles[${i}]._altaPorteroAbierta=false;buildApGoles()">Cancelar</button>
+        </div>
+      </div>`
+    : `<button type="button" class="btn b-ghost b-sm" style="margin-top:4px;font-size:10px;padding:3px 8px" onclick="apGoles[${i}]._altaPorteroAbierta=true;buildApGoles()">➕ ${nombresRival.length?'No está en la lista — añadir jugador nuevo':'Añadir jugador nuevo'} a ${eH(nomRival)}</button>`;
   return `
   <div class="apg-detalle" style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)">
     <div class="g2">
@@ -10203,8 +10281,10 @@ function _apDetalleGolHTML(g,i){
         <select onchange="apGoles[${i}].cuerpo=this.value">${CUERPOS.map(c=>`<option${g.cuerpo===c?' selected':''}>${c}</option>`).join('')}</select>
       </div>
     </div>
-    <div class="fg" style="margin-top:6px"><label style="font-size:9px">🧤 Portero rival batido</label>
-      <input type="text" placeholder="Nombre del portero..." value="${eH(g.portero||'')}" oninput="apGoles[${i}].portero=this.value">
+    <div class="fg" style="margin-top:6px"><label style="font-size:9px">🧤 Portero rival batido (${eH(nomRival)})</label>
+      ${_apSelectRapidoHTML(nombresRival,`apGoles[${i}].portero=this.value;buildApGoles()`,'— Sin jugadores en '+nomRival+' —')}
+      <input type="text" placeholder="Nombre del portero..." value="${eH(g.portero||'')}" oninput="apGoles[${i}].portero=this.value" style="margin-top:4px">
+      ${porteroAltaHTML}
     </div>
     <div class="fg" style="margin-top:6px"><label style="font-size:9px">Descripción</label>
       <input type="text" placeholder="Breve descripción..." value="${eH(g.desc||'')}" oninput="apGoles[${i}].desc=this.value">
@@ -10234,6 +10314,34 @@ function _apQuitarGol(i){
   const g=apGoles[i];
   if(g && g.clip && g.clip.blobURL){ URL.revokeObjectURL(g.clip.blobURL); if(g.clip.id!=null) delete _clipBlobRegistro()[g.clip.id]; }
   apGoles.splice(i,1);
+  buildApGoles();
+}
+
+// Alta rápida de un jugador nuevo (portero rival, normalmente) sin salir
+// de "Editar partido" — así un rival que todavía no está dado de alta en
+// Jugadores (ej. el Gévora) se puede añadir al vuelo y usar en el
+// desplegable en el momento, en vez de tener que ir a Jugadores, crearlo
+// ahí y volver.
+function _apAltaRapidaPortero(i){
+  const g=apGoles[i]; if(!g) return;
+  const nom=(document.getElementById('apg-alta-portero-nom-'+i)?.value||'').trim();
+  const ape=(document.getElementById('apg-alta-portero-ape-'+i)?.value||'').trim();
+  if(!nom){ toast('Escribe al menos el nombre del portero',true); return; }
+  const nomLocalV=document.getElementById('ap-local').value.trim()||'Local';
+  const nomVisitV=document.getElementById('ap-visitante').value.trim()||'Visitante';
+  const clubRival = g.equipo==='visitante' ? nomLocalV : nomVisitV;
+  const nuevoJugador={
+    id:'j_'+Date.now()+'_'+Math.floor(Math.random()*1000),
+    nom, ape, club:clubRival, pos:'Portero',
+    temp:document.getElementById('ap-temp').value.trim()||_valoresUnicos(jDB,'temp').slice(-1)[0]||'',
+    dor:'', stats:{}
+  };
+  jDB.push(nuevoJugador);
+  saveJDB();
+  if(typeof scoutSincronizarJugador==='function') scoutSincronizarJugador(nuevoJugador);
+  apGoles[i].portero=(nom+' '+ape).trim();
+  apGoles[i]._altaPorteroAbierta=false;
+  toast('✅ '+nuevoJugador.nom+' añadido a '+clubRival);
   buildApGoles();
 }
 
