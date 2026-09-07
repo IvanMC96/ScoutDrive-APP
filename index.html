@@ -5269,7 +5269,7 @@ function renderEDB(){
     </div><div class="card-act">
       ${esAdminActual()?`<button class="btn b-azul b-sm" onclick="editE('${eq.id}')">✏️ Editar</button>`:`<button class="btn b-ghost b-sm" onclick="editE('${eq.id}')">👁 Ver</button>`}
       <button class="btn b-ghost b-sm" onclick="xEExcel('${eq.id}')">📊</button>
-      ${esAdminActual()?`<button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" onclick="borrarEquipo(this)">🗑</button>`:''}
+      ${esAdminActual()?`<button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" data-del-equipo-esactual="${vista._esActual?'1':'0'}" data-del-equipo-temp="${eH(vista.temp||'')}" onclick="borrarEquipo(this)">🗑</button>`:''}
     </div></div>`;
   }).join('');
   actualizarBarraCompararE();
@@ -11688,7 +11688,39 @@ function borrarEquipo(btn){
   if (!id) return;
   const eq = eDB.find(x => String(x.id) === String(id));
   const nom = (eq && eq.nom) ? eq.nom : 'este equipo';
-  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+  // IMPORTANTE: un club tiene UNA sola ficha en eDB (la temporada actual)
+  // más un histórico archivado en eq.temporadas[] — la tarjeta puede estar
+  // mostrando esa ficha actual O una temporada antigua del histórico
+  // (según el filtro de temporada/categoría/grupo activo en la lista),
+  // pero el botón de borrar de esa tarjeta apunta siempre al MISMO id de
+  // club. Si no se distinguiera esto, borrar la tarjeta de una temporada
+  // antigua borraría también la ficha actual y todo el resto del
+  // histórico — exactamente lo que le pasó a Iván con el Don Benito
+  // 25-26/26-27. Por eso: si la tarjeta mostraba una temporada archivada
+  // (no la actual), solo se quita ESA entrada de eq.temporadas, sin tocar
+  // el resto del club.
+  const esActual = btn.getAttribute('data-del-equipo-esactual') !== '0';
+  const tempVista = btn.getAttribute('data-del-equipo-temp') || '';
+  if(eq && !esActual && Array.isArray(eq.temporadas) && eq.temporadas.length){
+    const idxTemp = eq.temporadas.findIndex(t => (t.temp||'').trim() === tempVista.trim());
+    if(idxTemp >= 0){
+      askDel(`¿Borrar solo la temporada "${tempVista}" del histórico de "${nom}"? La temporada actual (${eq.temp||'?'}) y el resto de su histórico no se tocan. No se puede deshacer.`, () => {
+        eq.temporadas.splice(idxTemp,1);
+        saveEDB(); renderEDB(); toast(`🗑 Temporada "${tempVista}" eliminada del histórico`);
+        // El club sigue existiendo (solo se acorta su histórico), así que
+        // hay que volver a subirlo entero al Sheet — si no, en los demás
+        // dispositivos la próxima sincronización completa lo dejaría tal
+        // cual estaba, con la temporada borrada todavía dentro.
+        if(typeof scoutSincronizarEquipo==='function') scoutSincronizarEquipo(eq);
+      });
+      return;
+    }
+  }
+  const tieneHistorial = !!(eq && Array.isArray(eq.temporadas) && eq.temporadas.length);
+  const avisoHistorial = tieneHistorial
+    ? ` Este club tiene ${eq.temporadas.length} temporada${eq.temporadas.length===1?'':'s'} archivada${eq.temporadas.length===1?'':'s'} en su histórico — se borrará TAMBIÉN, no solo la temporada actual.`
+    : '';
+  askDel(`¿Borrar "${nom}" del todo?${avisoHistorial} No se puede deshacer.`, () => {
     eDB = eDB.filter(x => String(x.id) !== String(id));
     saveEDB(); renderEDB(); toast('🗑 Eliminado');
     // Se borra también en el Sheet — si no, la próxima sincronización lo
@@ -11699,12 +11731,20 @@ function borrarEquipo(btn){
 }
 // Borra el equipo que se está viendo/editando actualmente (útil para
 // quitar de dentro de la ficha un registro corrupto, p.ej. "Sin nombre").
+// A diferencia de borrarEquipo() (que puede borrar solo una temporada
+// archivada según la tarjeta), este botón vive dentro de la ficha de
+// edición, que siempre trabaja sobre la temporada actual — así que aquí
+// SIEMPRE es un borrado completo del club, avisando si tiene histórico.
 function borrarEquipoActual(){
   if(!esAdminActual()){ toast('Solo los administradores pueden borrar',true); return; }
   if(!eId){ toast('Este equipo aún no se ha guardado, no hay nada que borrar',true); return; }
   const eq = eDB.find(x => String(x.id) === String(eId));
   const nom = (eq && eq.nom) ? eq.nom : 'este equipo';
-  askDel(`¿Borrar "${nom}"? No se puede deshacer.`, () => {
+  const tieneHistorial = !!(eq && Array.isArray(eq.temporadas) && eq.temporadas.length);
+  const avisoHistorial = tieneHistorial
+    ? ` Este club tiene ${eq.temporadas.length} temporada${eq.temporadas.length===1?'':'s'} archivada${eq.temporadas.length===1?'':'s'} en su histórico — se borrará TAMBIÉN, no solo la temporada actual.`
+    : '';
+  askDel(`¿Borrar "${nom}" del todo?${avisoHistorial} No se puede deshacer.`, () => {
     const idBorrado=eId;
     eDB = eDB.filter(x => String(x.id) !== String(idBorrado));
     saveEDB();
