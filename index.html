@@ -2511,7 +2511,13 @@ body.solo-lectura .ed-panel-form {
       </div>
       <div class="apf">
         <label>Contraseña <span id="mu-pass-hint" style="color:var(--gris);font-weight:400">(dejar vacío para no cambiar)</span></label>
-        <input id="mu-pass" type="password" placeholder="Nueva contraseña">
+        <div style="display:flex;gap:6px">
+          <input id="mu-pass" type="password" placeholder="Nueva contraseña" style="flex:1">
+          <button type="button" class="btn b-ghost" style="white-space:nowrap;padding:0 10px" onclick="muTogglePassVisible()" id="mu-pass-toggle" title="Mostrar/ocultar">👁️</button>
+          <button type="button" class="btn b-ghost" style="white-space:nowrap;padding:0 10px" onclick="muGenerarPassword()" title="Generar una contraseña nueva y segura">🎲 Generar</button>
+        </div>
+        <p style="font-size:9px;color:var(--gris2);margin:4px 0 0">Por seguridad, la app nunca guarda la contraseña en claro (solo un hash irreversible) — no es posible ver la contraseña actual de una cuenta ya creada. Para tener una a mano, usa "🎲 Generar": crea una nueva, la deja visible aquí y, al guardar, queda disponible para exportar en el Excel de cuentas mientras esta sesión de admin siga abierta.</p>
+        <p id="mu-pass-generada-aviso" style="display:none;font-size:9px;color:var(--dorado,#c99a2e);margin:4px 0 0">⚠️ Apunta esta contraseña ahora — no se podrá volver a consultar una vez cierres esta pantalla.</p>
       </div>
       <div class="apf">
         <label>Rol</label>
@@ -11957,10 +11963,18 @@ async function cargarUsuariosAdmin() {
 }
 
 /** Descarga en Excel la lista de cuentas de usuario (email, nombre,
- *  equipo, rol, estado y último acceso) — pensado para tener un control
- *  rápido de quién tiene acceso sin tener que abrir la app cada vez.
- *  Usa la última lista ya cargada en el panel; si todavía no se ha
- *  cargado ninguna en esta sesión, la pide primero. */
+ *  equipo, rol, estado, último acceso y acceso por liga) — pensado para
+ *  tener un control rápido de quién tiene acceso sin tener que abrir la
+ *  app cada vez. Usa la última lista ya cargada en el panel; si todavía
+ *  no se ha cargado ninguna en esta sesión, la pide primero.
+ *
+ *  Columna "Contraseña": el backend solo guarda un hash SHA-256
+ *  irreversible (nunca la contraseña en claro — ver guardarUsuario), así
+ *  que NO existe ninguna "contraseña actual" que se pueda recuperar ni
+ *  exportar aquí. Lo que sí se incluye es la contraseña de cualquier
+ *  cuenta a la que se le haya generado una NUEVA con "🎲 Generar" en
+ *  esta misma sesión de admin (window._passwordsGeneradasSesion, ver
+ *  muGenerarPassword) — para el resto de cuentas la celda queda vacía. */
 async function descargarListaUsuarios(){
   if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   let usuarios = window._usuariosAdminUltimos;
@@ -11971,20 +11985,22 @@ async function descargarListaUsuarios(){
     usuarios = resultado.usuarios || [];
   }
   if(!usuarios.length){ toast('No hay usuarios registrados',true); return; }
+  const generadas = window._passwordsGeneradasSesion || {};
   const rows=[
-    ['Email','Nombre','Equipo','Rol','Estado','Último acceso','Acceso restringido a']
+    ['Email','Nombre','Equipo','Rol','Estado','Último acceso','Acceso restringido a','Contraseña (solo si se generó nueva en esta sesión)']
   ];
   usuarios.forEach(u=>{
     const fechaAcceso = u.fechaUltimoAcceso ? new Date(u.fechaUltimoAcceso).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '—';
     const ligas = (u.ligasPermitidas||[]).length ? u.ligasPermitidas.join(', ') : 'Ver todo';
-    rows.push([u.email||'', u.nombre||'', u.equipo||'', u.rol==='admin'?'Administrador':'Usuario', u.activo?'Activo':'Desactivado', fechaAcceso, ligas]);
+    const passGenerada = generadas[(u.email||'').trim().toLowerCase()] || '';
+    rows.push([u.email||'', u.nombre||'', u.equipo||'', u.rol==='admin'?'Administrador':'Usuario', u.activo?'Activo':'Desactivado', fechaAcceso, ligas, passGenerada]);
   });
   const WB=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:28},{wch:22},{wch:20},{wch:14},{wch:12},{wch:14},{wch:26}];
+  ws['!cols']=[{wch:28},{wch:22},{wch:20},{wch:14},{wch:12},{wch:14},{wch:26},{wch:32}];
   XLSX.utils.book_append_sheet(WB,ws,'Usuarios');
   XLSX.writeFile(WB,'Scoutdrive_Usuarios_'+new Date().toISOString().slice(0,10)+'.xlsx');
-  toast('📊 Lista de usuarios descargada');
+  toast(Object.keys(generadas).length ? '📊 Lista descargada (incluye las contraseñas generadas en esta sesión)' : '📊 Lista de usuarios descargada');
 }
 
 // ── Modal nuevo/editar usuario ───────────────────────────────────
@@ -12056,6 +12072,58 @@ function _ligasSeleccionadasMu(){
   return [...document.querySelectorAll('.mu-liga-chk:checked')].map(c=>c.value);
 }
 
+/** Genera una contraseña aleatoria razonablemente segura (12 caracteres,
+ *  mezcla de mayúsculas/minúsculas/números/símbolos, sin caracteres
+ *  ambiguos como 0/O o l/1) usando el generador criptográfico del
+ *  navegador — no Math.random(). */
+function _passwordAleatoria(len=12){
+  const chars='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+  const arr=new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  let out='';
+  for(let i=0;i<len;i++) out+=chars[arr[i]%chars.length];
+  return out;
+}
+/** Deja limpio el bloque de contraseña del modal (input oculto de nuevo,
+ *  ojo cerrado, aviso de "apúntala ahora" escondido) — se llama cada vez
+ *  que se abre el modal, tanto para un usuario nuevo como al editar uno
+ *  existente, para no arrastrar el estado de una apertura anterior. */
+function _muResetPassUI(){
+  const inp=document.getElementById('mu-pass');
+  if(inp) inp.type='password';
+  const btn=document.getElementById('mu-pass-toggle');
+  if(btn) btn.textContent='👁️';
+  const aviso=document.getElementById('mu-pass-generada-aviso');
+  if(aviso) aviso.style.display='none';
+}
+function muTogglePassVisible(){
+  const inp=document.getElementById('mu-pass');
+  const btn=document.getElementById('mu-pass-toggle');
+  const vaAMostrar = inp.type==='password';
+  inp.type = vaAMostrar?'text':'password';
+  btn.textContent = vaAMostrar?'🙈':'👁️';
+}
+/** No existe forma de "ver la contraseña actual" de una cuenta ya creada
+ *  — el backend solo guarda un hash SHA-256, nunca la contraseña en
+ *  claro (ver guardarUsuario más abajo), así que no hay nada que
+ *  recuperar ni mostrar. Esta es la alternativa segura para tener
+ *  "control" real: generar una contraseña NUEVA, dejarla visible una
+ *  única vez aquí mismo para apuntarla, y guardar solo su hash como
+ *  siempre. La contraseña en claro se queda además en memoria de esta
+ *  sesión de admin (window._passwordsGeneradasSesion, ver guardarUsuario
+ *  y descargarListaUsuarios) para poder incluirla en el Excel de cuentas
+ *  mientras esta sesión siga abierta — nunca se envía al backend ni se
+ *  guarda en ningún sitio persistente. */
+function muGenerarPassword(){
+  const nueva=_passwordAleatoria();
+  const inp=document.getElementById('mu-pass');
+  inp.value=nueva; inp.type='text';
+  const btn=document.getElementById('mu-pass-toggle'); if(btn) btn.textContent='🙈';
+  const aviso=document.getElementById('mu-pass-generada-aviso'); if(aviso) aviso.style.display='';
+  window._muUltimaPassGenerada=nueva;
+  toast('🎲 Contraseña generada — apúntala antes de guardar');
+}
+
 function abrirModalNuevoUsuario() {
   if(!esAdminActual()){toast('Solo los administradores pueden gestionar usuarios',true);return;}
   document.getElementById('mu-email').value = '';
@@ -12063,6 +12131,7 @@ function abrirModalNuevoUsuario() {
   document.getElementById('mu-nombre').value = '';
   renderMuEquipoOptions('');
   document.getElementById('mu-pass').value = '';
+  _muResetPassUI();
   document.getElementById('mu-rol').value = 'usuario';
   document.getElementById('mu-rol').disabled = false;
   document.getElementById('mu-activo').value = 'true';
@@ -12093,6 +12162,7 @@ async function editarUsuarioAdmin(id) {
   document.getElementById('mu-nombre').value = u.nombre || '';
   renderMuEquipoOptions(u.equipo || '');
   document.getElementById('mu-pass').value = '';
+  _muResetPassUI();
   document.getElementById('mu-rol').value = u.rol || 'usuario';
   document.getElementById('mu-activo').value = String(u.activo);
   document.getElementById('mu-edit-id').value = u.id;
@@ -12169,6 +12239,17 @@ async function guardarUsuario() {
   }
 
   if (resultado && resultado.ok) {
+    // Si la contraseña guardada es justo la que se generó con "🎲
+    // Generar" (ver muGenerarPassword), se recuerda en memoria de esta
+    // sesión de admin — nunca se envía ni guarda en ningún sitio además
+    // de aquí — para poder incluirla en el Excel de cuentas (ver
+    // descargarListaUsuarios). Es la única vez que queda disponible: al
+    // recargar la página o cerrar sesión desaparece, igual que el resto
+    // de la sesión.
+    if (pass && pass === window._muUltimaPassGenerada) {
+      if (!window._passwordsGeneradasSesion) window._passwordsGeneradasSesion = {};
+      window._passwordsGeneradasSesion[email] = pass;
+    }
     cerrarModalUsuario();
     toast('✅ Usuario guardado');
     cargarUsuariosAdmin();
