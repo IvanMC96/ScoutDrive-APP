@@ -2298,6 +2298,25 @@ body.solo-lectura .ed-panel-form {
   </div>
 
   <div class="psec" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
+    <div class="cfg-title" style="padding:14px 16px 0">🔄 Recalcular estadísticas desde Partidos</div>
+    <div class="pbody">
+      <p style="font-size:11px;color:var(--gris);line-height:1.5">
+        Usa esto si algún jugador o equipo sigue mostrando goles/PJ/V/E/D/GF/GC
+        que no coinciden con lo que de verdad hay registrado en "⚽ Partidos"
+        (por ejemplo, un número de goles más alto que filas tiene su tabla de
+        goles). Pone a cero la base de estadísticas "manuales" de TODOS los
+        jugadores y equipos y la vuelve a calcular entera desde cero, contando
+        solo lo que hay en Partidos — no borra ningún gol, clip ni partido, y
+        no toca partidos jugados/minutos (eso se sigue llevando aparte). ⚠️ Si
+        tenías goles/estadísticas de alguna temporada metidos a mano sin su
+        partido correspondiente en la videoteca, esos se perderán: solo usa
+        esto si "⚽ Partidos" es la fuente de todos los datos.
+      </p>
+      <button class="btn b-naranja" id="btn-recalc-stats-cero" onclick="adminRecalcularStatsDesdeCero()">🔄 Recalcular todo desde Partidos</button>
+    </div>
+  </div>
+
+  <div class="psec" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
     <div class="cfg-title" style="padding:14px 16px 0">🔒 Sesión</div>
     <div class="pbody">
       <p style="font-size:11px;color:var(--gris);line-height:1.5">Cierra tu sesión y vuelve a la pantalla de usuario y contraseña.</p>
@@ -10944,6 +10963,40 @@ function recalcularStatsDesdePartidos(){
     }
   });
   if(cambiosEq) saveEDB();
+}
+
+// Herramienta de mantenimiento (Config › "🔄 Recalcular estadísticas desde
+// Partidos"): pone statsManualBase a CERO en todos los jugadores y equipos
+// y fuerza un recálculo completo, así que stats.g/a/pz/ab/gr (jugadores) y
+// stats.pj/v/e/d/gf/gc (equipos) quedan EXACTAMENTE igual a lo que hay
+// registrado en "⚽ Partidos" — nada de base "manual" arrastrada de antes.
+// Pensada para cuando un admin ya sabe que un número está mal (duplicado
+// por el bug ya corregido) pero no quiere ir jugador a jugador corrigiendo
+// el campo a mano y guardando uno por uno.
+async function adminRecalcularStatsDesdeCero(){
+  if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
+  askDel(
+    '¿Recalcular TODAS las estadísticas de goles/asistencias/ABP/PJ/V/E/D/GF/GC de jugadores y equipos, contando solo lo registrado en "⚽ Partidos"? No se borra ningún gol, clip ni partido. Si tenías estadísticas metidas a mano sin su partido correspondiente en la videoteca, esas se perderán.',
+    async ()=>{
+      jDB.forEach(j=>{ j.statsManualBase={g:0,a:0,pz:0,ab:0,gr:0}; });
+      eDB.forEach(eq=>{ eq.statsManualBase={pj:0,v:0,e:0,d:0,gf:0,gc:0}; });
+      saveJDB(); saveEDB();
+      recalcularStatsDesdePartidos();
+      sincronizarTacticaDesdePartidos();
+      toast('🔄 Recalculado en local, subiendo a la nube...');
+      if(typeof scoutSincronizarJugador==='function'){
+        for(const j of jDB){ try{ await scoutSincronizarJugador(j); }catch(e){ console.warn('No se pudo subir',j.id,e); } }
+      }
+      if(typeof scoutSincronizarEquipo==='function'){
+        for(const eq of eDB){ try{ await scoutSincronizarEquipo(eq); }catch(e){ console.warn('No se pudo subir',eq.id,e); } }
+      }
+      if(currentSection==='jugadores-db') renderJDB();
+      if(currentSection==='equipos-db') renderEDB();
+      if(currentSection==='inicio') renderInicio();
+      toast('✅ Estadísticas recalculadas y sincronizadas');
+    },
+    {titulo:'Recalcular estadísticas',okTexto:'🔄 Recalcular todo',okClase:'b-naranja'}
+  );
 }
 
 // ── SINCRONIZAR "CÓMO FUE EL GOL" DE PARTIDOS → FICHA JUGADOR Y EQUIPO ──
