@@ -569,7 +569,7 @@ async function scoutSincronizarAlAbrir() {
         // Aquí sí protegemos: nunca dejamos que un remoto sin nombre/apellidos
         // borre uno local que sí los tiene — evita que un jugador "se quede
         // sin nombre" por una fila incompleta o mal mapeada en el Sheet.
-        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig', 'statsManualBase'])) huboNovedades = true;
       }
     });
   }
@@ -583,7 +583,7 @@ async function scoutSincronizarAlAbrir() {
       if (idx < 0) {
         eDB.unshift(remoto); huboNovedades = true;
       } else if (fechaRemota > fechaLocal) {
-        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones'])) huboNovedades = true;
+        if (_scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones', 'statsManualBase'])) huboNovedades = true;
       }
     });
   }
@@ -618,6 +618,20 @@ async function scoutSincronizarAlAbrir() {
     if (typeof saveEDB === 'function') saveEDB();
     if (typeof savePDB === 'function') savePDB();
     if (typeof saveAds === 'function') saveAds();
+    // IMPORTANTE: el "stats"/"orig" de cada jugador/equipo que llega del
+    // Sheet es solo una FOTO de lo que había en el dispositivo que lo
+    // subió por última vez — si aquí ha llegado también un partido nuevo
+    // (pDB), ese jugador/equipo puede quedarse con un PJ/goles ya
+    // desactualizado hasta que alguien vuelva a abrir y guardar su ficha
+    // a mano. Por eso, justo después de fusionar todo (incluido pDB, que
+    // es la fuente real), se recalculan stats/táctica en local a partir
+    // de los partidos que YA tenemos completos — así la ficha y el
+    // listado de Equipos/Jugadores quedan sincronizados de verdad tras
+    // cada sync, no solo el propio partido. "statsManualBase" (la base
+    // congelada de la que parte este recálculo) va protegido arriba en
+    // _scoutFusionarSeguro para que esto nunca duplique goles ya contados.
+    if (typeof recalcularStatsDesdePartidos === 'function') recalcularStatsDesdePartidos();
+    if (typeof sincronizarTacticaDesdePartidos === 'function') sincronizarTacticaDesdePartidos();
     if (typeof renderBannerAdsGlobal === 'function') renderBannerAdsGlobal();
     if (typeof currentSection !== 'undefined') {
       if (currentSection === 'jugadores-db' && typeof renderJDB === 'function') renderJDB();
@@ -809,7 +823,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof jDB !== 'undefined') ? jDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(jDB, idx, remoto, ['nom', 'ape'], ['imgJug', 'imgEsc'], ['orig', 'statsManualBase']); cambios++; }
       else if (typeof jDB !== 'undefined') { jDB.unshift(remoto); cambios++; }
     });
   }
@@ -823,7 +837,7 @@ async function scoutSyncCompleto(silencioso) {
     reconstruidos.forEach(remoto => {
       if (!remoto.id) return;
       const idx = (typeof eDB !== 'undefined') ? eDB.findIndex(x => x.id === remoto.id) : -1;
-      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones']); cambios++; }
+      if (idx >= 0) { _scoutFusionarSeguro(eDB, idx, remoto, ['nom'], ['imgEsc'], ['orig', 'campoOverrides', 'campoSponsor', 'alineaciones', 'statsManualBase']); cambios++; }
       else if (typeof eDB !== 'undefined') { eDB.unshift(remoto); cambios++; }
     });
   }
@@ -891,6 +905,16 @@ async function scoutSyncCompleto(silencioso) {
     if (typeof saveEDB === 'function') saveEDB();
     if (typeof savePDB === 'function') savePDB();
     if (typeof saveAds === 'function') saveAds();
+    // Mismo motivo que en scoutSincronizarAlAbrir(): el "stats" de cada
+    // jugador/equipo que trae el Sheet es solo la foto de cuando se
+    // guardó por última vez SU PROPIA ficha — no se actualiza solo
+    // porque aquí también haya llegado un partido nuevo. sync completo
+    // es justo el que más hace falta esto, porque trae SIEMPRE la
+    // lista entera (incluidos partidos añadidos desde otro dispositivo
+    // sin pasar por "Editar Equipo"/"Editar Jugador"), así que
+    // recalculamos aquí también antes de pintar nada.
+    if (typeof recalcularStatsDesdePartidos === 'function') recalcularStatsDesdePartidos();
+    if (typeof sincronizarTacticaDesdePartidos === 'function') sincronizarTacticaDesdePartidos();
     if (typeof renderJDB === 'function') renderJDB();
     if (typeof renderEDB === 'function') renderEDB();
     if (typeof renderBannerAdsGlobal === 'function') renderBannerAdsGlobal();
