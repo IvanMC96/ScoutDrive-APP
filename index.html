@@ -4899,7 +4899,14 @@ function buildJRadar(){
   jRadarEjes.forEach((e,i)=>{
     const d=document.createElement('div');d.className='rrow';
     if(i<J_RADAR_AUTO_N){
-      d.innerHTML=`<span class="rlbl">${e} <span style="opacity:.6;font-weight:400">(auto)</span></span><input type="range" min="0" max="100" value="${jRadar[i]}" disabled style="opacity:.5;cursor:not-allowed"><span class="rval" id="jrv${i}">${jRadar[i]}</span>`;
+      // "(auto)" aquí es un ÍNDICE 0-100 calculado sobre un tope de
+      // referencia (J_RADAR_REF: 20 goles/15 asist./10 ABP = 100), NO el
+      // número real de goles/asistencias/ABP del jugador — ese está en
+      // los KPI de arriba de la ficha y en la tabla de goles. Sin el
+      // "/100" al lado, un jugador con pocos goles frente a un tope alto
+      // (p. ej. 2 goles → índice 10) parecía tener "10 goles" a simple
+      // vista, en vez de un 10 sobre 100.
+      d.innerHTML=`<span class="rlbl">${e} <span style="opacity:.6;font-weight:400">(auto, índice)</span></span><input type="range" min="0" max="100" value="${jRadar[i]}" disabled style="opacity:.5;cursor:not-allowed"><span class="rval" id="jrv${i}">${jRadar[i]}<span style="opacity:.55;font-weight:400">/100</span></span>`;
     } else {
       d.innerHTML=`<span class="rlbl">${e}</span><input type="range" min="0" max="100" value="${jRadar[i]}" oninput="jRadar[${i}]=+this.value;sv('jrv${i}',this.value);renderJ()"><span class="rval" id="jrv${i}">${jRadar[i]}</span>`;
     }
@@ -5124,7 +5131,7 @@ function renderJ(){
     ? `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">🧤 Perfil de Portero</div>${radarSVG(jGK,jGKEjes,190)}</div>
     <div class="fblk"><div class="fblkt">Evaluación por facetas</div>${jGKEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:88px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jGK[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jGK[i]}</span></div>`).join('')}</div></div>`
     : `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">Perfil jugador</div>${radarSVG(jRadar,jRadarEjes,190)}</div>
-    <div class="fblk"><div class="fblkt">Índices del perfil</div>${jRadarEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:74px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jRadar[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jRadar[i]}</span></div>`).join('')}</div></div>`;
+    <div class="fblk"><div class="fblkt">Índices del perfil <span style="font-size:8px;font-weight:400;color:var(--gris2)">(0-100, no son el número real de goles/asist./ABP — eso está arriba)</span></div>${jRadarEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:74px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jRadar[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jRadar[i]}</span></div>`).join('')}</div></div>`;
   document.getElementById('j-ficha-container').innerHTML=`
   <div class="ficha" id="j-ficha-pdf">
     <div class="fhdr"><div class="fhdr-l">${avH}<div><div class="fnm">${eH(nom)||'Jugador'}</div><div class="fmeta"><span style="font-size:11px;color:var(--gris)">#${dor}</span><span class="badge bp">${eH(pos)}</span><span class="badge bn">${eH(nac)}</span>${edad?`<span class="badge bt">${eH(edad)} años</span>`:''}<span class="badge bt">${eH(temp)}</span></div></div></div>
@@ -5834,20 +5841,41 @@ function guardarE(){
     eq.tipo=eq.tipo||equipoExistentePrevio.tipo;
   }
 // Persist clips (no blob)
-  const clipsGuardar=eClips.map(c=>({
+  // IMPORTANTE: los clips marcados con "srcPartido" los gestiona en
+  // exclusiva sincronizarTacticaDesdePartidos() — este formulario nunca
+  // deja añadirlos ni editarlos a mano (no hay ningún botón para ello en
+  // "en contra"/"a favor" que pueda tocar ese campo), así que si se
+  // guardaran tal cual desde eClips/eClipsGC (la copia en memoria que se
+  // cargó al abrir este editor) pasarían dos cosas malas: 1) cualquier
+  // clip sincronizado DESPUÉS de abrir el editor (p. ej. añadido a un
+  // partido mientras esta pestaña ya estaba abierta) se perdía al
+  // guardar, aunque nunca se hubiera tocado nada de clips a mano — este
+  // era justo el motivo de que los clips de un gol ya registrado en
+  // Partidos "desaparecieran" de la ficha del equipo sin motivo aparente
+  // al guardar cualquier otro cambio del formulario; y 2) al reconstruir
+  // el objeto se perdía la marca "srcPartido" de los que sí venían de
+  // eClips, con lo que en la siguiente sincronización se habrían tratado
+  // como manuales y quedado duplicados. Por eso aquí se cogen SIEMPRE
+  // frescos de la ficha actual en eDB (no de la copia en memoria) y se
+  // dejan intactos; lo único que gestiona este formulario es la parte
+  // manual (sin esa marca).
+  const eqPrevio=eDB.find(x=>x.id===id);
+  const clipsSincronizados=(eqPrevio?.clips||[]).filter(c=>c.srcPartido);
+  const clipsGCSincronizados=(eqPrevio?.clipsGC||[]).filter(c=>c.srcPartido);
+  const clipsManualGuardar=eClips.filter(c=>!c.srcPartido).map(c=>({
     id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,jugador:c.jugador||'',
     srcType:c.srcType==='blob'?'blob_local':c.srcType,
     src:c.srcType==='blob'?'':c.src,
     portada:c.portada||null
   }));
-  const clipsGCGuardar=eClipsGC.map(c=>({
+  const clipsGCManualGuardar=eClipsGC.filter(c=>!c.srcPartido).map(c=>({
     id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,jugador:c.jugador||'',
     srcType:c.srcType==='blob'?'blob_local':c.srcType,
     src:c.srcType==='blob'?'':c.src,
     portada:c.portada||null
   }));
-  eq.clips=clipsGuardar;
-  eq.clipsGC=clipsGCGuardar;
+  eq.clips=[...clipsSincronizados,...clipsManualGuardar];
+  eq.clipsGC=[...clipsGCSincronizados,...clipsGCManualGuardar];
   const idx2=eDB.findIndex(x=>x.id===id);
   // Este guardado reconstruye el equipo entero desde los campos del
   // formulario, así que cualquier dato que viva fuera de ese formulario
@@ -7170,9 +7198,36 @@ function renderE(){
   const pct_v=pj>0?Math.round(v/pj*100):0;
 
   // ── Orígenes ─────────────────────────────────────────────────
-  const[oA,oAb,oCl,oJd,oTr]=[GN('eoatq'),GN('eoabp'),GN('eocl'),GN('eojd'),GN('eotr')];
+  // "Origen Goles A FAVOR" y "Vulnerabilidades · GC": antes estas barras
+  // leían los sliders manuales de "Editar datos" (GN('eoatq') etc.),
+  // completamente desconectados de los goles reales ya sincronizados
+  // desde Partidos — el mismo problema que tenían las de la ficha del
+  // jugador (ver renderJ/jGoles). Ahora se cuentan directamente los
+  // goles reales de este equipo: a favor desde ePartidos[].golesGF (la
+  // misma fuente que ya alimenta la tabla "Goles A Favor · Taxonomía" de
+  // más abajo) y en contra desde eGC (la misma fuente que alimenta
+  // "Goles En Contra"). Solo se cae a los sliders manuales cuando no hay
+  // ningún gol registrado todavía por ninguna de las dos vías.
+  const _golesGFOrigenes=ePartidos.flatMap(p=>(p.golesGF||[]));
+  let oA,oAb,oCl,oJd,oTr,gcA,gcAb,gcTr,gcJd;
+  if(_golesGFOrigenes.length>0){
+    oA=_golesGFOrigenes.filter(g=>g.origen==='Ataque Organizado').length;
+    oAb=_golesGFOrigenes.filter(g=>g.origen==='ABP Ofensiva').length;
+    oCl=_golesGFOrigenes.filter(g=>g.origen==='Centro Lateral').length;
+    oJd=_golesGFOrigenes.filter(g=>g.origen==='Juego Directo').length;
+    oTr=_golesGFOrigenes.filter(g=>g.origen==='Transición Ofensiva').length;
+  }else{
+    [oA,oAb,oCl,oJd,oTr]=[GN('eoatq'),GN('eoabp'),GN('eocl'),GN('eojd'),GN('eotr')];
+  }
   const oMx=Math.max(oA,oAb,oCl,oJd,oTr,1);
-  const[gcA,gcAb,gcTr,gcJd]=[GN('egcatq'),GN('egcabp'),GN('egctr'),GN('egcjd')];
+  if(eGC.length>0){
+    gcA=eGC.filter(g=>g.origen==='Ataque Organizado').length;
+    gcAb=eGC.filter(g=>g.origen==='ABP Ofensiva').length;
+    gcTr=eGC.filter(g=>g.origen==='Transición Ofensiva').length;
+    gcJd=eGC.filter(g=>g.origen==='Juego Directo').length;
+  }else{
+    [gcA,gcAb,gcTr,gcJd]=[GN('egcatq'),GN('egcabp'),GN('egctr'),GN('egcjd')];
+  }
   const gcMx=Math.max(gcA,gcAb,gcTr,gcJd,1);
 
   // ── Avatar ───────────────────────────────────────────────────
