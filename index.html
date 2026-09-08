@@ -2575,6 +2575,19 @@ const SUB_ABP={'ABP Ofensiva':['Corner A Favor','Falta Ofensiva','RDB Ofensivo',
 const FASE={'Ataque Organizado':'Posesión desarrollada','Juego Directo':'Pelota larga','Centro Lateral':'Construcción lateral','Finalización Frontal':'Posesión desarrollada','Transición Ofensiva':'Contraataque rápido','ABP Ofensiva':'ABP'};
 const ZONAS=['Área Grande','Área Pequeña','Fuera del Área','Penalti'];
 const CUERPOS=['Pie Derecho','Pie Izquierdo','Cabeza','Otro'];
+// Título automático de un clip de gol cuando no se le pone uno a mano —
+// antes era solo "Gol min. X" (sin decir de quién ni de qué partido era),
+// ahora lleva jornada, goleador, equipo y taxonomía del gol para poder
+// identificarlo de un vistazo en "🥅 Goles" y en las galerías de clips:
+// "J1 - Bryan David (CD Castuera - Transición Of.)".
+const ORIGEN_ABREV={'Ataque Organizado':'Atq. Org.','Juego Directo':'J. Directo','Centro Lateral':'Centro Lat.','Finalización Frontal':'Fin. Frontal','Transición Ofensiva':'Transición Of.','ABP Ofensiva':'ABP'};
+function _tituloAutoClipGol(jornada,jugador,equipo,origen,minuto){
+  if(!jugador) return `Gol min. ${minuto??0}`;
+  const origenTxt=ORIGEN_ABREV[origen]||origen||'';
+  const entrePar=[equipo,origenTxt].filter(Boolean).join(' - ');
+  const base=entrePar?`${jugador} (${entrePar})`:jugador;
+  return jornada?`${jornada} - ${base}`:base;
+}
 const OCSS={'Ataque Organizado':'to-atq','Juego Directo':'to-jd','Centro Lateral':'to-cl','Finalización Frontal':'to-ff','Transición Ofensiva':'to-tr','ABP Ofensiva':'to-abp','Corner A Favor':'to-cor','Falta Ofensiva':'to-fal','RDB Ofensivo':'to-rdb','Penalti':'to-pen'};
 
 // Taxonomía de "cómo se produce" un gol encajado, pensada para que el
@@ -4821,13 +4834,27 @@ function guardarJ(){
   // "statsManualBase" es la base congelada (goles/asist./etc. "de antes
   // de sincronizar") de la que parte recalcularStatsDesdePartidos() para
   // sumar SOLO lo nuevo que viene de Partidos, sin duplicar. Ningún campo
-  // del formulario la toca — si no se traspasa aquí, este guardado la
-  // borraría, y la siguiente sincronización la "congelaría" de nuevo a
-  // partir del total YA CORRECTO que se acaba de guardar (que ya incluye
-  // lo sincronizado) sumándole otra vez el tally de Partidos encima — los
-  // goles del jugador se duplicaban con solo guardar su ficha una vez
-  // (p.ej. al cambiar el dorsal).
-  if(jPrevio?.statsManualBase) j.statsManualBase=jPrevio.statsManualBase;
+  // del formulario la toca directamente — pero en vez de simplemente
+  // copiarla tal cual del registro anterior (lo que dejaría un número ya
+  // corrompido -por el bug de guardarE()/guardarJ() de antes, que SÍ la
+  // borraba en cada guardado- congelado para siempre sin forma de
+  // corregirlo desde la app), se recalcula aquí como "lo que hay ahora
+  // mismo en el formulario, menos lo que ya aporta la sincronización con
+  // Partidos". Así, si el admin no ha tocado el número (el que se ve en
+  // el formulario ya es el correcto, calculado la última vez), esta
+  // resta da exactamente la misma base de siempre — no cambia nada. Pero
+  // si el número que se ve está mal (duplicado por el bug ya corregido) y
+  // el admin lo corrige a mano antes de guardar, la base se recongela
+  // bien a partir de ahí, y a partir de ese guardado ya no se vuelve a
+  // duplicar.
+  const _tG=_tallyGolesJugadores()[id]||{g:0,a:0,pz:0,ab:0,gr:0};
+  j.statsManualBase={
+    g:Math.max(0,(j.stats.g||0)-_tG.g),
+    a:Math.max(0,(j.stats.a||0)-_tG.a),
+    pz:Math.max(0,(j.stats.pz||0)-_tG.pz),
+    ab:Math.max(0,(j.stats.ab||0)-(_tG.ab||0)),
+    gr:Math.max(0,(j.stats.gr||0)-(_tG.gr||0))
+  };
   const idx=jDB.findIndex(x=>x.id===id);
   if(idx>=0)jDB[idx]=j;else jDB.unshift(j);
   saveJDB();toast(`✅ ${nom} guardado`);
@@ -5917,14 +5944,27 @@ function guardarE(){
     if(eDB[idx2].alineaciones) eq.alineaciones=eDB[idx2].alineaciones;
     // "statsManualBase" es la base congelada (goles/partidos "de antes de
     // sincronizar") de la que parte recalcularStatsDesdePartidos() para
-    // sumar SOLO lo nuevo que viene de Partidos, sin duplicar. No la toca
-    // ningún campo del formulario — si no se traspasa aquí, este guardado
-    // la borraría, y la siguiente sincronización la volvería a "congelar"
-    // a partir del total YA CORRECTO que se acaba de guardar (que ya
-    // incluye lo sincronizado) y encima le sumaría otra vez el tally de
-    // Partidos encima — el PJ/GF/GC del equipo se duplicaba con solo
-    // guardar su ficha una vez (p.ej. al cambiar el entrenador).
-    if(eDB[idx2].statsManualBase) eq.statsManualBase=eDB[idx2].statsManualBase;
+    // sumar SOLO lo nuevo que viene de Partidos, sin duplicar. Ningún
+    // campo del formulario la toca directamente — pero en vez de
+    // copiarla tal cual del registro anterior (lo que dejaría un número
+    // ya corrompido -por el bug de guardarE() de antes, que SÍ la
+    // borraba en cada guardado- congelado para siempre sin forma de
+    // corregirlo desde la app), se recalcula aquí como "lo que hay ahora
+    // mismo (PJ/V/GF/GC ya calculados arriba) menos lo que ya aporta la
+    // sincronización con Partidos". Si el admin no ha tocado esos
+    // números, esta resta da la misma base de siempre — no cambia nada.
+    // Pero si el PJ/GF/GC que se ve está mal (duplicado por el bug ya
+    // corregido) y se corrige a mano antes de guardar, la base se
+    // recongela bien a partir de ahí.
+    const _tE=(typeof _tallyStatsEquipos==='function'?_tallyStatsEquipos():{})[id]||{pj:0,v:0,e:0,d:0,gf:0,gc:0};
+    eq.statsManualBase={
+      pj:Math.max(0,(eq.stats.pj||0)-_tE.pj),
+      v:Math.max(0,(eq.stats.v||0)-_tE.v),
+      e:Math.max(0,(eq.stats.e||0)-_tE.e),
+      d:Math.max(0,(eq.stats.d||0)-_tE.d),
+      gf:Math.max(0,(eq.stats.gf||0)-_tE.gf),
+      gc:Math.max(0,(eq.stats.gc||0)-_tE.gc)
+    };
     eDB[idx2]=eq;
   }
   else eDB.unshift(eq);
@@ -10734,34 +10774,35 @@ function jugadorIdPorNombre(nombreCompleto){
   return j?j.id:null;
 }
 
-/** Recalcula Goles/Asistencias/ABP goles/Porterías a cero/Goles recibidos
- *  de cada jugador sumando lo registrado en "Goles del partido" (Partidos)
- *  por encima de su base manual histórica. La base (statsManualBase) se
- *  congela la primera vez que se ejecuta esto para cada jugador, así
- *  nunca se pierden los datos que ya tenías metidos a mano — solo se
- *  suma lo nuevo que venga de los partidos.
- *  "Partidos jugados" y "Minutos jugados" NO se tocan aquí: la videoteca
- *  de Partidos no registra quién estuvo en el once de cada equipo, así
- *  que no hay de dónde deducirlos sin añadir una convocatoria/alineación
- *  por partido — de momento se siguen rellenando a mano. */
-function recalcularStatsDesdePartidos(){
+// "➕ Nueva Temporada" NO crea una fila nueva de jugador — reutiliza la
+// MISMA fila para la temporada que empieza (archiva un snapshot aparte en
+// j.temporadas). Eso significa que un partido de la videoteca (pDB) de una
+// temporada YA ARCHIVADA sigue coincidiendo por NOMBRE con ese mismo
+// jugador, y sin este filtro se colaría en el total de la temporada en
+// curso aunque no se haya jugado ni un partido todavía. Si a alguna de las
+// dos temporadas le falta el dato, se cuenta igual (compatibilidad con
+// datos antiguos sin temporada rellenada). Se usa tanto aquí como al
+// recalcular el equipo, así que vive fuera como helper compartido.
+const _mismaTemporadaTally=(tempA,tempB)=>{
+  const a=(tempA||'').trim(), b=(tempB||'').trim();
+  return !a || !b || a===b;
+};
+
+/** Calcula, SIN escribir nada todavía, cuánto le corresponde a cada
+ *  jugador (por id) solo por lo registrado en Partidos — goles/asist./ABP/
+ *  porterías a cero/goles recibidos. Es la mitad "solo lectura" de
+ *  recalcularStatsDesdePartidos(): la usa esa función para aplicar el
+ *  resultado, y también guardarJ() para poder recongelar bien la base
+ *  manual si el propio admin corrige un número a mano (ver ahí). */
+function _tallyGolesJugadores(){
   const tally={};
   const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0}; tally[id][campo]++; };
-  // "➕ Nueva Temporada" NO crea una fila nueva de jugador — reutiliza la
-  // MISMA fila para la temporada que empieza (archiva un snapshot aparte
-  // en j.temporadas). Eso significa que un partido de la videoteca (pDB)
-  // de una temporada YA ARCHIVADA sigue coincidiendo por NOMBRE con ese
-  // mismo jugador, y sin este filtro se colaría en el total de la
-  // temporada en curso aunque no se haya jugado ni un partido todavía.
-  // Si a alguna de las dos temporadas le falta el dato, se cuenta igual
-  // (compatibilidad con datos antiguos sin temporada rellenada).
   const sumarSiTemporadaOk=(nombreJugador,campo,tempPartido)=>{
     const id=jugadorIdPorNombre(nombreJugador);
     if(!id) return;
     const j=jDB.find(x=>x.id===id);
     if(!j) return;
-    const tempJ=(j.temp||'').trim(), tempP=(tempPartido||'').trim();
-    if(tempJ && tempP && tempJ!==tempP) return;
+    if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
     sumar(id,campo);
   };
   // Igual que sumarSiTemporadaOk, pero sumando una cantidad concreta en
@@ -10773,8 +10814,7 @@ function recalcularStatsDesdePartidos(){
     if(!id) return;
     const j=jDB.find(x=>x.id===id);
     if(!j) return;
-    const tempJ=(j.temp||'').trim(), tempP=(tempPartido||'').trim();
-    if(tempJ && tempP && tempJ!==tempP) return;
+    if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
     if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0};
     tally[id][campo]=(tally[id][campo]||0)+cantidad;
   };
@@ -10817,6 +10857,49 @@ function recalcularStatsDesdePartidos(){
     });
   });
 
+  return tally;
+}
+
+/** Igual que _tallyGolesJugadores() pero para el PJ/V/E/D/GF/GC de cada
+ *  EQUIPO (por id), a partir de los marcadores de Partidos. */
+function _tallyStatsEquipos(){
+  const tallyEq={};
+  const sumarEq=(id,gf,gc)=>{
+    if(!id) return;
+    if(!tallyEq[id]) tallyEq[id]={pj:0,v:0,e:0,d:0,gf:0,gc:0};
+    const t=tallyEq[id];
+    t.pj++; t.gf+=gf; t.gc+=gc;
+    if(gf>gc) t.v++; else if(gf===gc) t.e++; else t.d++;
+  };
+  pDB.forEach(p=>{
+    if(!p.local || !p.visitante || p.gf==null || p.gc==null) return;
+    [['local',p.local,p.gf,p.gc],['visitante',p.visitante,p.gc,p.gf]].forEach(([lado,nomEq,gf,gc])=>{
+      const eq=_buscarEquipoPorNombre(nomEq,p.temp);
+      if(!eq) return;
+      if(!_mismaTemporadaTally(eq.temp,p.temp)) return;
+      sumarEq(eq.id,gf,gc);
+    });
+  });
+  return tallyEq;
+}
+
+/** Recalcula Goles/Asistencias/ABP goles/Porterías a cero/Goles recibidos
+ *  de cada jugador, y PJ/V/E/D/GF/GC de cada equipo, sumando lo registrado
+ *  en "Goles del partido" (Partidos) por encima de su base manual
+ *  histórica (statsManualBase). La base se congela la primera vez que se
+ *  ejecuta esto para cada jugador/equipo, así nunca se pierden los datos
+ *  que ya tenías metidos a mano — solo se suma lo nuevo que venga de los
+ *  partidos. guardarJ()/guardarE() se encargan de traspasar esa base
+ *  entre guardados (y de recongelarla si el propio admin corrige un
+ *  número a mano), para que nunca se "descongele" por accidente y se
+ *  vuelva a sumar el tally por encima de un total que ya lo incluía.
+ *  "Partidos jugados" y "Minutos jugados" del JUGADOR NO se tocan aquí: la
+ *  videoteca de Partidos no registra quién estuvo en el once de cada
+ *  equipo, así que no hay de dónde deducirlos sin añadir una convocatoria/
+ *  alineación por partido — de momento se siguen rellenando a mano. */
+function recalcularStatsDesdePartidos(){
+  const tally=_tallyGolesJugadores();
+
   let cambios=false;
   jDB.forEach(j=>{
     if(!j.stats) j.stats={};
@@ -10839,35 +10922,7 @@ function recalcularStatsDesdePartidos(){
   });
   if(cambios) saveJDB();
 
-  // ── PJ/V/E/D/GF/GC del EQUIPO, a partir de los marcadores de Partidos ──
-  // Mismo patrón additivo que arriba para jugadores: "estatsManualBase"
-  // congela lo que ya hubiera metido a mano en la ficha del equipo
-  // (Editar datos → Partidos jugados/Victorias/etc.) la primera vez que
-  // se ejecuta esto, y a partir de ahí solo se le suma lo que se derive
-  // de los marcadores registrados en la videoteca de Partidos — así la
-  // ficha del equipo deja de depender de que alguien rellene esos
-  // números a mano cada vez que se sube un partido nuevo.
-  const mismaTemporadaEq=(tempA,tempB)=>{
-    const a=(tempA||'').trim(), b=(tempB||'').trim();
-    return !a || !b || a===b;
-  };
-  const tallyEq={};
-  const sumarEq=(id,gf,gc)=>{
-    if(!id) return;
-    if(!tallyEq[id]) tallyEq[id]={pj:0,v:0,e:0,d:0,gf:0,gc:0};
-    const t=tallyEq[id];
-    t.pj++; t.gf+=gf; t.gc+=gc;
-    if(gf>gc) t.v++; else if(gf===gc) t.e++; else t.d++;
-  };
-  pDB.forEach(p=>{
-    if(!p.local || !p.visitante || p.gf==null || p.gc==null) return;
-    [['local',p.local,p.gf,p.gc],['visitante',p.visitante,p.gc,p.gf]].forEach(([lado,nomEq,gf,gc])=>{
-      const eq=_buscarEquipoPorNombre(nomEq,p.temp);
-      if(!eq) return;
-      if(!mismaTemporadaEq(eq.temp,p.temp)) return;
-      sumarEq(eq.id,gf,gc);
-    });
-  });
+  const tallyEq=_tallyStatsEquipos();
   let cambiosEq=false;
   eDB.forEach(eq=>{
     if(!eq.stats) eq.stats={};
@@ -11020,8 +11075,14 @@ function sincronizarTacticaDesdePartidos(){
         cambiosJ=true;
         if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
           if(!j.clips) j.clips=[];
-          const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
-          const dupClipIdx=j.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.tipo===g.origen && c.titulo===clipTitulo);
+          const clipTitulo=g.clip.titulo||_tituloAutoClipGol(p.jornada,g.jugador,equipoNom,g.origen,g.minuto);
+          // El fantasma puede venir de ANTES de que existiera el título
+          // "bonito" (J1 - Jugador (Equipo - Origen)) — en ese caso su
+          // título es el formato viejo "Gol min. X", que ya no coincide
+          // con clipTitulo. Se admite también ese formato como coincidencia
+          // para que la autolimpieza no deje de detectarlo.
+          const tituloLegado=`Gol min. ${g.minuto??0}`;
+          const dupClipIdx=j.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.tipo===g.origen && (c.titulo===clipTitulo || c.titulo===tituloLegado));
           if(dupClipIdx>=0){ j.clips.splice(dupClipIdx,1); }
           j.clips.push({
             id:'ap_'+srcTag,
@@ -11069,8 +11130,12 @@ function sincronizarTacticaDesdePartidos(){
           entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',srcPartido:srcTag});
           if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
             if(!eq.clips) eq.clips=[];
-            const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
-            const dupClipIdx=eq.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.jugador===g.jugador && c.tipo===g.origen && c.titulo===clipTitulo);
+            const clipTitulo=g.clip.titulo||_tituloAutoClipGol(p.jornada,g.jugador,equipoNom,g.origen,g.minuto);
+            // Ver comentario equivalente en 3a: admite también el formato
+            // de título antiguo "Gol min. X" para autolimpiar fantasmas
+            // guardados antes de que existiera el título con formato nuevo.
+            const tituloLegado=`Gol min. ${g.minuto??0}`;
+            const dupClipIdx=eq.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.jugador===g.jugador && c.tipo===g.origen && (c.titulo===clipTitulo || c.titulo===tituloLegado));
             if(dupClipIdx>=0) eq.clips.splice(dupClipIdx,1);
             eq.clips.push({
               id:'ap_'+srcTag+'_gf',
@@ -11106,8 +11171,12 @@ function sincronizarTacticaDesdePartidos(){
           cambiosE=true;
           if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
             if(!eqRival.clipsGC) eqRival.clipsGC=[];
-            const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
-            const dupClipIdx=eqRival.clipsGC.findIndex(c=>!c.srcPartido && c.rival===equipoNom && (c.jugador||'')===(g.jugador||'') && c.tipo===g.origen && c.titulo===clipTitulo);
+            const clipTitulo=g.clip.titulo||_tituloAutoClipGol(p.jornada,g.jugador,equipoNom,g.origen,g.minuto);
+            // Ver comentario equivalente en 3a: admite también el formato
+            // de título antiguo "Gol min. X" para autolimpiar fantasmas
+            // guardados antes de que existiera el título con formato nuevo.
+            const tituloLegado=`Gol min. ${g.minuto??0}`;
+            const dupClipIdx=eqRival.clipsGC.findIndex(c=>!c.srcPartido && c.rival===equipoNom && (c.jugador||'')===(g.jugador||'') && c.tipo===g.origen && (c.titulo===clipTitulo || c.titulo===tituloLegado));
             if(dupClipIdx>=0) eqRival.clipsGC.splice(dupClipIdx,1);
             eqRival.clipsGC.push({
               id:'ap_'+srcTag+'_gc',
@@ -11154,6 +11223,16 @@ function guardarPartido(){
     porteroVisitante: document.getElementById('ap-portero-visitante').value.trim(),
     fechaReg: new Date().toISOString()
   };
+  // Si el admin no le puso título al clip de un gol, se autogenera con
+  // jornada + goleador + equipo + taxonomía (p.ej. "J1 - Bryan David
+  // (CD Castuera - Transición Of.)"), para poder identificarlo de un
+  // vistazo en "🥅 Goles" y en las galerías de clips de jugador/equipo.
+  partido.goles.forEach(g=>{
+    if(g.clip && !g.clip.titulo){
+      const equipoNom=g.equipo==='visitante'?partido.visitante:partido.local;
+      g.clip.titulo=_tituloAutoClipGol(partido.jornada,g.jugador,equipoNom,g.origen,g.minuto);
+    }
+  });
   if(editId){ const idx=pDB.findIndex(x=>x.id===editId); if(idx>=0) pDB[idx]=partido; }
   else { pDB.unshift(partido); }
   savePDB();
