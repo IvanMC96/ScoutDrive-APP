@@ -5005,10 +5005,39 @@ function renderJ(){
   { const trForm=document.getElementById('j-trayectoria-form'); if(trForm) trForm.innerHTML=_trayectoriaTablaHTML(true); }
   _autoRadarDesdeStats();
   const kga=kg+ka,kgpj=kp>0?(kg/kp).toFixed(1):'0.0',kgrpj=kp>0?(kgr/kp).toFixed(1):'0.0';
-  const[oA,oAb,oCl,oJd]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd')];const oMx=Math.max(oA,oAb,oCl,oJd,1);
-  const[zA,zAp]=[GN('zag'),GN('zap')];const zMx=Math.max(zA,zAp,1);
-  const[cPd,cCab,cPi]=[GN('cpd'),GN('ccab'),GN('cpi')];const cMx=Math.max(cPd,cCab,cPi,1);
-  const[p1,p2]=[GN('pp1'),GN('pp2')];const pMx=Math.max(p1,p2,1);
+  // Origen táctico / Zona y cuerpo / Goles por periodo: si el jugador ya
+  // tiene goles registrados gol a gol (jGoles, la misma fuente que
+  // alimenta la tabla "Registro Goles" de justo al lado), estas barras se
+  // calculan contando esos goles reales — para que no se queden a 0 (o con
+  // un valor manual desfasado) aunque la tabla de al lado ya muestre los
+  // goles correctamente. Solo se cae a los sliders manuales (oatq/zag/
+  // cpd/pp1...) cuando el jugador no tiene ningún gol con taxonomía
+  // registrada todavía.
+  let oA,oAb,oCl,oJd,zA,zAp,cPd,cCab,cPi,p1,p2;
+  if(jGoles.length>0){
+    oA=oAb=oCl=oJd=zA=zAp=cPd=cCab=cPi=p1=p2=0;
+    jGoles.forEach(gl=>{
+      if(gl.origen==='Ataque Organizado') oA++;
+      else if(gl.origen==='ABP Ofensiva') oAb++;
+      else if(gl.origen==='Centro Lateral') oCl++;
+      else if(gl.origen==='Juego Directo') oJd++;
+      if(gl.zona==='Área Grande') zA++;
+      else if(gl.zona==='Área Pequeña') zAp++;
+      if(gl.cuerpo==='Pie Derecho') cPd++;
+      else if(gl.cuerpo==='Cabeza') cCab++;
+      else if(gl.cuerpo==='Pie Izquierdo') cPi++;
+      if((gl.min||0)<=45) p1++; else p2++;
+    });
+  }else{
+    [oA,oAb,oCl,oJd]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd')];
+    [zA,zAp]=[GN('zag'),GN('zap')];
+    [cPd,cCab,cPi]=[GN('cpd'),GN('ccab'),GN('cpi')];
+    [p1,p2]=[GN('pp1'),GN('pp2')];
+  }
+  const oMx=Math.max(oA,oAb,oCl,oJd,1);
+  const zMx=Math.max(zA,zAp,1);
+  const cMx=Math.max(cPd,cCab,cPi,1);
+  const pMx=Math.max(p1,p2,1);
   const p1h=Math.round(p1/pMx*80),p2h=Math.round(p2/pMx*80);
   const formaH=jForma.map(f=>`<div class="fchip ${f==='g'||f==='gol'?'fcg':f==='a'||f==='asist'?'fca':'fcn'}">${f==='g'||f==='gol'?'⚽':f==='a'||f==='asist'?'🅰️':'·'}</div>`).join('');
   const golesH=jGoles.length===0?'<p style="font-size:10px;color:var(--gris)">Sin goles</p>'
@@ -5713,7 +5742,7 @@ function editE(id){
   uzZone('eesc',imgStore.eesc);
   eClips=(eq.clips||[]).map(c=>({...c,blobURL:null})); eClipCnt=eClips.length;
   eClipsGC=(eq.clipsGC||[]).map(c=>({...c,blobURL:null})); eClipGCCnt=eClipsGC.length;
-  buildEPartidos();buildEGC();buildEClips();
+  buildEPartidos();buildEGC();buildEClips();buildEClipsGC();
   navTo('equipo-ed');renderE();
 }
 
@@ -12238,7 +12267,7 @@ function renderEClipsGC(){
   if(!eClipsGC||!eClipsGC.length) return '';
   const cards = eClipsGC.map((cl,i)=>{
     const hasV = (cl.blobURL&&cl.srcType==='blob')||(cl.src&&
-      (cl.srcType==='youtube'||cl.srcType==='gdrive'||cl.srcType==='direct'));
+      (cl.srcType==='youtube'||cl.srcType==='gdrive'||cl.srcType==='direct'))||cl.srcType==='blob_local';
     let mH = '';
     if(cl.portada){
       mH = '<div class="eclip-portada-wrap" onclick="gcClipAbrirModal('+i+')">'
