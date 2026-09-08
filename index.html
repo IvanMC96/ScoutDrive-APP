@@ -4784,22 +4784,50 @@ function guardarJ(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const nom=G('jnom').trim();if(!nom){toast('Añade el nombre del jugador',true);return;}
   const id=jId||('j_'+Date.now());jId=id;
+  // Los goles/clips sincronizados desde "⚽ Partidos" (marcados con
+  // srcPartido) NO se reconstruyen aquí desde jGoles/jClips — se traen
+  // frescos del registro que ya hay en jDB. Antes, este guardado
+  // reconstruía "clips" entero desde jClips con un mapeo que no copiaba
+  // srcPartido: en cuanto se guardaba la ficha una vez, ese clip
+  // sincronizado se quedaba "desetiquetado", y la siguiente
+  // sincronización lo daba por manual (no lo tocaba) y encima añadía su
+  // propia copia recién generada — el mismo gol quedaba duplicado (uno
+  // "fantasma" sin vídeo con título propio + el de verdad). Igual que se
+  // arregló ya para guardarE()/eq.clips. Además, así tampoco se pierde un
+  // gol/clip que se hubiera sincronizado DESPUÉS de abrir este formulario
+  // (formulario "desfasado"): se coge lo sincronizado tal cual esté en
+  // jDB en este instante, no la foto de cuando se abrió la ficha.
+  const jPrevio=jDB.find(x=>x.id===id);
+  const golesSincronizados=(jPrevio?.goles||[]).filter(g=>g.srcPartido);
+  const clipsSincronizados=(jPrevio?.clips||[]).filter(c=>c.srcPartido);
+  const golesManualGuardar=jGoles.filter(g=>!g.srcPartido);
+  const clipsManualGuardar=jClips.filter(c=>!c.srcPartido).map(c=>({id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
+    srcType:c.srcType==='blob'?'blob_local':c.srcType,
+    src:c.srcType==='blob'?'':c.src,portada:c.portada||null}));
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
     stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
-    forma:[...jForma],goles:[...jGoles],radar:[...jRadar],gk:[...jGK],golesEncajados:[...jGolesEncajados],nota:G('jnota'),
+    forma:[...jForma],goles:[...golesSincronizados,...golesManualGuardar],radar:[...jRadar],gk:[...jGK],golesEncajados:[...jGolesEncajados],nota:G('jnota'),
     imgJug:imgStore.jfoto||null,imgEsc:imgStore.jesc||null,
-    clips:jClips.map(c=>({id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
-      srcType:c.srcType==='blob'?'blob_local':c.srcType,
-      src:c.srcType==='blob'?'':c.src,portada:c.portada||null})),
+    clips:[...clipsSincronizados,...clipsManualGuardar],
     highlight:{titulo:jHighlight.titulo||'',temporada:jHighlight.temporada||'',
       srcType:jHighlight.srcType==='blob'?'blob_local':(jHighlight.srcType||''),
       src:jHighlight.srcType==='blob'?'':(jHighlight.src||''),portada:jHighlight.portada||null},
     temporadas:[...jTemporadas],
     fecha:new Date().toLocaleDateString('es-ES')};
+  // "statsManualBase" es la base congelada (goles/asist./etc. "de antes
+  // de sincronizar") de la que parte recalcularStatsDesdePartidos() para
+  // sumar SOLO lo nuevo que viene de Partidos, sin duplicar. Ningún campo
+  // del formulario la toca — si no se traspasa aquí, este guardado la
+  // borraría, y la siguiente sincronización la "congelaría" de nuevo a
+  // partir del total YA CORRECTO que se acaba de guardar (que ya incluye
+  // lo sincronizado) sumándole otra vez el tally de Partidos encima — los
+  // goles del jugador se duplicaban con solo guardar su ficha una vez
+  // (p.ej. al cambiar el dorsal).
+  if(jPrevio?.statsManualBase) j.statsManualBase=jPrevio.statsManualBase;
   const idx=jDB.findIndex(x=>x.id===id);
   if(idx>=0)jDB[idx]=j;else jDB.unshift(j);
   saveJDB();toast(`✅ ${nom} guardado`);
@@ -5887,6 +5915,16 @@ function guardarE(){
     if(eDB[idx2].campoOverrides) eq.campoOverrides=eDB[idx2].campoOverrides;
     if(eDB[idx2].campoSponsor) eq.campoSponsor=eDB[idx2].campoSponsor;
     if(eDB[idx2].alineaciones) eq.alineaciones=eDB[idx2].alineaciones;
+    // "statsManualBase" es la base congelada (goles/partidos "de antes de
+    // sincronizar") de la que parte recalcularStatsDesdePartidos() para
+    // sumar SOLO lo nuevo que viene de Partidos, sin duplicar. No la toca
+    // ningún campo del formulario — si no se traspasa aquí, este guardado
+    // la borraría, y la siguiente sincronización la volvería a "congelar"
+    // a partir del total YA CORRECTO que se acaba de guardar (que ya
+    // incluye lo sincronizado) y encima le sumaría otra vez el tally de
+    // Partidos encima — el PJ/GF/GC del equipo se duplicaba con solo
+    // guardar su ficha una vez (p.ej. al cambiar el entrenador).
+    if(eDB[idx2].statsManualBase) eq.statsManualBase=eDB[idx2].statsManualBase;
     eDB[idx2]=eq;
   }
   else eDB.unshift(eq);
@@ -10763,13 +10801,17 @@ function recalcularStatsDesdePartidos(){
   });
 
   // Fuente 2: goles registrados en la ficha del Equipo, dentro de cada
-  // partido ("⚽ Partidos + Goles a Favor" → jugador que marca).
-  // IMPORTANTE: si un gol ya está contado por Partidos (fuente 1), no lo
-  // vuelvas a registrar aquí también o se sumará dos veces — usa un solo
-  // sitio por gol.
+  // partido ("⚽ Partidos + Goles a Favor" → jugador que marca) — pero
+  // SOLO los metidos a mano ahí directamente. Los que trae "srcPartido"
+  // son la copia-espejo que sincronizarTacticaDesdePartidos() ya copió
+  // desde la videoteca de Partidos, y ESE gol ya se cuenta en la Fuente 1
+  // de aquí arriba — sin este filtro se sumaba dos veces cada gol
+  // registrado desde "⚽ Partidos" (el caso normal), doblando el goleador
+  // (p.ej. 3 goles reales apareciendo como "6" en la ficha del jugador).
   eDB.forEach(eq=>{
     (eq.partidos||[]).forEach(p=>{
       (p.golesGF||[]).forEach(g=>{
+        if(g.srcPartido) return;
         if(g.jugador) sumar(jugadorIdPorNombre(g.jugador),'g');
       });
     });
@@ -10962,13 +11004,28 @@ function sincronizarTacticaDesdePartidos(){
         if(!mismaTemporada(j.temp,p.temp)) return;
         const srcTag=p.id+'_'+i;
         if(!j.goles) j.goles=[];
+        // Autolimpieza de un bug ya corregido (ver guardarJ): guardar la
+        // ficha del jugador podía "desetiquetar" (perder el srcPartido)
+        // un gol ya sincronizado — la siguiente sincronización lo daba
+        // entonces por manual (no lo tocaba) y ADEMÁS generaba su propia
+        // copia recién etiquetada, así que el mismo gol quedaba
+        // duplicado. Antes de regenerar, se quita cualquier gol suelto
+        // (sin srcPartido) que sea EXACTAMENTE este mismo gol (mismo
+        // rival+origen+minuto) — nunca toca un gol manual genuinamente
+        // distinto, solo el "fantasma" que coincide del todo con el que
+        // se va a regenerar ahora mismo.
+        const dupGolIdx=j.goles.findIndex(gl=>!gl.srcPartido && gl.rival===rivalNom && gl.origen===g.origen && (gl.min??0)===(g.minuto??0));
+        if(dupGolIdx>=0){ j.goles.splice(dupGolIdx,1); cambiosJ=true; }
         j.goles.push({min:g.minuto??0,rival:rivalNom,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',desc:g.desc||'',srcPartido:srcTag});
         cambiosJ=true;
         if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
           if(!j.clips) j.clips=[];
+          const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
+          const dupClipIdx=j.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.tipo===g.origen && c.titulo===clipTitulo);
+          if(dupClipIdx>=0){ j.clips.splice(dupClipIdx,1); }
           j.clips.push({
             id:'ap_'+srcTag,
-            titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+            titulo:clipTitulo,
             rival:rivalNom,
             tipo:g.origen,
             srcType:g.clip.srcType||'',
@@ -11001,12 +11058,23 @@ function sincronizarTacticaDesdePartidos(){
         golesLado.forEach((g,i)=>{
           if(!g.jugador || !g.origen) return;
           const srcTag=p.id+'_'+i;
+          // Misma autolimpieza que en 3a (ver comentario allí): un gol
+          // "fantasma" sin srcPartido que sobrevivió a un guardado
+          // antiguo de la ficha del equipo, y que coincide del todo con
+          // el que se va a regenerar ahora (mismo jugador+origen+minuto
+          // dentro de este mismo partido), se quita antes de añadir el
+          // recién sincronizado.
+          const dupGolIdx=entry.golesGF.findIndex(gl=>!gl.srcPartido && gl.jugador===g.jugador && gl.origen===g.origen && (gl.min??0)===(g.minuto??0));
+          if(dupGolIdx>=0) entry.golesGF.splice(dupGolIdx,1);
           entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',srcPartido:srcTag});
           if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
             if(!eq.clips) eq.clips=[];
+            const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
+            const dupClipIdx=eq.clips.findIndex(c=>!c.srcPartido && c.rival===rivalNom && c.jugador===g.jugador && c.tipo===g.origen && c.titulo===clipTitulo);
+            if(dupClipIdx>=0) eq.clips.splice(dupClipIdx,1);
             eq.clips.push({
               id:'ap_'+srcTag+'_gf',
-              titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+              titulo:clipTitulo,
               rival:rivalNom,
               jugador:g.jugador,
               tipo:g.origen,
@@ -11031,13 +11099,19 @@ function sincronizarTacticaDesdePartidos(){
         golesLado.forEach((g,i)=>{
           if(!g.origen) return;
           const srcTag=p.id+'_'+i;
+          // Misma autolimpieza que en 3a/3b (ver comentario en 3a).
+          const dupGolIdx=eqRival.gcGoles.findIndex(gl=>!gl.srcPartido && gl.rival===equipoNom && (gl.jugador||'')===(g.jugador||'') && gl.origen===g.origen && (gl.min??0)===(g.minuto??0));
+          if(dupGolIdx>=0) eqRival.gcGoles.splice(dupGolIdx,1);
           eqRival.gcGoles.push({min:g.minuto??0,rival:equipoNom,jugador:g.jugador||'',origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',desc:g.desc||'',srcPartido:srcTag});
           cambiosE=true;
           if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
             if(!eqRival.clipsGC) eqRival.clipsGC=[];
+            const clipTitulo=g.clip.titulo||`Gol min. ${g.minuto??0}`;
+            const dupClipIdx=eqRival.clipsGC.findIndex(c=>!c.srcPartido && c.rival===equipoNom && (c.jugador||'')===(g.jugador||'') && c.tipo===g.origen && c.titulo===clipTitulo);
+            if(dupClipIdx>=0) eqRival.clipsGC.splice(dupClipIdx,1);
             eqRival.clipsGC.push({
               id:'ap_'+srcTag+'_gc',
-              titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+              titulo:clipTitulo,
               rival:equipoNom,
               jugador:g.jugador||'',
               tipo:g.origen,
