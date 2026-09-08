@@ -10761,16 +10761,26 @@ function recalcularStatsDesdePartidos(){
 
 // ── SINCRONIZAR "CÓMO FUE EL GOL" DE PARTIDOS → FICHA JUGADOR Y EQUIPO ──
 // Cuando en "Goles del partido" (Partidos) se elige el origen táctico de
-// un gol, esta función lo copia automáticamente:
-//  - a la ficha del JUGADOR que marcó (j.goles), para que aparezca en su
-//    "Registro Goles · Taxonomía Táctica"
-//  - a la ficha del EQUIPO que marcó (eq.partidos[].golesGF), el mismo
-//    listado que ya usa "⚽ Goles a favor" dentro de la ficha de equipo
+// un gol, esta función lo copia automáticamente a las CUATRO fichas
+// donde ese mismo gol tiene que verse reflejado:
+//  - JUGADOR que marcó (j.goles + j.clips si trae vídeo), para que
+//    aparezca en su "Registro Goles · Taxonomía Táctica"
+//  - EQUIPO que marcó (eq.partidos[].golesGF + eq.clips si trae vídeo),
+//    el mismo listado y galería que ya usa "⚽ Goles a favor" / "🎬 Clips
+//    de Goles" dentro de la ficha de equipo
+//  - EQUIPO que lo encaja (eq.gcGoles + eq.clipsGC si trae vídeo), el
+//    mismo listado y galería que ya usa "🔴 Goles en contra" / "🎬 Clips
+//    de Goles en Contra" — así el que lo encaja también lo ve
+//    sincronizado en su propia ficha, no solo el que marca.
 // Es una recomputación completa e idempotente, igual que
 // recalcularStatsDesdePartidos: primero quita todo lo sincronizado la
 // vez anterior (marcado con srcPartido/srcPartidoId) y lo vuelve a
 // generar desde pDB — así nunca duplica ni se desincroniza, y nunca
 // toca lo que el usuario metió a mano en las fichas.
+// La vista unificada de "🥅 Goles" (calcularTodosLosGoles/Clips) hace lo
+// simétrico: se salta estas copias-espejo (todo lo marcado srcPartido)
+// y lee el gol/clip UNA sola vez, completo, directamente de pDB — así
+// el mismo gol nunca se lista 3 veces solo por existir en 3 fichas.
 function sincronizarTacticaDesdePartidos(){
   let cambiosJ=false, cambiosE=false;
 
@@ -10792,18 +10802,36 @@ function sincronizarTacticaDesdePartidos(){
   });
 
   // 2) Quitar del equipo: los goles sincronizados de partidos manuales,
-  // y los partidos que se auto-crearon enteros la vez anterior.
+  // los partidos que se auto-crearon enteros la vez anterior, y los
+  // clips/goles en contra sincronizados en sus dos galerías (a favor y
+  // en contra) — mismo criterio srcPartido en las cuatro.
   eDB.forEach(eq=>{
-    if(!eq.partidos||!eq.partidos.length) return;
-    const antes=eq.partidos.length;
-    eq.partidos.forEach(p=>{
-      if(!p.golesGF||!p.golesGF.length) return;
-      const antesGF=p.golesGF.length;
-      p.golesGF=p.golesGF.filter(g=>!g.srcPartido);
-      if(p.golesGF.length!==antesGF) cambiosE=true;
-    });
-    eq.partidos=eq.partidos.filter(p=>!p.srcPartidoId);
-    if(eq.partidos.length!==antes) cambiosE=true;
+    if(eq.partidos&&eq.partidos.length){
+      const antes=eq.partidos.length;
+      eq.partidos.forEach(p=>{
+        if(!p.golesGF||!p.golesGF.length) return;
+        const antesGF=p.golesGF.length;
+        p.golesGF=p.golesGF.filter(g=>!g.srcPartido);
+        if(p.golesGF.length!==antesGF) cambiosE=true;
+      });
+      eq.partidos=eq.partidos.filter(p=>!p.srcPartidoId);
+      if(eq.partidos.length!==antes) cambiosE=true;
+    }
+    if(eq.clips && eq.clips.length){
+      const antesC=eq.clips.length;
+      eq.clips=eq.clips.filter(c=>!c.srcPartido);
+      if(eq.clips.length!==antesC) cambiosE=true;
+    }
+    if(eq.gcGoles && eq.gcGoles.length){
+      const antesGC=eq.gcGoles.length;
+      eq.gcGoles=eq.gcGoles.filter(g=>!g.srcPartido);
+      if(eq.gcGoles.length!==antesGC) cambiosE=true;
+    }
+    if(eq.clipsGC && eq.clipsGC.length){
+      const antesCGC=eq.clipsGC.length;
+      eq.clipsGC=eq.clipsGC.filter(c=>!c.srcPartido);
+      if(eq.clipsGC.length!==antesCGC) cambiosE=true;
+    }
   });
 
   // 3) Volver a generar desde pDB.
@@ -10862,26 +10890,75 @@ function sincronizarTacticaDesdePartidos(){
         }
       });
 
-      // 3b) Ficha del equipo — se sincroniza el marcador siempre que el
-      // equipo exista en Equipos (aunque a los goles no se les haya
-      // puesto origen todavía) Y el partido sea de SU temporada actual,
-      // fusionando con un partido ya existente en su ficha si coincide
-      // rival+fecha, o creando uno nuevo si no.
+      // 3b) Ficha del equipo que marca — se sincroniza el marcador
+      // siempre que el equipo exista en Equipos (aunque a los goles no
+      // se les haya puesto origen todavía) Y el partido sea de SU
+      // temporada actual, fusionando con un partido ya existente en su
+      // ficha si coincide rival+fecha, o creando uno nuevo si no. Si el
+      // gol trae vídeo o portada, se guarda también en su galería de
+      // "🎬 Clips de Goles" (goles a favor) — mismo criterio que en el
+      // jugador (3a): marcado con srcPartido para poder regenerarlo sin
+      // duplicar.
       const eq=_buscarEquipoPorNombre(equipoNom,p.temp);
-      if(!eq) return;
-      if(!mismaTemporada(eq.temp,p.temp)) return;
-      if(!eq.partidos) eq.partidos=[];
-      let entry=eq.partidos.find(x=>(x.rival||'').trim().toLowerCase()===(rivalNom||'').trim().toLowerCase() && (x.fecha||'')===(p.fecha||''));
-      if(!entry){
-        entry={rival:rivalNom,gf:gf,gc:gc,fecha:p.fecha||'',comp:p.comp||'Liga',golesGF:[],srcPartidoId:p.id+'_'+lado};
-        eq.partidos.push(entry);
+      if(eq && mismaTemporada(eq.temp,p.temp)){
+        if(!eq.partidos) eq.partidos=[];
+        let entry=eq.partidos.find(x=>(x.rival||'').trim().toLowerCase()===(rivalNom||'').trim().toLowerCase() && (x.fecha||'')===(p.fecha||''));
+        if(!entry){
+          entry={rival:rivalNom,gf:gf,gc:gc,fecha:p.fecha||'',comp:p.comp||'Liga',golesGF:[],srcPartidoId:p.id+'_'+lado};
+          eq.partidos.push(entry);
+        }
+        if(!entry.golesGF) entry.golesGF=[];
+        golesLado.forEach((g,i)=>{
+          if(!g.jugador || !g.origen) return;
+          const srcTag=p.id+'_'+i;
+          entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',srcPartido:srcTag});
+          if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
+            if(!eq.clips) eq.clips=[];
+            eq.clips.push({
+              id:'ap_'+srcTag+'_gf',
+              titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+              rival:rivalNom,
+              jugador:g.jugador,
+              tipo:g.origen,
+              srcType:g.clip.srcType||'',
+              src:g.clip.src||'',
+              portada:g.clip.portada||null,
+              srcPartido:srcTag
+            });
+          }
+        });
+        cambiosE=true;
       }
-      if(!entry.golesGF) entry.golesGF=[];
-      golesLado.forEach((g,i)=>{
-        if(!g.jugador || !g.origen) return;
-        entry.golesGF.push({min:g.minuto??0,jugador:g.jugador,origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',portero:g.portero||'',srcPartido:p.id+'_'+i});
-      });
-      cambiosE=true;
+
+      // 3c) Ficha del equipo RIVAL (el que lo encaja) — el mismo gol
+      // visto como "Goles en contra": misma taxonomía en eq.gcGoles y,
+      // si trae vídeo, el mismo clip también en su galería de "Clips de
+      // Goles en Contra" (eq.clipsGC) — así el que encaja también lo ve
+      // sincronizado en su propia ficha, no solo el que marca.
+      const eqRival=_buscarEquipoPorNombre(rivalNom,p.temp);
+      if(eqRival && mismaTemporada(eqRival.temp,p.temp)){
+        if(!eqRival.gcGoles) eqRival.gcGoles=[];
+        golesLado.forEach((g,i)=>{
+          if(!g.origen) return;
+          const srcTag=p.id+'_'+i;
+          eqRival.gcGoles.push({min:g.minuto??0,rival:equipoNom,jugador:g.jugador||'',origen:g.origen,subtipo:g.subtipo||'',fase:FASE[g.origen]||'',zona:g.zona||'',cuerpo:g.cuerpo||'',desc:g.desc||'',srcPartido:srcTag});
+          cambiosE=true;
+          if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
+            if(!eqRival.clipsGC) eqRival.clipsGC=[];
+            eqRival.clipsGC.push({
+              id:'ap_'+srcTag+'_gc',
+              titulo:g.clip.titulo||`Gol min. ${g.minuto??0}`,
+              rival:equipoNom,
+              jugador:g.jugador||'',
+              tipo:g.origen,
+              srcType:g.clip.srcType||'',
+              src:g.clip.src||'',
+              portada:g.clip.portada||null,
+              srcPartido:srcTag
+            });
+          }
+        });
+      }
     });
   });
 
@@ -10951,13 +11028,23 @@ function borrarPartido(id){
 //  haga falta registrar nada dos veces:
 //   1) Ficha del jugador → j.goles (taxonomía táctica completa)
 //   2) Ficha del equipo  → eq.partidos[].golesGF (por partido)
-//   3) Partidos (videoteca) → p.goles (jugador/asistencia/penalti)
+//   3) Partidos (videoteca) → p.goles (jugador/asistencia/penalti,
+//      taxonomía completa y clip)
+//  Desde que "Editar partido" sincroniza cada gol A LA VEZ en las tres
+//  fichas (ver sincronizarTacticaDesdePartidos), un mismo gol real
+//  puede existir literalmente en las tres — así que aquí, para no
+//  listarlo 3 veces, las entradas de jDB/eDB marcadas con "srcPartido"
+//  (es decir, las que son solo un espejo generado desde un partido) se
+//  saltan: ese gol ya aparece una sola vez, completo, como fuente
+//  "Partido". Solo se cuentan de jDB/eDB los goles genuinamente
+//  manuales (sin srcPartido) que nunca pasaron por Partidos.
 // ════════════════════════════════════════════════════════════════
 function calcularTodosLosGoles(){
   const lista=[];
 
   jDB.forEach(j=>{
     (j.goles||[]).forEach((g,i)=>{
+      if(g.srcPartido) return; // ya sale como fuente "Partido" más abajo
       lista.push({
         id:'j_'+j.id+'_'+i,
         jugador:(j.nom+' '+j.ape).trim()||'—',
@@ -10980,6 +11067,7 @@ function calcularTodosLosGoles(){
   eDB.forEach(eq=>{
     (eq.partidos||[]).forEach(p=>{
       (p.golesGF||[]).forEach((g,i)=>{
+        if(g.srcPartido) return; // ya sale como fuente "Partido" más abajo
         lista.push({
           id:'e_'+eq.id+'_'+(p.id||'')+'_'+i,
           jugador:g.jugador||'—',
@@ -11011,10 +11099,16 @@ function calcularTodosLosGoles(){
         equipo:equipoNom,
         rival:rivalNom,
         minuto:g.minuto??null,
-        origen:'',
-        subtipo:'',
-        zona:'',
-        cuerpo:'',
+        // Taxonomía completa: se lee directamente del gol del partido
+        // (mismos campos que "Editar partido → Más detalles"), en vez
+        // de dejarla en blanco como antes — así esta fila, que es la
+        // única representación de este gol tras el filtro de arriba,
+        // no se queda coja de datos.
+        origen:g.origen||'—',
+        subtipo:g.subtipo||'',
+        zona:g.zona||'',
+        cuerpo:g.cuerpo||'',
+        desc:g.desc||'',
         portero:g.portero||'',
         asistencia:g.asistencia||'',
         penalti:!!g.penalti,
@@ -11350,24 +11444,54 @@ function _clipTieneAlgoQueMostrar(c){
   if(c.srcType==='blob_local' && c.id!=null) return !!_clipBlobRegistro()[c.id];
   return false;
 }
+// Igual que calcularTodosLosGoles(): desde "Editar partido" un mismo
+// clip se guarda A LA VEZ en la ficha del jugador que marcó (j.clips),
+// en la del equipo que marcó (eq.clips, "a favor") y en la del equipo
+// que lo encajó (eq.clipsGC, "en contra") — las tres marcadas con el
+// mismo "srcPartido". Para no listar el mismo vídeo 3 veces aquí, esas
+// copias-espejo se saltan y en su lugar se lee UNA sola vez, completo,
+// directamente del gol en pDB (fuente "Partido"). Los clips sueltos
+// realmente manuales (sin srcPartido, nunca pasaron por Partidos)
+// siguen contando como antes.
 function calcularTodosLosClips(){
   const lista=[];
   jDB.forEach(j=>{
     (j.clips||[]).forEach(c=>{
+      if(c.srcPartido) return; // ya sale como fuente "Partido" más abajo
       if(!_clipTieneAlgoQueMostrar(c)) return;
       lista.push(Object.assign({},c,{jugador:(j.nom+' '+j.ape).trim()||'—',jugadorId:j.id,equipo:j.club||'—',fuente:'Jugador'}));
     });
   });
   eDB.forEach(eq=>{
     (eq.clips||[]).forEach(c=>{
+      if(c.srcPartido) return; // ya sale como fuente "Partido" más abajo
       if(!_clipTieneAlgoQueMostrar(c)) return;
       const nomJug=(c.jugador||'').trim();
       const jid=nomJug?jugadorIdPorNombre(nomJug):null;
       lista.push(Object.assign({},c,{jugador:nomJug,jugadorId:jid,equipo:eq.nom||'—',fuente:'Equipo · A favor'}));
     });
     (eq.clipsGC||[]).forEach(c=>{
+      if(c.srcPartido) return; // ya sale como fuente "Partido" más abajo
       if(!_clipTieneAlgoQueMostrar(c)) return;
       lista.push(Object.assign({},c,{jugador:(c.jugador||'').trim(),jugadorId:null,equipo:eq.nom||'—',fuente:'Equipo · En contra'}));
+    });
+  });
+  pDB.forEach(p=>{
+    (p.goles||[]).forEach((g,i)=>{
+      if(!g.clip) return;
+      const c=g.clip;
+      if(!_clipTieneAlgoQueMostrar(c)) return;
+      const equipoNom = g.equipo==='visitante' ? (p.visitante||'—') : (p.local||'—');
+      const rivalNom  = g.equipo==='visitante' ? (p.local||'—') : (p.visitante||'—');
+      lista.push(Object.assign({},c,{
+        id:'p_'+p.id+'_'+i,
+        jugador:g.jugador||'',
+        jugadorId:(typeof jugadorIdPorNombre==='function')?jugadorIdPorNombre(g.jugador):null,
+        equipo:equipoNom,
+        rival:rivalNom,
+        tipo:c.tipo||g.origen||'',
+        fuente:'Partido'
+      }));
     });
   });
   return lista.filter(c=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(c.equipo)));
