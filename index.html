@@ -223,6 +223,10 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);colo
 .ck:last-child{border-right:none;}
 .ckv{font-size:16px;font-weight:800;}
 .ckl{font-size:8px;color:var(--gris);text-transform:uppercase;margin-top:2px;}
+.racha-eq{display:flex;align-items:center;gap:5px;padding:7px 12px;border-top:1px solid var(--border);}
+.racha-lbl{font-size:8px;color:var(--gris);text-transform:uppercase;letter-spacing:.5px;margin-right:2px;}
+.racha-box{width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:800;flex-shrink:0;}
 .card-act{padding:8px 12px;display:flex;gap:5px;border-top:1px solid var(--border);}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:12px;padding:50px;color:var(--gris);text-align:center;grid-column:1/-1;}
@@ -913,6 +917,9 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .partido-card-vis.vis-e{border-left-color:var(--naranja);}
 .pcard-main{display:grid;grid-template-columns:1fr auto 1fr;
   align-items:center;gap:8px;padding:9px 12px;cursor:pointer;}
+.pcard-escudo{width:26px;height:26px;object-fit:contain;border-radius:5px;
+  background:var(--bg2);flex-shrink:0;}
+.pcard-escudo-fallback{display:flex;align-items:center;justify-content:center;font-size:13px;}
 .pcard-fecha{font-size:9px;color:var(--gris2);}
 .pcard-rival{font-size:12px;font-weight:700;color:var(--blanco);}
 .pcard-comp{font-size:9px;color:var(--gris);margin-top:1px;}
@@ -5548,6 +5555,35 @@ function poblarFiltrosYDatalistsEquipos(lista){
   }
 }
 
+/** Racha de los últimos N partidos jugados de un equipo (5 por defecto),
+ *  como una fila de recuadros V/E/D coloreados — se pinta en la tarjeta
+ *  de la lista de Equipos. Recibe directamente el array "partidos" del
+ *  equipo (eq.partidos, o vista.partidos si hay un filtro de temporada
+ *  activo) — el mismo que ya alimenta el "Registro de Partidos" de la
+ *  ficha completa, y que sincronizarTacticaDesdePartidos() mantiene al
+ *  día cada vez que se guarda/edita un partido — así que la racha
+ *  siempre coincide con lo último registrado en "⚽ Partidos" sin
+ *  necesitar ningún cálculo aparte. Se ordena por fecha (los partidos
+ *  sin fecha se tratan como los más antiguos) para que "los últimos 5"
+ *  sean de verdad los más recientes y no el orden de guardado. */
+function _rachaHTML(partidosArr,n=5){
+  const jugados=(partidosArr||[]).filter(p=>p.gf!=null && p.gc!=null);
+  const ultimos=[...jugados].sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')).slice(-n);
+  if(!ultimos.length) return '';
+  const COLOR={v:'var(--verde-cl)',e:'var(--naranja-cl)',d:'var(--rojo-cl)'};
+  const FONDO={v:'rgba(63,185,80,.18)',e:'rgba(210,153,34,.18)',d:'rgba(248,81,73,.18)'};
+  const LETRA={v:'V',e:'E',d:'D'};
+  return `<div class="racha-eq">
+    <span class="racha-lbl">Racha</span>
+    ${ultimos.map(p=>{
+      const pg=p.gf||0,pcg=p.gc||0;
+      const r=pg>pcg?'v':pg===pcg?'e':'d';
+      const titulo=`${p.rival?p.rival+' · ':''}${pg}-${pcg}${p.fecha?' · '+p.fecha:''}`;
+      return `<span class="racha-box" style="color:${COLOR[r]};background:${FONDO[r]}" title="${eH(titulo)}">${LETRA[r]}</span>`;
+    }).join('')}
+  </div>`;
+}
+
 function renderEDB(){
   // Autorreparación: cualquier equipo sin id (puede pasar si llegó de una
   // sincronización antigua o incompleta) se queda "huérfano" y su botón
@@ -5601,9 +5637,12 @@ function renderEDB(){
     </div>${_sponsorHTMLMulti(_adsE,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
       <div class="ck"><div class="ckv">${s.pj||0}</div><div class="ckl">PJ</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde-cl)">${s.v||0}V</div><div class="ckl">Victorias</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--naranja-cl)">${s.e||0}E</div><div class="ckl">Empates</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--rojo-cl)">${s.d||0}D</div><div class="ckl">Derrotas</div></div>
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.gf||0}</div><div class="ckl">GF</div></div>
       <div class="ck"><div class="ckv" style="color:var(--rojo-cl)">${s.gc||0}</div><div class="ckl">GC</div></div>
-    </div><div class="card-act">
+      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${(s.v||0)*3+(s.e||0)}</div><div class="ckl">Puntos</div></div>
+    </div>${_rachaHTML(vista.partidos||eq.partidos)}<div class="card-act">
       ${esAdminActual()?`<button class="btn b-azul b-sm" onclick="editE('${eq.id}')">✏️ Editar</button>`:`<button class="btn b-ghost b-sm" onclick="editE('${eq.id}')">👁 Ver</button>`}
       <button class="btn b-ghost b-sm" onclick="xEExcel('${eq.id}')">📊</button>
       ${esAdminActual()?`<button class="btn b-rojo b-sm" data-del-equipo="${eH(eq.id)}" data-del-equipo-esactual="${vista._esActual?'1':'0'}" data-del-equipo-temp="${eH(vista.temp||'')}" onclick="borrarEquipo(this)">🗑</button>`:''}
@@ -7551,6 +7590,13 @@ function renderE(){
         const resCls={'v':'pcard-res-v','e':'pcard-res-e','d':'pcard-res-d'}[resKey];
         const visCls={'v':'vis-v','e':'vis-e','d':'vis-d'}[resKey];
         const gfMins=(p.golesGF||[]).map(g=>`m.${g.min}`).join(' · ')||'—';
+        // Escudo del rival — se busca por nombre (y, si coincide, por la
+        // misma temporada que este equipo, para no coger por error el
+        // escudo de una ficha antigua de un club con el mismo nombre).
+        const eqRival=p.rival?_buscarEquipoPorNombre(p.rival,temp):null;
+        const escudoRivalH=eqRival&&eqRival.imgEsc
+          ? `<img src="${eH(eqRival.imgEsc)}" class="pcard-escudo" alt="">`
+          : `<div class="pcard-escudo pcard-escudo-fallback">🛡️</div>`;
         // Goles detalle
         const golesDetalleH=(p.golesGF||[]).length===0
           ? '<p style="font-size:10px;color:var(--gris2);padding:4px 0">Sin goles registrados en este partido</p>'
@@ -7566,9 +7612,12 @@ function renderE(){
             }).join('');
         return `<div class="partido-card-vis ${visCls}">
           <div class="pcard-main" onclick="togglePcard(${pi})">
-            <div>
-              <div class="pcard-fecha">${p.fecha||'Sin fecha'} · ${p.comp||'Liga'}</div>
-              <div class="pcard-rival">${eH(p.rival||'Sin rival')}</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              ${escudoRivalH}
+              <div>
+                <div class="pcard-fecha">${p.fecha||'Sin fecha'} · ${p.comp||'Liga'}</div>
+                <div class="pcard-rival">${eH(p.rival||'Sin rival')}</div>
+              </div>
             </div>
             <div class="pcard-score">
               <div class="pcard-marcador">${pg} <span style="color:var(--gris2);font-size:14px">:</span> ${pcg}</div>
