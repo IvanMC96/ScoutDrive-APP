@@ -213,13 +213,21 @@ setInterval(scoutProcesarCola, 60000);
   }
 
   const _guardarPartido_original = guardarPartido;
-  guardarPartido = function () {
+  guardarPartido = async function () {
     const editIdAntes = document.getElementById('ap-edit-id') ? document.getElementById('ap-edit-id').value : '';
     _guardarPartido_original();
     const id = editIdAntes || (typeof pDB !== 'undefined' && pDB.length ? pDB[0].id : null);
     const p = (typeof pDB !== 'undefined') ? pDB.find(x => String(x.id) === String(id)) : null;
     if (p) {
-      scoutSincronizarPartidoVideo(p);
+      // IMPORTANTE: se espera a que termine scoutSincronizarPartidoVideo()
+      // antes de subir jugadores/equipos. Esa función sustituye, en local,
+      // el base64 de la portada de cada gol por la URL de Drive ya subida
+      // (y refresca con ella las copias-espejo en jDB/eDB). Si en vez de
+      // esperar se lanzaran las dos sincronizaciones a la vez (como antes),
+      // scoutSincronizarJugadoresYEquiposDePartido() subiría jDB/eDB con el
+      // base64 TODAVÍA sin sustituir — el mismo vídeo/portada se subiría
+      // dos veces a Drive como dos archivos distintos.
+      await scoutSincronizarPartidoVideo(p);
       // guardarPartido() ya reparte la taxonomía/clips de cada gol a la
       // ficha del jugador (jDB) y del equipo (eDB) que marcó
       // (sincronizarTacticaDesdePartidos(), dentro de index.html) — pero
@@ -317,11 +325,40 @@ async function scoutSincronizarPartidoVideo(p) {
     scoutEncolar('guardarPartidoVideo', p);
   } else if (resultado.ok) {
     _scoutToast('☁️ Partido sincronizado con Google Sheets');
-    if (resultado.resultado && resultado.resultado.thumbURL && typeof pDB !== 'undefined') {
+    if (resultado.resultado && typeof pDB !== 'undefined') {
       const idx = pDB.findIndex(x => x.id === p.id);
-      if (idx >= 0 && resultado.resultado.thumbURL) {
-        pDB[idx].thumb = _driveURLViewable(resultado.resultado.thumbURL);
-        if (typeof savePDB === 'function') savePDB();
+      if (idx >= 0) {
+        let cambiado = false;
+        if (resultado.resultado.thumbURL) {
+          pDB[idx].thumb = _driveURLViewable(resultado.resultado.thumbURL);
+          cambiado = true;
+        }
+        // Las portadas de los clips de cada gol también se suben a Drive
+        // en el backend (subirGolesYObtenerConURL_) — sin este parcheo,
+        // este dispositivo se quedaría con el base64 original para
+        // siempre y lo volvería a subir como archivo NUEVO cada vez que
+        // se vuelva a guardar el partido (o se sincronice hacia la ficha
+        // del jugador/equipo, justo después de esta función), duplicando
+        // espacio en Drive sin parar.
+        const golesRemoto = resultado.resultado.goles;
+        if (Array.isArray(golesRemoto)) {
+          (pDB[idx].goles || []).forEach((gLocal, i) => {
+            const gRemoto = golesRemoto[i];
+            if (gLocal && gLocal.clip && gLocal.clip.portada && typeof gLocal.clip.portada === 'string'
+                && gLocal.clip.portada.startsWith('data:') && gRemoto && gRemoto.clip && gRemoto.clip.portada) {
+              gLocal.clip.portada = _driveURLViewable(gRemoto.clip.portada);
+              cambiado = true;
+            }
+          });
+        }
+        if (cambiado) {
+          if (typeof savePDB === 'function') savePDB();
+          // Refresca las copias-espejo del gol en jDB/eDB (ficha jugador/
+          // equipo) con la URL ya corregida — así, cuando justo después se
+          // llame a scoutSincronizarJugadoresYEquiposDePartido(), esas
+          // fichas suben la URL corta y no el base64 original.
+          if (typeof sincronizarTacticaDesdePartidos === 'function') sincronizarTacticaDesdePartidos();
+        }
       }
     }
   } else {
@@ -498,12 +535,33 @@ async function scoutForzarResubidaTotal() {
   }
 }
 
-/** Tras subir imágenes a Drive, el backend devuelve fotoURL/escudoURL.
- *  Sustituimos el base64 local por esa URL para que las próximas
- *  sincronizaciones sean más ligeras. */
+/** jDB/eDB son "let" a nivel superior de index.html, así que no existen
+ *  como propiedades de "window" — hay que referenciarlas por su nombre
+ *  directamente. Pequeño despachador para poder elegir el array correcto
+ *  a partir de un string ("jDB"/"eDB"), como hacía (mal) window[nombre]. */
+function _scoutArrayPorNombre(nombre) {
+  if (nombre === 'jDB') return (typeof jDB !== 'undefined') ? jDB : null;
+  if (nombre === 'eDB') return (typeof eDB !== 'undefined') ? eDB : null;
+  return null;
+}
+
+/** Tras subir imágenes a Drive, el backend devuelve fotoURL/escudoURL (y,
+ *  desde ahora, también los clips ya con la portada subida a Drive).
+ *  Sustituimos el base64 local por esas URLs para que las próximas
+ *  sincronizaciones sean más ligeras — y, sobre todo, para que este mismo
+ *  dispositivo no se quede con el base64 original para siempre: si no se
+ *  sustituye aquí, cada vez que se vuelva a guardar esta ficha se
+ *  reconoce como "todavía es base64" y se vuelve a subir a Drive como un
+ *  archivo NUEVO, duplicando espacio sin parar. */
 function _scoutActualizarURLsImagen(arrayName, id, resultadoBackend) {
   if (!resultadoBackend) return;
-  const arr = window[arrayName];
+  // OJO: jDB/eDB se declaran con "let" en index.html, así que NO cuelgan
+  // de "window" (a diferencia de una variable declarada con "var") aunque
+  // sí son visibles por su nombre desde cualquier <script> clásico de la
+  // misma página — "window[arrayName]" aquí siempre devolvía undefined y
+  // esta función nunca llegaba a parchear nada, ni siquiera fotoURL/
+  // escudoURL. _scoutArrayPorNombre() referencia la variable diréctamente.
+  const arr = _scoutArrayPorNombre(arrayName);
   if (!Array.isArray(arr)) return;
   const registro = arr.find(x => x.id === id);
   if (!registro) return;
@@ -514,10 +572,30 @@ function _scoutActualizarURLsImagen(arrayName, id, resultadoBackend) {
   if (resultadoBackend.escudoURL && registro.imgEsc && registro.imgEsc.startsWith('data:')) {
     registro.imgEsc = _driveURLViewable(resultadoBackend.escudoURL); cambiado = true;
   }
+  if (_scoutParchearPortadasClips(registro.clips, resultadoBackend.clips)) cambiado = true;
+  if (_scoutParchearPortadasClips(registro.clipsGC, resultadoBackend.clipsGC)) cambiado = true;
   if (cambiado) {
     if (arrayName === 'jDB' && typeof saveJDB === 'function') saveJDB();
     if (arrayName === 'eDB' && typeof saveEDB === 'function') saveEDB();
   }
+}
+
+/** Sustituye, en un array local de clips, la portada base64 de cada clip
+ *  por la URL de Drive ya subida que haya devuelto el backend en el mismo
+ *  índice (el backend construye su array con .map() sobre el mismo array
+ *  que se le mandó, así que el orden se conserva 1 a 1). Se usa tanto
+ *  para clips de jugador/equipo como para clipsGC ("goles en contra"). */
+function _scoutParchearPortadasClips(clipsLocal, clipsRemotoConURL) {
+  if (!Array.isArray(clipsLocal) || !Array.isArray(clipsRemotoConURL)) return false;
+  let cambiado = false;
+  clipsLocal.forEach((c, i) => {
+    const remoto = clipsRemotoConURL[i];
+    if (c && c.portada && typeof c.portada === 'string' && c.portada.startsWith('data:') && remoto && remoto.portada) {
+      c.portada = _driveURLViewable(remoto.portada);
+      cambiado = true;
+    }
+  });
+  return cambiado;
 }
 
 // ════════════════════════════════════════════════════════════════
