@@ -1292,6 +1292,14 @@ body.solo-lectura .add-partido-btn,
 body.solo-lectura .solo-admin-block {
   display: none !important;
 }
+/* Herramientas que tocan datos de TODAS las ligas a la vez (p.ej. el
+   recálculo masivo de estadísticas) — solo para el super admin, ni
+   siquiera para un admin normal, tenga o no restricción de liga: un
+   admin restringido a una liga no debería poder recalcular de golpe
+   también las estadísticas de ligas que ni siquiera puede ver. */
+body.no-superadmin .solo-superadmin-block {
+  display: none !important;
+}
 body.solo-lectura .ed-tab.activa-verde { pointer-events: none; opacity: .5; }
 /* Bloqueo real de edición para cuentas de solo lectura: se oculta la
    pestaña "Editar datos" y, por si se llegara a activar por cualquier
@@ -2298,7 +2306,7 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
 
-  <div class="psec solo-admin-block" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
+  <div class="psec solo-admin-block solo-superadmin-block" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
     <div class="cfg-title" style="padding:14px 16px 0">🔄 Recalcular estadísticas desde Partidos</div>
     <div class="pbody">
       <p style="font-size:11px;color:var(--gris);line-height:1.5">
@@ -2608,6 +2616,113 @@ function _tituloAutoClipGol(jornada,jugador,equipo,origen,minuto){
   const base=entrePar?`${jugador} (${entrePar})`:jugador;
   return jornada?`${jornada} - ${base}`:base;
 }
+
+// ── PORTADA AUTOMÁTICA DE UN GOL SIN PORTADA PROPIA ────────────────
+// No hay forma de sacar un fotograma real del vídeo desde el navegador
+// cuando el clip está alojado en YouTube o Google Drive (el reproductor
+// incrustado no expone los píxeles, solo controla la reproducción) — así
+// que, como alternativa ofrecida, si un gol tiene clip pero nadie le puso
+// portada a mano, se genera una automáticamente combinando la foto del
+// jugador que marcó, el escudo de su equipo y (si lo tiene) el
+// patrocinador del club, mediante <canvas>. Se intenta al guardar el
+// partido (ver engancharPartidos() en sync-bridge.js) — si falla por
+// cualquier motivo (imágenes de un dominio sin cabeceras CORS que
+// "manchan" el canvas, sin conexión, etc.) simplemente no se pone
+// portada, como pasaba antes.
+function _cargarImagenParaCanvas(src){
+  return new Promise(resolve=>{
+    if(!src){ resolve(null); return; }
+    const img=new Image();
+    if(!src.startsWith('data:')) img.crossOrigin='anonymous';
+    img.onload=()=>resolve(img);
+    img.onerror=()=>resolve(null);
+    img.src=src;
+  });
+}
+async function _generarPortadaAutoGol(jugadorNombre,clubNombre){
+  try{
+    const jid=jugadorNombre?jugadorIdPorNombre(jugadorNombre):null;
+    const j=jid?jDB.find(x=>x.id===jid):null;
+    const eq=clubNombre?_buscarEquipoPorNombre(clubNombre):null;
+    const fotoJ=j?j.imgJug:null;
+    const escudoEq=eq?eq.imgEsc:null;
+    const patro=(eq&&typeof _anuncioClubActivo==='function')?_anuncioClubActivo(eq.id):null;
+    if(!fotoJ && !escudoEq) return null; // sin foto ni escudo no hay nada que componer
+
+    const [imgFoto,imgEscudo,imgPatro]=await Promise.all([
+      _cargarImagenParaCanvas(fotoJ), _cargarImagenParaCanvas(escudoEq), _cargarImagenParaCanvas(patro&&patro.img)
+    ]);
+    if(!imgFoto && !imgEscudo) return null; // las que había no llegaron a cargar
+
+    const W=640,H=360;
+    const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+    const ctx=cv.getContext('2d');
+    const colorEq=(eq&&eq.color)||'#1a2233';
+    const grad=ctx.createLinearGradient(0,0,W,H);
+    grad.addColorStop(0,colorEq); grad.addColorStop(1,'#0d1117');
+    ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+
+    if(imgFoto){
+      const size=Math.min(imgFoto.width,imgFoto.height);
+      const sx=(imgFoto.width-size)/2, sy=(imgFoto.height-size)/2;
+      ctx.drawImage(imgFoto,sx,sy,size,size,0,0,H,H);
+    }
+    if(imgEscudo){
+      const s=imgFoto?110:200;
+      const cx=imgFoto?W-90:W/2, cy=imgFoto?90:H/2-15;
+      if(imgFoto){
+        ctx.save();
+        ctx.fillStyle='rgba(13,17,23,0.55)';
+        ctx.beginPath(); ctx.arc(cx,cy,s/2+10,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+      }
+      const ratio=Math.min(s/imgEscudo.width,s/imgEscudo.height);
+      const ew=imgEscudo.width*ratio, eh=imgEscudo.height*ratio;
+      ctx.drawImage(imgEscudo,cx-ew/2,cy-eh/2,ew,eh);
+    }
+    if(imgPatro){
+      const pw=140, ph=Math.max(1,pw*(imgPatro.height/(imgPatro.width||1)||0.4));
+      ctx.fillStyle='rgba(13,17,23,0.6)';
+      ctx.fillRect(W-pw-16,H-ph-24,pw+8,ph+8);
+      ctx.drawImage(imgPatro,W-pw-12,H-ph-20,pw,ph);
+    }
+    const nombre=((j?j.nom:jugadorNombre)+' '+(j&&j.ape?j.ape:'')).trim();
+    if(nombre){
+      ctx.fillStyle='rgba(13,17,23,0.75)';
+      ctx.fillRect(0,H-56,W,56);
+      ctx.fillStyle='#fff';
+      ctx.font='bold 24px Arial';
+      ctx.textBaseline='middle';
+      const tx=imgFoto?H+16:16;
+      ctx.fillText(nombre.slice(0,28), tx, H-30);
+      ctx.font='12px Arial';
+      ctx.fillStyle='#9aa4b2';
+      ctx.fillText('⚽ GOL', tx, H-10);
+    }
+    return cv.toDataURL('image/jpeg',0.85);
+  }catch(e){
+    console.warn('[Scoutdrive] No se pudo generar la portada automática del gol:', e);
+    return null;
+  }
+}
+/** Recorre los goles de un partido y, a los que tengan clip sin portada,
+ *  les genera una automática (ver _generarPortadaAutoGol). Devuelve true
+ *  si cambió algo, para que quien la llame sepa si hace falta guardar y
+ *  volver a sincronizar. */
+async function _scoutGenerarPortadasAutoGoles(p){
+  if(!p || !Array.isArray(p.goles)) return false;
+  let cambiado=false;
+  for(const g of p.goles){
+    const tieneClip=g && g.clip && (g.clip.src || g.clip.blobURL || g.clip.srcType==='blob_local');
+    if(tieneClip && !g.clip.portada && g.jugador){
+      const clubNom=g.equipo==='visitante'?p.visitante:p.local;
+      const auto=await _generarPortadaAutoGol(g.jugador,clubNom);
+      if(auto){ g.clip.portada=auto; cambiado=true; }
+    }
+  }
+  return cambiado;
+}
+
 const OCSS={'Ataque Organizado':'to-atq','Juego Directo':'to-jd','Centro Lateral':'to-cl','Finalización Frontal':'to-ff','Transición Ofensiva':'to-tr','ABP Ofensiva':'to-abp','Corner A Favor':'to-cor','Falta Ofensiva':'to-fal','RDB Ofensivo':'to-rdb','Penalti':'to-pen'};
 
 // Taxonomía de "cómo se produce" un gol encajado, pensada para que el
@@ -2765,11 +2880,18 @@ function renderInicio(){
     <div class="inicio-stat"><div class="inicio-stat-v" style="color:var(--naranja-cl)">${pDB.length}</div><div class="inicio-stat-l">Partidos en videoteca</div></div>
   `;
 
-  // Últimos partidos (de la videoteca) — clicables, llevan al partido
-  const ultimosP=pDB.filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
-    .sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0)).slice(0,5);
-  document.getElementById('inicio-ultimos-partidos').innerHTML = ultimosP.length
-    ? ultimosP.map(p=>`<div class="inicio-row clicable" onclick="irAPartido('${p.id}')"><span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}</span><span class="inicio-row-r">${p.gf??'-'}:${p.gc??'-'}</span></div>`).join('')
+  // Últimos partidos (de la videoteca) — clicables, llevan al partido.
+  // Agrupados por liga (si hay más de una) para no mezclar en una misma
+  // lista de 5 los partidos más recientes de ligas distintas — con el
+  // filtro global se vería solo la liga con más actividad reciente.
+  const ultimosPTodos=pDB.filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
+    .sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0));
+  const gruposUltimos=_agruparPartidosPorLiga(ultimosPTodos).map(g=>({...g,partidos:g.partidos.slice(0,5)}));
+  document.getElementById('inicio-ultimos-partidos').innerHTML = gruposUltimos.length
+    ? gruposUltimos.map(g=>`
+        ${gruposUltimos.length>1?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}
+        ${g.partidos.map(p=>`<div class="inicio-row clicable" onclick="irAPartido('${p.id}')"><span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}</span><span class="inicio-row-r">${p.gf??'-'}:${p.gc??'-'}</span></div>`).join('')}
+      `).join('')
     : '<div class="inicio-empty">Sin partidos todavía</div>';
 
   renderProximosPartidosInicio();
@@ -2780,33 +2902,64 @@ function renderInicio(){
   renderAdsList();
 }
 
+/** Liga de un partido para fines de agrupación en Resumen — igual
+ *  criterio que calcularClasificacionPorLiga(): se prioriza comp/grupo
+ *  del propio partido (no cambia aunque la ficha del club cambie de
+ *  categoría más adelante) y solo si faltan se recurre a la liga actual
+ *  del club. */
+function _ligaDePartido(p){
+  return [p.comp,p.grupo].filter(Boolean).join(' · ')
+    || ligaDeEquipoPorNombre(p.local) || ligaDeEquipoPorNombre(p.visitante) || 'Sin liga especificada';
+}
+/** Agrupa una lista de partidos por liga (ver _ligaDePartido), en el
+ *  mismo orden alfabético que el resto de tarjetas de Resumen — usado
+ *  para que "Últimos partidos" y "Próximos partidos" no mezclen en una
+ *  sola lista de 5 los partidos de ligas distintas. */
+function _agruparPartidosPorLiga(lista){
+  const grupos={};
+  lista.forEach(p=>{
+    const liga=_ligaDePartido(p);
+    const key=liga.toLowerCase();
+    if(!grupos[key]) grupos[key]={nombre:liga,partidos:[]};
+    grupos[key].partidos.push(p);
+  });
+  return Object.values(grupos)
+    .sort((a,b)=>a.nombre==='Sin liga especificada'?1:(b.nombre==='Sin liga especificada'?-1:a.nombre.localeCompare(b.nombre)));
+}
+
 // ── PRÓXIMOS PARTIDOS: partidos ya cargados en Partidos con fecha futura,
 //    a modo de mini-calendario en Inicio. No hace falta ningún campo
 //    nuevo: "Añadir Partido" ya permite guardar rival/fecha/competición
 //    sin resultado ni vídeo todavía (se completan después del partido) —
-//    con eso ya se puede anticipar la agenda de la próxima jornada. ──
+//    con eso ya se puede anticipar la agenda de la próxima jornada.
+//    Agrupados por liga (si hay más de una), igual que el resto de
+//    Resumen, para no mezclar la agenda de 2ªRFEF con la de 3ªRFEF. ──
 function renderProximosPartidosInicio(){
   const cont=document.getElementById('inicio-proximos-partidos');
   if(!cont) return;
   const hoy=new Date();
   const hoyStr=`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
-  const proximos=pDB
+  const proximosTodos=pDB
     .filter(p=>p.fecha && p.fecha>=hoyStr)
     .filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
-    .sort((a,b)=>a.fecha.localeCompare(b.fecha))
-    .slice(0,5);
-  if(!proximos.length){
+    .sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  const grupos=_agruparPartidosPorLiga(proximosTodos).map(g=>({...g,partidos:g.partidos.slice(0,5)}));
+  if(!grupos.length){
     cont.innerHTML=`<div class="inicio-empty">Sin partidos próximos — añádelos desde "Partidos" en cuanto se sepa el rival y la fecha, aunque todavía no haya resultado ni vídeo</div>`;
     return;
   }
-  cont.innerHTML=proximos.map(p=>{
+  const filaPartido=p=>{
     const fechaFmt=new Date(p.fecha+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'});
     const esHoy=p.fecha===hoyStr;
     return `<div class="inicio-row clicable" onclick="irAPartido('${p.id}')">
       <span class="inicio-row-l">${eH(p.local||'?')} vs ${eH(p.visitante||'?')}${p.comp?` <span style="color:var(--gris2)">· ${eH(p.comp)}</span>`:''}</span>
       <span class="inicio-row-r" style="${esHoy?'color:var(--naranja-cl)':''}">${esHoy?'HOY':fechaFmt}</span>
     </div>`;
-  }).join('');
+  };
+  cont.innerHTML=grupos.map(g=>`
+    ${grupos.length>1?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}
+    ${g.partidos.map(filaPartido).join('')}
+  `).join('');
 }
 
 // ── FILTROS COMPARTIDOS DE RESUMEN (temporada / grupo / últimos 5) ──
@@ -2925,76 +3078,115 @@ function calcularPorteriasACero(partidos,modo){
     if(p.gf==null || p.gc==null) return;
     if(p.porteroLocal){
       const key=p.porteroLocal.trim().toLowerCase();
-      if(key){ if(!porPortero[key]) porPortero[key]={nombre:p.porteroLocal.trim(),matches:[]}; porPortero[key].matches.push({fecha:p.fecha||'',cero:p.gc===0}); }
+      if(key){ if(!porPortero[key]) porPortero[key]={nombre:p.porteroLocal.trim(),club:p.local||'',matches:[]}; porPortero[key].matches.push({fecha:p.fecha||'',cero:p.gc===0}); }
     }
     if(p.porteroVisitante){
       const key=p.porteroVisitante.trim().toLowerCase();
-      if(key){ if(!porPortero[key]) porPortero[key]={nombre:p.porteroVisitante.trim(),matches:[]}; porPortero[key].matches.push({fecha:p.fecha||'',cero:p.gf===0}); }
+      if(key){ if(!porPortero[key]) porPortero[key]={nombre:p.porteroVisitante.trim(),club:p.visitante||'',matches:[]}; porPortero[key].matches.push({fecha:p.fecha||'',cero:p.gf===0}); }
     }
   });
-  return Object.values(porPortero).map(({nombre,matches})=>{
+  // "club" identifica el equipo del portero (el primer rival con el que
+  // apareció) — se usa solo para poder agrupar el ranking por liga en
+  // renderHighlightsInicio(); no afecta al cálculo de porterías a cero.
+  return Object.values(porPortero).map(({nombre,club,matches})=>{
     const m=_aplicarModoUltimos5(matches,modo);
-    return {nombre,pz:m.filter(x=>x.cero).length,pj:m.length};
+    return {nombre,club,pz:m.filter(x=>x.cero).length,pj:m.length};
   });
 }
 
+// "Destacados" — equipo más goleador, mejor defensa y portero menos
+// batido — agrupados por liga (si hay más de una) para no mezclar los
+// datos de 2ªRFEF y 3ªRFEF en un único "el mejor de todos": antes, con
+// dos ligas cargadas, mostraba un solo equipo/portero ganador aunque
+// fueran de competiciones distintas, dando una lectura engañosa.
 function renderHighlightsInicio(){
   const wrap=document.getElementById('inicio-highlights-grid');
   if(!wrap) return;
   const sinFiltro=_inicioSinFiltro();
   const partidos=_inicioPartidosFiltrados();
-  const tabla=calcularClasificacionGlobal(partidos,_inicioFiltro.modo);
-  const conPartidos=tabla.filter(t=>t.pj>0);
+  const clasifPorLiga=calcularClasificacionPorLiga(partidos,_inicioFiltro.modo,'general');
+  const multiLiga=clasifPorLiga.length>1;
 
   const bloque=(titulo,html)=>`<div class="inicio-hl-card"><div class="inicio-hl-tit">${titulo}</div>${html}</div>`;
+  const filaEquipo=(t,color,etiqueta)=>{
+    const escudo=escudoDeEquipoPorNombre(t.nombre);
+    return `<div class="inicio-hl-row clicable" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')">
+      ${escudo?`<img src="${eH(escudo)}" class="inicio-hl-img">`:`<div class="inicio-hl-img inicio-hl-img-fallback">🛡️</div>`}
+      <div><div class="inicio-hl-nom">${eH(t.nombre)}</div><div class="inicio-hl-val" style="color:${color}">${etiqueta}</div></div>
+    </div>`;
+  };
+  // Recorre cada liga ya calculada por calcularClasificacionPorLiga y, si
+  // tiene algún equipo con partidos jugados, pinta la fila que calcFn
+  // decida (el más goleador / el que menos encaja) — con su título de
+  // liga delante solo si hay más de una.
+  const porLigaHTML=(calcFn)=>{
+    const partes=clasifPorLiga.map(g=>{
+      const conPartidos=g.equipos.filter(t=>t.pj>0);
+      if(!conPartidos.length) return '';
+      const fila=calcFn(conPartidos);
+      return `${multiLiga?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}${fila}`;
+    }).filter(Boolean);
+    return partes.length?partes.join(''):'<div class="inicio-empty">Sin datos con este filtro</div>';
+  };
 
-  // Equipo más goleador de todos
-  let hMaxGol='<div class="inicio-empty">Sin datos con este filtro</div>';
-  if(conPartidos.length){
+  const hMaxGol=porLigaHTML(conPartidos=>{
     const t=[...conPartidos].sort((a,b)=>b.gf-a.gf)[0];
-    const escudo=escudoDeEquipoPorNombre(t.nombre);
-    hMaxGol=`<div class="inicio-hl-row clicable" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')">
-      ${escudo?`<img src="${eH(escudo)}" class="inicio-hl-img">`:`<div class="inicio-hl-img inicio-hl-img-fallback">🛡️</div>`}
-      <div><div class="inicio-hl-nom">${eH(t.nombre)}</div><div class="inicio-hl-val" style="color:var(--verde-cl)">${t.gf} goles a favor${_inicioFiltro.modo==='ultimos5'?` (últ. ${t.pj})`:''}</div></div>
-    </div>`;
-  }
-
-  // Equipo que menos encaja de todos
-  let hMejorDef='<div class="inicio-empty">Sin datos con este filtro</div>';
-  if(conPartidos.length){
+    return filaEquipo(t,'var(--verde-cl)',`${t.gf} goles a favor${_inicioFiltro.modo==='ultimos5'?` (últ. ${t.pj})`:''}`);
+  });
+  const hMejorDef=porLigaHTML(conPartidos=>{
     const t=[...conPartidos].sort((a,b)=>a.gc-b.gc)[0];
-    const escudo=escudoDeEquipoPorNombre(t.nombre);
-    hMejorDef=`<div class="inicio-hl-row clicable" onclick="irAEquipoPorNombre('${eH(t.nombre).replace(/'/g,"\\'")}')">
-      ${escudo?`<img src="${eH(escudo)}" class="inicio-hl-img">`:`<div class="inicio-hl-img inicio-hl-img-fallback">🛡️</div>`}
-      <div><div class="inicio-hl-nom">${eH(t.nombre)}</div><div class="inicio-hl-val" style="color:var(--azul-cl)">${t.gc} goles encajados${_inicioFiltro.modo==='ultimos5'?` (últ. ${t.pj})`:''}</div></div>
-    </div>`;
-  }
+    return filaEquipo(t,'var(--azul-cl)',`${t.gc} goles encajados${_inicioFiltro.modo==='ultimos5'?` (últ. ${t.pj})`:''}`);
+  });
 
-  // Portero con más porterías a cero
-  let hPortero='<div class="inicio-empty">Registra "Porterías a cero" en la ficha del portero</div>';
-  let pTop=null, pzTop=0;
+  // Portero con más porterías a cero — también agrupado por liga (la
+  // liga se deduce del club con el que jugó, igual que en Goleadores).
+  let listaPorteros=[];
   if(sinFiltro){
     // Comportamiento EXACTO de siempre: usa jDB.stats.pz directamente,
     // que incluye la base manual histórica — un dato que no tiene fecha
     // ni partido asociado, así que solo se puede mostrar sin filtrar.
     const porteros=jDB.filter(j=>(j.pos||'').toLowerCase()==='portero' && (j.stats?.pz||0)>0 && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
-    if(porteros.length){ pTop=[...porteros].sort((a,b)=>(b.stats?.pz||0)-(a.stats?.pz||0))[0]; pzTop=pTop.stats.pz; }
+    const grupos={};
+    porteros.forEach(j=>{
+      const liga=ligaDeEquipoPorNombre(j.club)||'Sin liga especificada';
+      const key=liga.toLowerCase();
+      if(!grupos[key]) grupos[key]={nombre:liga,jugadores:[]};
+      grupos[key].jugadores.push(j);
+    });
+    listaPorteros=Object.values(grupos).map(g=>{
+      const top=[...g.jugadores].sort((a,b)=>(b.stats?.pz||0)-(a.stats?.pz||0))[0];
+      return {nombre:g.nombre,top:{...top,pz:top.stats.pz}};
+    });
   } else {
-    const ranking=calcularPorteriasACero(partidos,_inicioFiltro.modo).filter(x=>x.pz>0).sort((a,b)=>b.pz-a.pz);
-    if(ranking.length){
-      const top=ranking[0];
-      const jid=jugadorIdPorNombre(top.nombre);
-      pTop=jid?jDB.find(x=>x.id===jid):{id:null,nom:top.nombre,ape:'',imgJug:null};
-      pzTop=top.pz;
-    }
+    const ranking=calcularPorteriasACero(partidos,_inicioFiltro.modo).filter(x=>x.pz>0);
+    const grupos={};
+    ranking.forEach(top=>{
+      const liga=ligaDeEquipoPorNombre(top.club)||'Sin liga especificada';
+      if(!usuarioPuedeVerLiga(liga)) return;
+      const key=liga.toLowerCase();
+      if(!grupos[key]) grupos[key]={nombre:liga,items:[]};
+      grupos[key].items.push(top);
+    });
+    listaPorteros=Object.values(grupos).map(g=>{
+      const topRaw=[...g.items].sort((a,b)=>b.pz-a.pz)[0];
+      const jid=jugadorIdPorNombre(topRaw.nombre);
+      const j=jid?jDB.find(x=>x.id===jid):{id:null,nom:topRaw.nombre,ape:'',imgJug:null};
+      return {nombre:g.nombre,top:{...j,pz:topRaw.pz}};
+    });
   }
-  if(pTop && pzTop>0){
-    const foto=pTop.imgJug;
-    const onAtr=pTop.id?`onclick="irAJugador('${pTop.id}')" class="inicio-hl-row clicable"`:`class="inicio-hl-row"`;
-    hPortero=`<div ${onAtr}>
-      ${foto?`<img src="${eH(foto)}" class="inicio-hl-img" style="border-radius:50%">`:`<div class="inicio-hl-img inicio-hl-img-fallback" style="border-radius:50%">${eH(ini(pTop.nom,pTop.ape)||'?')}</div>`}
-      <div><div class="inicio-hl-nom">${eH((pTop.nom+' '+(pTop.ape||'')).trim())}</div><div class="inicio-hl-val" style="color:var(--naranja-cl)">${pzTop} porterías a cero</div></div>
-    </div>`;
+  listaPorteros.sort((a,b)=>a.nombre==='Sin liga especificada'?1:(b.nombre==='Sin liga especificada'?-1:a.nombre.localeCompare(b.nombre)));
+
+  let hPortero='<div class="inicio-empty">Registra "Porterías a cero" en la ficha del portero</div>';
+  if(listaPorteros.length){
+    hPortero=listaPorteros.map(g=>{
+      const pTop=g.top;
+      const foto=pTop.imgJug;
+      const onAtr=pTop.id?`onclick="irAJugador('${pTop.id}')" class="inicio-hl-row clicable"`:`class="inicio-hl-row"`;
+      return `${multiLiga?`<div class="inicio-liga-tit">${eH(g.nombre)}</div>`:''}<div ${onAtr}>
+        ${foto?`<img src="${eH(foto)}" class="inicio-hl-img" style="border-radius:50%">`:`<div class="inicio-hl-img inicio-hl-img-fallback" style="border-radius:50%">${eH(ini(pTop.nom,pTop.ape)||'?')}</div>`}
+        <div><div class="inicio-hl-nom">${eH((pTop.nom+' '+(pTop.ape||'')).trim())}</div><div class="inicio-hl-val" style="color:var(--naranja-cl)">${pTop.pz} porterías a cero</div></div>
+      </div>`;
+    }).join('');
   }
 
   wrap.innerHTML=
@@ -10989,7 +11181,9 @@ function recalcularStatsDesdePartidos(){
 // por el bug ya corregido) pero no quiere ir jugador a jugador corrigiendo
 // el campo a mano y guardando uno por uno.
 async function adminRecalcularStatsDesdeCero(){
-  if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
+  // Toca TODAS las ligas a la vez (incluidas las que un admin restringido
+  // no puede ni ver) — reservado al super admin, no a cualquier admin.
+  if(!esSuperAdminActual()){toast('Solo el super admin puede hacer esto',true);return;}
   askDel(
     '¿Recalcular TODAS las estadísticas de goles/asistencias/ABP/PJ/V/E/D/GF/GC de jugadores y equipos, contando solo lo registrado en "⚽ Partidos"? No se borra ningún gol, clip ni partido. Si tenías estadísticas metidas a mano sin su partido correspondiente en la videoteca, esas se perderán.',
     async ()=>{
@@ -12087,11 +12281,18 @@ function actualizarPanelAdmin() {
 
   // Guardar referencia global del rol para usarla en renders
   window._esAdmin = esAdmin;
-  window._ligasPermitidas = esAdmin ? [] : (sesion.ligasPermitidas || []);
+  // La cuenta super admin (ver SCOUT_SUPERADMIN_EMAIL) nunca tiene
+  // restricción de liga, la tenga guardada o no — es la única cuenta que
+  // siempre ve/edita todo. El resto de admins SÍ respetan su
+  // ligasPermitidas si el super admin se la asignó (antes cualquier admin
+  // ignoraba esa restricción sin más, por serlo). Ver usuarioPuedeVerLiga().
+  window._esSuperAdmin = _esSuperAdminProtegido(sesion.email);
+  window._ligasPermitidas = window._esSuperAdmin ? [] : (sesion.ligasPermitidas || []);
 
   // Aplicar clase solo-lectura al body para ocultar botones de edición
   // via CSS sin necesidad de tocar cada render individualmente
   document.body.classList.toggle('solo-lectura', !esAdmin);
+  document.body.classList.toggle('no-superadmin', !window._esSuperAdmin);
 
   // Si está en config y no es admin, redirigir a jugadores
   if (!esAdmin && (typeof currentSection !== 'undefined') &&
@@ -12131,13 +12332,26 @@ function esAdminActual() {
   return window._esAdmin === true;
 }
 
-/** true si el usuario actual puede ver contenido de esa liga/grupo.
- *  Admin siempre ve todo. Un usuario normal sin restricción (array
- *  vacío) también ve todo. Si tiene restricción, solo ve las ligas
- *  de su lista — y si el contenido no tiene liga asignada, NO lo ve
- *  (más seguro: mejor ocultar de más que enseñar de más). */
+/** Devuelve true solo para la cuenta super admin (ver
+ *  SCOUT_SUPERADMIN_EMAIL) — para herramientas que afectan a TODAS las
+ *  ligas a la vez y no deben depender de si a un admin normal se le ha
+ *  restringido o no el acceso por liga. */
+function esSuperAdminActual() {
+  return window._esSuperAdmin === true;
+}
+
+/** true si el usuario actual puede ver (y, si es admin, editar) contenido
+ *  de esa liga/grupo. El super admin siempre ve/edita todo. Cualquier
+ *  otra cuenta (admin incluido) sin restricción (array vacío) también ve
+ *  todo. Si tiene restricción, solo ve las ligas de su lista — y si el
+ *  contenido no tiene liga asignada, NO lo ve (más seguro: mejor ocultar
+ *  de más que enseñar de más).
+ *  Antes CUALQUIER admin se saltaba esta comprobación por serlo, aunque
+ *  el super admin le hubiera asignado una restricción de liga concreta
+ *  desde "🛡️ Administración de usuarios" — ahora solo el super admin
+ *  (SCOUT_SUPERADMIN_EMAIL) se la salta. */
 function usuarioPuedeVerLiga(liga){
-  if(esAdminActual()) return true;
+  if(window._esSuperAdmin) return true;
   const permitidas=window._ligasPermitidas;
   if(!permitidas || !permitidas.length) return true;
   if(!liga) return false;
