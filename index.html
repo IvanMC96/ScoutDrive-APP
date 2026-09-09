@@ -5167,7 +5167,7 @@ function renderJ(){
       } else {
         mH=`<div class="ccp-vid"><div class="ccp-ve"><span>🎬</span><p>Sin fuente</p></div></div>`;
       }
-      return `<div class="ccp">${mH}<div class="ccp-meta"><div class="ccp-tit">${i+1}. ${eH(cl.titulo)||'Sin título'}</div><div class="ccp-sub" style="color:${tC}">${cl.tipo}${cl.rival?' · vs '+eH(cl.rival):''}</div></div></div>`;
+      return `<div class="ccp">${mH}<div class="ccp-meta"><div class="ccp-tit">${i+1}. ${eH(cl.titulo)||'Sin título'}</div><div class="ccp-sub" style="color:${tC}">${cl.tipo}${cl.rival?' · vs '+eH(cl.rival):''}</div>${_htmlDescargaClip(cl)}</div></div>`;
     }).join('');
     clipsH=`<div class="fclips"><div class="fclips-t"><span>□ Galería de Clips</span><span style="background:var(--azul-dk);color:#fff;font-size:9px;padding:2px 8px;border-radius:8px">${jClips.length} clips</span></div><div class="clips-grid">${cards}</div></div>`;
   }
@@ -7479,6 +7479,7 @@ function renderE(){
               <span class="eclip-tipo-dot" style="background:${tC}"></span>
               ${cl.tipo}${cl.rival?' · '+eH(cl.rival):''}
             </div>
+            ${_htmlDescargaClip(cl)}
           </div>
         </div>`;
       }).join('')}
@@ -8606,6 +8607,19 @@ function _urlDescargaDriveClip(cl){
   if(!cl) return null;
   const id = _idDriveDeURL(cl.src);
   return id ? `https://drive.google.com/uc?export=download&id=${id}` : null;
+}
+
+// Enlace de descarga directa para pintar EN LA PROPIA TARJETA de un clip
+// (galería de "🥅 Goles" y de ficha jugador/equipo) — mismo "⬇ Descargar"
+// visible que ya tienen los partidos en su listado, en vez de obligar a
+// abrir primero el vídeo a pantalla completa para encontrar el botón de
+// descarga ahí dentro. Solo aparece si el clip está alojado en Google
+// Drive (único caso con descarga directa real — YouTube no lo permite y
+// un vídeo "blob" local no tiene ningún archivo en el servidor).
+function _htmlDescargaClip(cl){
+  const url=_urlDescargaDriveClip(cl);
+  if(!url) return '';
+  return `<span class="eclip-descarga" onclick="event.stopPropagation();window.open('${url}','_blank','noopener')" style="color:var(--azul-cl);cursor:pointer;text-decoration:underline;font-size:9px;white-space:nowrap">⬇ Descargar</span>`;
 }
 
 function _setVideoModalDescarga(url){
@@ -11845,6 +11859,7 @@ function renderGolesClipsView(){
           ${eH(quien)}${c.rival?' · vs '+eH(c.rival):''}${c.tipo?' · '+eH(c.tipo):''}
         </div>
         <div style="font-size:8px;color:var(--gris2);margin-top:3px">${eH(c.fuente)}</div>
+        ${_htmlDescargaClip(c)}
       </div>
     </div>`;
   }).join('')}</div>`;
