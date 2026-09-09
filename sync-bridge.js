@@ -219,6 +219,25 @@ setInterval(scoutProcesarCola, 60000);
     const id = editIdAntes || (typeof pDB !== 'undefined' && pDB.length ? pDB[0].id : null);
     const p = (typeof pDB !== 'undefined') ? pDB.find(x => String(x.id) === String(id)) : null;
     if (p) {
+      // Antes de sincronizar: si algún gol tiene clip pero se guardó sin
+      // portada, se genera una automática (foto del jugador + escudo del
+      // equipo + patrocinador, ver _generarPortadaAutoGol en index.html)
+      // — así ya sale con portada la primera vez, sin tener que editar el
+      // partido otra vez a mano solo para eso. Se hace aquí (y no dentro
+      // de guardarPartido()) para no romper el resto del guardado: el
+      // wrapper de abajo asume que _guardarPartido_original() deja pDB ya
+      // actualizado de forma síncrona.
+      if (typeof _scoutGenerarPortadasAutoGoles === 'function') {
+        try {
+          const huboAutoPortada = await _scoutGenerarPortadasAutoGoles(p);
+          if (huboAutoPortada) {
+            if (typeof savePDB === 'function') savePDB();
+            if (typeof sincronizarTacticaDesdePartidos === 'function') sincronizarTacticaDesdePartidos();
+          }
+        } catch (e) {
+          console.warn('[Scoutdrive sync] No se pudo generar la portada automática de algún gol:', e);
+        }
+      }
       // IMPORTANTE: se espera a que termine scoutSincronizarPartidoVideo()
       // antes de subir jugadores/equipos. Esa función sustituye, en local,
       // el base64 de la portada de cada gol por la URL de Drive ya subida
