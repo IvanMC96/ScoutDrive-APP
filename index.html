@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-10-01">
+<meta name="app-version" content="2026-09-10-02">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1673,6 +1673,10 @@ body.solo-lectura .ed-panel-form {
         <div class="fg2">
           <div class="fg"><label>Partidos</label><input class="nbig" id="kp" type="number" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>% Min. jugados <span style="opacity:.6;font-weight:400">(auto)</span></label><input class="nbig" id="kf" type="number" value="0" readonly style="opacity:.75;cursor:not-allowed"></div>
+        </div>
+        <div class="fg2">
+          <div class="fg"><label>PT · Partidos titular</label><input class="nbig" id="kpt" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>PS · Partidos suplente</label><input class="nbig" id="kps" type="number" value="0" oninput="renderJ()"></div>
         </div>
         <div class="fg">
           <label>Minutos jugados (total)</label>
@@ -4074,7 +4078,7 @@ function rmImg(key,e){e.stopPropagation();imgStore[key]=null;uzZone(key,null);if
 // JUGADORES
 // ══════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════
-let jId=null, jForma=[], jGoles=[], jClips=[], jRadar=[50,50,50,50,50,50,50], jClipCnt=0;
+let jId=null, jForma=[], jGoles=[], jClips=[], jClipsGC=[], jRadar=[50,50,50,50,50,50,50], jClipCnt=0;
 const jRadarEjes=['Goles','Asistencias','ABP','Transición Defensiva','Transición Ofensiva','Físico','Mentalidad'];
 // Los 3 primeros ejes del radar (Goles/Asistencias/ABP) tienen un dato numérico
 // exacto ya introducido en el formulario, así que se calculan solos en vez de
@@ -4144,6 +4148,36 @@ function buildJGolesEncajados(){
   });
 }
 function addJGolEncajado(){jGolesEncajados.push({min:0,rival:'',causa:CAUSAS_GC[0],desc:''});buildJGolesEncajados();renderJ();}
+
+// ── CLIPS DE GOLES EN CONTRA (solo porteros) ───────────────────────
+// Galería de vídeo de los goles que este portero ha encajado — se
+// rellena SOLA cuando el gol se registra en "Añadir Partido" con su
+// nombre en "🧤 Portero rival batido" (o, en su defecto, en el marcador
+// general del partido) y ese gol trae vídeo/portada; ver el paso 3d de
+// sincronizarTacticaDesdePartidos(). No tiene alta manual propia, igual
+// que eq.clipsGC en la ficha de equipo — es un espejo de lo ya
+// registrado en Partidos, no un dato nuevo que rellenar aquí.
+function jGcClipAbrirModal(i){
+  const cl=jClipsGC[i];
+  if(!cl) return;
+  abrirVideoModal(cl);
+}
+function renderJClipsGC(){
+  if(!jClipsGC||!jClipsGC.length) return '';
+  const cards=jClipsGC.map((cl,i)=>{
+    const hasV=(cl.blobURL&&cl.srcType==='blob')||(cl.src&&(cl.srcType==='youtube'||cl.srcType==='gdrive'||cl.srcType==='direct'))||cl.srcType==='blob_local';
+    let mH='';
+    if(cl.portada){
+      mH=`<div class="eclip-portada-wrap" onclick="jGcClipAbrirModal(${i})"><img src="${cl.portada}" alt="Portada"><div class="eclip-play-overlay"><div class="eclip-play-btn" style="background:rgba(185,28,28,.9)">▶</div></div></div>`;
+    } else if(hasV){
+      mH=`<div class="eclip-portada-wrap eclip-sin-portada" style="background:linear-gradient(135deg,#2d0a0a,#1a0505)" onclick="jGcClipAbrirModal(${i})"><div class="eclip-play-overlay" style="opacity:1"><div class="eclip-play-btn" style="background:rgba(185,28,28,.9)">▶</div></div></div>`;
+    } else {
+      mH=`<div class="eclip-media"><div class="em-empty"><span>🔴</span><p>Sin vídeo</p></div></div>`;
+    }
+    return `<div class="eclip-card-v2" style="border-color:rgba(185,28,28,.3)">${mH}<div class="eclip-info"><div class="eclip-titulo">${i+1}. ${eH(cl.titulo)||'Sin título'}</div><div class="eclip-sub"><span class="eclip-tipo-dot" style="background:#f85149"></span>${cl.jugador?eH(cl.jugador)+' · ':''}${eH(cl.tipo||'')}${cl.rival?' · vs '+eH(cl.rival):''}</div></div></div>`;
+  }).join('');
+  return `<div class="eclips-section" style="border-top:2px solid rgba(185,28,28,.3)"><div class="eclips-title" style="color:var(--rojo-cl)">🔴 CLIPS GOLES EN CONTRA <span style="background:rgba(185,28,28,.2);color:var(--rojo-cl);font-size:9px;padding:2px 8px;border-radius:8px">${jClipsGC.length} clip${jClipsGC.length!==1?'s':''}</span></div><div class="eclips-grid-v2">${cards}</div></div>`;
+}
 
 // ── VÍDEO DESTACADO / HIGHLIGHT (todos los jugadores) ──────────────
 // A diferencia de la galería de Clips de Goles (que solo tiene sentido
@@ -4229,7 +4263,7 @@ function _temporadaActualSnapshot(){
   return {
     temp:G('jtemp'), club, liga:ligaDeEquipoPorNombre(club)||'', categoria:categoriaDeEquipoPorNombre(club)||'', grupo:grupoDeEquipoPorNombre(club)||'',
     pos:G('jpos'), dorsal:G('jdor'), edad:G('jedad'),
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
   };
 }
 
@@ -4242,7 +4276,7 @@ function jNuevaTemporada(){
     // Stats/goles/forma de la temporada se reinician — son contadores de
     // ESTA temporada, no tendría sentido que la nueva empezara ya con los
     // goles de la anterior.
-    ['kg','ka','kab','kpz','kgr','kmj','kp'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+    ['kg','ka','kab','kpz','kgr','kmj','kp','kpt','kps'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
     { const e=document.getElementById('kf'); if(e) e.value=0; }
     jForma=Array(10).fill('nada');jGoles=[];jGolesEncajados=[];
     buildJForma();buildJGoles();buildJGolesEncajados();
@@ -4434,6 +4468,18 @@ function renderJDB(){
   if(q)lst=lst.filter(j=>_fuzzyMatch(j.nom+' '+j.ape+' '+j.pos+' '+j.club,q));
   const grid=document.getElementById('j-grid');
   if(!lst.length){grid.innerHTML=`<div class="empty"><div class="empty-ic">👤</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div><div style="font-size:11px;opacity:.7">${jDBVisible.length?'Prueba otro término':(esAdminActual()?'Pulsa "+ Nuevo jugador"':'Aún no hay jugadores registrados')}</div>${(!jDBVisible.length&&esAdminActual())?'<button class="btn b-verde" onclick="nuevoJ()">+ Nuevo jugador</button>':''}</div>`;actualizarBarraComparar();return;}
+  // Agrupados por equipo (club de la temporada que se esté viendo, según
+  // el filtro activo) para que la plantilla de cada club salga siempre
+  // junta — antes el orden era simplemente el del array jDB, así que un
+  // jugador recién creado se colaba arriba/abajo suelto y desordenaba la
+  // lista en vez de "juntarse" con el resto de su equipo.
+  lst=[...lst].sort((a,b)=>{
+    const va=_jVistaParaFiltro(a,fTemp,fCat,fGrupo,fEquipo),vb=_jVistaParaFiltro(b,fTemp,fCat,fGrupo,fEquipo);
+    const ca=(va.club||a.club||'').trim().toLowerCase(),cb=(vb.club||b.club||'').trim().toLowerCase();
+    if(ca!==cb) return ca.localeCompare(cb,'es');
+    const na=(a.nom+' '+a.ape).trim().toLowerCase(),nb=(b.nom+' '+b.ape).trim().toLowerCase();
+    return na.localeCompare(nb,'es');
+  });
   grid.innerHTML=lst.map(j=>{
     // Si hay un filtro de categoría/grupo/equipo/temporada activo, la
     // tarjeta muestra los datos de ESA temporada del histórico del
@@ -4453,10 +4499,12 @@ function renderJDB(){
       </label>
       <div class="card-hdr" onclick="editJ('${j.id}')">
       ${avWrap}<div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${vista.dorsal||j.dor} · ${eH(vista.pos||j.pos)} · ${eH(vista.temp||j.temp)}${vista._esActual?'':' · histórico'}</div></div>${_sponsorBadgeHTMLMulti(_adsJ)}
-    </div>${_sponsorHTMLMulti(_adsJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+    </div>${_sponsorHTMLMulti(_adsJ,'card-sponsor','Patrocina')}<div class="card-kpis" style="grid-template-columns:repeat(3,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
       <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.pt||0}</div><div class="ckl">PT</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--gris)">${s.ps||0}</div><div class="ckl">PS</div></div>
       <div class="ck"><div class="ckv" style="color:var(--naranja-cl)">${s.f||0}%</div><div class="ckl">% Min.</div></div>
     </div><div class="card-act">
       <button class="btn b-azul b-sm" onclick="editJ('${j.id}')">✏️ Editar</button>
@@ -4960,7 +5008,7 @@ async function xComparativaPDF(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','kab','kf','kpz','kgr','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','kpt','kps','kab','kf','kpz','kgr','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   poblarDatalistTemporadasJugador();
@@ -4969,7 +5017,7 @@ function nuevoJ(){
   document.getElementById('jdor').value='9';
   document.getElementById('javcolor').value='#2f81f7';
   document.getElementById('javcolor-hex').value='';
-  jForma=Array(10).fill('nada');jGoles=[];jClips=[];jRadar=Array(jRadarEjes.length).fill(50);jGK=Array(jGKEjes.length).fill(50);
+  jForma=Array(10).fill('nada');jGoles=[];jClips=[];jClipsGC=[];jRadar=Array(jRadarEjes.length).fill(50);jGK=Array(jGKEjes.length).fill(50);
   jGolesEncajados=[];jHighlight={titulo:'',temporada:'',srcType:'',src:'',portada:null,blobURL:null};jTemporadas=[];
   imgStore.jfoto=null;imgStore.jesc=null;jClipCnt=0;
   uzZone('jfoto',null);uzZone('jesc',null);
@@ -4986,7 +5034,7 @@ function editJ(id){
   poblarSelectClubJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kpt',j.stats?.pt);S('kps',j.stats?.ps);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
   S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
   S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
   ['oatq','oabp','ocl','ojd'].forEach(k=>{
@@ -5007,6 +5055,7 @@ function editJ(id){
   jTemporadas=(j.temporadas||[]).map(t=>({...t}));
   imgStore.jfoto=j.imgJug||null;imgStore.jesc=j.imgEsc||null;
   jClips=(j.clips||[]).map(c=>({...c,blobURL:null}));jClipCnt=jClips.length;
+  jClipsGC=(j.clipsGC||[]).map(c=>({...c,blobURL:null}));
   uzZone('jfoto',imgStore.jfoto);uzZone('jesc',imgStore.jesc);
   buildJForma();buildJGoles();buildJRadar();buildJGK();buildJGolesEncajados();buildJClips();buildJHighlight();
   navTo('jugador-ed');renderJ();
@@ -5036,15 +5085,24 @@ function guardarJ(){
   const clipsManualGuardar=jClips.filter(c=>!c.srcPartido).map(c=>({id:c.id,titulo:c.titulo,rival:c.rival,tipo:c.tipo,
     srcType:c.srcType==='blob'?'blob_local':c.srcType,
     src:c.srcType==='blob'?'':c.src,portada:c.portada||null}));
+  // Mismo criterio que goles/clips (ver comentario arriba): los goles
+  // encajados y sus clips sincronizados desde "⚽ Partidos" (portero
+  // batido) se traen frescos de jDB en vez de reconstruirse desde la
+  // copia de trabajo, para no desetiquetar ni duplicar en el próximo
+  // guardado.
+  const golesEncSincronizados=(jPrevio?.golesEncajados||[]).filter(g=>g.srcPartido);
+  const clipsGCSincronizados=(jPrevio?.clipsGC||[]).filter(c=>c.srcPartido);
+  const golesEncManualGuardar=jGolesEncajados.filter(g=>!g.srcPartido);
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
-    forma:[...jForma],goles:[...golesSincronizados,...golesManualGuardar],radar:[...jRadar],gk:[...jGK],golesEncajados:[...jGolesEncajados],nota:G('jnota'),
+    forma:[...jForma],goles:[...golesSincronizados,...golesManualGuardar],radar:[...jRadar],gk:[...jGK],golesEncajados:[...golesEncSincronizados,...golesEncManualGuardar],nota:G('jnota'),
     imgJug:imgStore.jfoto||null,imgEsc:imgStore.jesc||null,
     clips:[...clipsSincronizados,...clipsManualGuardar],
+    clipsGC:[...clipsGCSincronizados],
     highlight:{titulo:jHighlight.titulo||'',temporada:jHighlight.temporada||'',
       srcType:jHighlight.srcType==='blob'?'blob_local':(jHighlight.srcType||''),
       src:jHighlight.srcType==='blob'?'':(jHighlight.src||''),portada:jHighlight.portada||null},
@@ -5259,7 +5317,7 @@ function radarSVG(vals,labels,sz=185){
 
 function renderJ(){
   const nom=(G('jnom')+' '+G('jape')).trim(),dor=G('jdor'),pos=G('jpos'),nac=G('jnac'),temp=G('jtemp'),club=G('jclub'),edad=G('jedad');
-  const[kg,ka,kp,kab,kmj]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj')];
+  const[kg,ka,kp,kab,kmj,kpt,kps]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj'),GN('kpt'),GN('kps')];
   const[kpz,kgr]=[GN('kpz'),GN('kgr')];
   const kf=pctMinutosJugados(kmj,kp);
   { const e=document.getElementById('kf'); if(e) e.value=kf; }
@@ -5334,9 +5392,22 @@ function renderJ(){
   // Goles encajados (solo porteros) — misma idea que golesH pero registrando
   // la CAUSA de cada gol recibido en vez del origen de un remate propio, así
   // el bloque deja ver de un vistazo en qué facetas concretas mejorar.
+  // Desde que "⚽ Partidos" sincroniza aquí automáticamente cada gol
+  // encajado (con el nombre del portero batido, tomado del propio gol o
+  // del marcador general del partido — ver sincronizarTacticaDesdePartidos
+  // 3d), una fila puede traer "causa" (rellenada a mano con "+ Añadir gol
+  // encajado", vocabulario propio de portero: Error individual, Mano a
+  // mano perdido...) o, si viene de un partido, "origen" (el mismo
+  // vocabulario de ataque ya usado en "Registro Goles": Ataque Organizado,
+  // Transición Ofensiva...) — se muestra la que haya, sin inventar una
+  // causa que no se registró.
   const golesEncH=jGolesEncajados.length===0?'<p style="font-size:10px;color:var(--gris)">Sin goles encajados registrados</p>'
-    :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Causa</th><th>Descripción</th></tr></thead><tbody>
-    ${jGolesEncajados.slice(0,10).map(g=>`<tr><td class="tmin">${g.min!=null?'m.'+g.min:'—'}</td><td>${eH(g.rival)||'—'}</td><td><span class="tbdg ${OCSS_GC[g.causa]||'to-def'}">${eH(g.causa||'—')}</span></td><td style="font-size:9px;color:var(--gris2)">${eH(g.desc||'—')}</td></tr>`).join('')}
+    :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Goleador</th><th>Cómo se produjo</th><th>Descripción</th></tr></thead><tbody>
+    ${jGolesEncajados.slice(0,10).map(g=>{
+      const etiqueta=g.causa||g.origen||'—';
+      const cls=g.causa?(OCSS_GC[g.causa]||'to-def'):(OCSS[g.origen]||'to-atq');
+      return `<tr><td class="tmin">${g.min!=null?'m.'+g.min:'—'}</td><td>${eH(g.rival)||'—'}</td><td style="font-size:9px;color:var(--gris2)">${eH(g.jugador)||'—'}</td><td><span class="tbdg ${cls}">${eH(etiqueta)}</span></td><td style="font-size:9px;color:var(--gris2)">${eH(g.desc||'—')}</td></tr>`;
+    }).join('')}
     </tbody></table>`;
   // Vídeo destacado (highlight) — igual para porteros que para jugadores de
   // campo, solo se pinta si hay algo cargado (archivo/URL).
@@ -5375,8 +5446,8 @@ function renderJ(){
   // que su fila de KPIs y el bloque de "perfil" que sigue son totalmente
   // distintos a los de un jugador de campo — ver _esPortero() más arriba.
   const kpisH=esGK
-    ? `<div class="fkpis" style="grid-template-columns:repeat(5,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
-    : `<div class="fkpis"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
+    ? `<div class="fkpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
+    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
   // Bloque táctico (Origen/Zona/Goles por periodo/Registro de goles) —
   // solo tiene sentido para un jugador de campo, así que no se muestra
   // para porteros.
@@ -5418,6 +5489,7 @@ function renderJ(){
     ${bloquePerfilH}
     ${trayectoriaH}
     ${clipsH}
+    ${esGK?renderJClipsGC():''}
     <div class="fnota"><strong>Nota técnica:</strong> ${eH(G('jnota'))||'—'}</div>
     <div class="ffoot"><p>${brandN} · ${eH(club)}</p><p>${cfg.footer||'Uso interno · Cuerpo técnico'}</p></div>
   </div>`;
@@ -11299,6 +11371,21 @@ function sincronizarTacticaDesdePartidos(){
       j.clips=j.clips.filter(c=>!c.srcPartido);
       if(j.clips.length!==antesC) cambiosJ=true;
     }
+    // Igual que goles/clips (ver arriba), pero para el portero que ENCAJA
+    // el gol: golesEncajados/clipsGC sincronizados (marcados con
+    // srcPartido) se quitan aquí para regenerarse limpios en el paso 3,
+    // sin tocar las entradas manuales que el cuerpo técnico haya añadido
+    // a mano con "+ Añadir gol encajado".
+    if(j.golesEncajados && j.golesEncajados.length){
+      const antesGE=j.golesEncajados.length;
+      j.golesEncajados=j.golesEncajados.filter(g=>!g.srcPartido);
+      if(j.golesEncajados.length!==antesGE) cambiosJ=true;
+    }
+    if(j.clipsGC && j.clipsGC.length){
+      const antesCGC=j.clipsGC.length;
+      j.clipsGC=j.clipsGC.filter(c=>!c.srcPartido);
+      if(j.clipsGC.length!==antesCGC) cambiosJ=true;
+    }
   });
 
   // 2) Quitar del equipo: los goles sincronizados de partidos manuales,
@@ -11505,6 +11592,52 @@ function sincronizarTacticaDesdePartidos(){
           }
         });
       }
+
+      // 3d) Ficha del PORTERO que encaja el gol — hasta ahora, "🥅 Goles
+      // Encajados" en la ficha del jugador solo se rellenaba a mano
+      // ("+ Añadir gol encajado"), aunque el propio gol ya se registra en
+      // "Añadir Partido" con el nombre del portero batido (campo
+      // "portero" de cada gol; si no se rellenó gol a gol, se usa el
+      // portero del marcador general del partido como respaldo:
+      // porteroLocal/porteroVisitante). Se sincroniza igual que 3a (goles
+      // marcados) y, si el gol trae vídeo, también su clip en una galería
+      // propia (j.clipsGC) — así el portero ve tanto CÓMO encajó cada gol
+      // como el vídeo, sin que nadie tenga que registrarlo dos veces.
+      golesLado.forEach((g,i)=>{
+        const porteroNom=(g.portero||'').trim()
+          || (lado==='local' ? (p.porteroVisitante||'').trim() : (p.porteroLocal||'').trim());
+        if(!porteroNom) return;
+        const pid=jugadorIdPorNombre(porteroNom);
+        if(!pid) return;
+        const jk=jDB.find(x=>x.id===pid); if(!jk) return;
+        if(!mismaTemporada(jk.temp,p.temp)) return;
+        const srcTag=p.id+'_'+i;
+        if(!jk.golesEncajados) jk.golesEncajados=[];
+        // Misma autolimpieza de "fantasmas" que en 3a/3b/3c.
+        const dupGEIdx=jk.golesEncajados.findIndex(gl=>!gl.srcPartido && gl.rival===equipoNom && (gl.jugador||'')===(g.jugador||'') && (gl.min??0)===(g.minuto??0));
+        if(dupGEIdx>=0) jk.golesEncajados.splice(dupGEIdx,1);
+        jk.golesEncajados.push({min:g.minuto??0,rival:equipoNom,jugador:g.jugador||'',origen:g.origen||'',subtipo:g.subtipo||'',zona:g.zona||'',cuerpo:g.cuerpo||'',desc:g.desc||'',srcPartido:srcTag});
+        cambiosJ=true;
+        if(g.clip && (g.clip.src || g.clip.portada || g.clip.srcType==='blob_local')){
+          if(!jk.clipsGC) jk.clipsGC=[];
+          const clipTitulo=g.clip.titulo||_tituloAutoClipGol(p.jornada,g.jugador,equipoNom,g.origen,g.minuto);
+          const tituloLegado=`Gol min. ${g.minuto??0}`;
+          const dupClipGEIdx=jk.clipsGC.findIndex(c=>!c.srcPartido && c.rival===equipoNom && (c.jugador||'')===(g.jugador||'') && (c.titulo===clipTitulo || c.titulo===tituloLegado));
+          if(dupClipGEIdx>=0) jk.clipsGC.splice(dupClipGEIdx,1);
+          jk.clipsGC.push({
+            id:'ap_'+srcTag+'_jgc',
+            titulo:clipTitulo,
+            rival:equipoNom,
+            jugador:g.jugador||'',
+            tipo:g.origen||'',
+            srcType:g.clip.srcType||'',
+            src:g.clip.src||'',
+            portada:g.clip.portada||null,
+            srcPartido:srcTag
+          });
+          cambiosJ=true;
+        }
+      });
     });
   });
 
