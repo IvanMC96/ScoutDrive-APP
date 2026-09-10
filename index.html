@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-09-01">
+<meta name="app-version" content="2026-09-10-01">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2891,7 +2891,7 @@ function renderInicio(){
   // Agrupados por liga (si hay más de una) para no mezclar en una misma
   // lista de 5 los partidos más recientes de ligas distintas — con el
   // filtro global se vería solo la liga con más actividad reciente.
-  const ultimosPTodos=pDB.filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
+  const ultimosPTodos=pDB.filter(p=>usuarioPuedeVerPartido(p))
     .sort((a,b)=>new Date(b.fechaReg||0)-new Date(a.fechaReg||0));
   const gruposUltimos=_agruparPartidosPorLiga(ultimosPTodos).map(g=>({...g,partidos:g.partidos.slice(0,5)}));
   document.getElementById('inicio-ultimos-partidos').innerHTML = gruposUltimos.length
@@ -2948,7 +2948,7 @@ function renderProximosPartidosInicio(){
   const hoyStr=`${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}-${String(hoy.getDate()).padStart(2,'0')}`;
   const proximosTodos=pDB
     .filter(p=>p.fecha && p.fecha>=hoyStr)
-    .filter(p=>usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local))||usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante)))
+    .filter(p=>usuarioPuedeVerPartido(p))
     .sort((a,b)=>a.fecha.localeCompare(b.fecha));
   const grupos=_agruparPartidosPorLiga(proximosTodos).map(g=>({...g,partidos:g.partidos.slice(0,5)}));
   if(!grupos.length){
@@ -3450,7 +3450,7 @@ function calcularClasificacionPorLiga(partidos,modo,vista){
       if(vista==='local' && !esLocal) return;
       if(vista==='visitante' && esLocal) return;
       const ligaNom=ligaPartido||ligaDeEquipoPorNombre(nombre)||'Sin liga especificada';
-      if(!usuarioPuedeVerLiga(ligaNom)) return;
+      if(!usuarioPuedeVerPartido(p)) return;
       const ligaKey=ligaNom.toLowerCase();
       if(!ligas[ligaKey]) ligas[ligaKey]={nombre:ligaNom,equipos:{}};
       const key=nombre.trim().toLowerCase();
@@ -10433,11 +10433,13 @@ function renderPartidos(){
 
   _actualizarFiltrosPartidos();
 
-  // Solo partidos donde al menos uno de los dos equipos esté en una
-  // liga permitida para este usuario (los admin ven todo).
-  const pDBVisible = pDB.filter(p=>
-    usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.local)) || usuarioPuedeVerLiga(ligaDeEquipoPorNombre(p.visitante))
-  );
+  // Solo partidos permitidos para este usuario (los admin sin
+  // restricción ven todo) — usuarioPuedeVerPartido() prueba tanto la
+  // comp+grupo del propio partido como la liga actual de cada equipo,
+  // para que un usuario restringido a la liga "de la ficha del equipo"
+  // no se quede sin ver partidos cuya comp+grupo se escribió con otro
+  // formato (ver el comentario junto a esa función).
+  const pDBVisible = pDB.filter(p=>usuarioPuedeVerPartido(p));
 
   // Los filtros de liga/grupo/temporada se rellenan con lo que ya haya en
   // los partidos visibles, en cascada igual que en Equipos, así que se leen
@@ -12405,6 +12407,31 @@ function usuarioPuedeVerLiga(liga){
   if(!permitidas || !permitidas.length) return true;
   if(!liga) return false;
   return permitidas.includes(liga.trim());
+}
+
+/** Comprueba el permiso de liga de un PARTIDO probando todas las
+ *  etiquetas razonables que podrían identificarlo, no solo una. Motivo:
+ *  Clasificación/Destacados agrupan cada partido por su propia comp+grupo
+ *  (p.comp+p.grupo, tal como se escribió al añadirlo — ver el comentario
+ *  en calcularClasificacionPorLiga), mientras que "🛡️ Administración de
+ *  usuarios" ofrece para restringir las ligas tal como están escritas en
+ *  la ficha de cada equipo (eq.liga). Si un admin escribió "3ª RFEF ·
+ *  G-XIV" al dar de alta el partido pero el equipo tiene guardado
+ *  "3ª RFEF · Grupo XIV" en su ficha (o viceversa), son en la práctica
+ *  la misma liga pero NO el mismo texto — así que un usuario restringido
+ *  a la de la ficha del equipo se quedaba sin ver ESE partido en
+ *  Clasificación/Destacados aunque sí le saliera en Goleadores (que
+ *  siempre comprobaba eq.liga, nunca comp+grupo). Se acepta el partido en
+ *  cuanto CUALQUIERA de sus etiquetas posibles esté permitida. */
+function usuarioPuedeVerPartido(p){
+  if(!p) return false;
+  const candidatas=[
+    [p.comp,p.grupo].filter(Boolean).join(' · '),
+    ligaDeEquipoPorNombre(p.local),
+    ligaDeEquipoPorNombre(p.visitante)
+  ].filter(Boolean);
+  if(!candidatas.length) return usuarioPuedeVerLiga(null);
+  return candidatas.some(l=>usuarioPuedeVerLiga(l));
 }
 
 /** Espacio de Google Drive usado por la cuenta que aloja el backend.
