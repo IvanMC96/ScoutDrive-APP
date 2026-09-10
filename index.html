@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-10-02">
+<meta name="app-version" content="2026-09-10-03">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2173,6 +2173,16 @@ body.solo-lectura .ed-panel-form {
           <input id="ap-visitante" list="ap-equipo-list" placeholder="Rival" oninput="buildApGoles()" style="margin-top:4px">
         </div>
         <datalist id="ap-equipo-list"></datalist>
+      </div>
+      <div class="apf" id="apf-acta" style="border:1.5px dashed var(--border);border-radius:8px;padding:10px;background:var(--bg3)">
+        <label>📋 Importar acta (titulares, suplentes, cambios, tarjetas y minutos)</label>
+        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Pega el enlace de la ficha del partido en la web de tu federación (FEX u otra) — se rellenan solos titulares/suplentes/cambios/tarjetas/minutos de cada jugador. Los goles se siguen añadiendo abajo, a mano, como hasta ahora.</p>
+        <div class="apf-row">
+          <input type="text" id="ap-acta-url" placeholder="https://www.fexfutbol.com/pnfg/...">
+          <button type="button" class="btn b-azul b-sm" style="white-space:nowrap" onclick="importarActaDesdeURL()">📋 Importar</button>
+        </div>
+        <div id="ap-acta-status" style="font-size:10px;color:var(--gris);margin-top:6px"></div>
+        <div id="ap-acta-preview"></div>
       </div>
       <div class="apf-row3">
         <div class="apf"><label>Jornada</label><input id="ap-jornada" placeholder="J1" type="text"></div>
@@ -5124,13 +5134,17 @@ function guardarJ(){
   // el admin lo corrige a mano antes de guardar, la base se recongela
   // bien a partir de ahí, y a partir de ese guardado ya no se vuelve a
   // duplicar.
-  const _tG=_tallyGolesJugadores()[id]||{g:0,a:0,pz:0,ab:0,gr:0};
+  const _tG=_tallyGolesJugadores()[id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
   j.statsManualBase={
     g:Math.max(0,(j.stats.g||0)-_tG.g),
     a:Math.max(0,(j.stats.a||0)-_tG.a),
     pz:Math.max(0,(j.stats.pz||0)-_tG.pz),
     ab:Math.max(0,(j.stats.ab||0)-(_tG.ab||0)),
-    gr:Math.max(0,(j.stats.gr||0)-(_tG.gr||0))
+    gr:Math.max(0,(j.stats.gr||0)-(_tG.gr||0)),
+    pt:Math.max(0,(j.stats.pt||0)-(_tG.pt||0)),
+    ps:Math.max(0,(j.stats.ps||0)-(_tG.ps||0)),
+    p:Math.max(0,(j.stats.p||0)-(_tG.p||0)),
+    min:Math.max(0,(j.stats.min||0)-(_tG.min||0))
   };
   const idx=jDB.findIndex(x=>x.id===id);
   if(idx>=0)jDB[idx]=j;else jDB.unshift(j);
@@ -11037,6 +11051,7 @@ function abrirAddPartido(){
   document.getElementById('add-partido-titulo').textContent='➕ Añadir partido';
   apGoles=[]; buildApGoles();
   _resetThumbPreview();
+  _apActaResetEstado();
   document.getElementById('add-partido-modal').classList.add('open');
 }
 
@@ -11070,6 +11085,16 @@ function editarPartido(id){
     document.getElementById('ap-thumb-placeholder').style.display = 'none';
     if(p.thumb.startsWith('data:')) window._thumbBase64 = p.thumb;
   }
+  // Restaurar acta importada (si este partido ya la tenía) — se recarga
+  // en la misma vista previa editable, por si hay que corregir algo o
+  // volver a importar desde cero.
+  _apActaResetEstado();
+  if(p.alineacion){
+    apActaImportada=JSON.parse(JSON.stringify(p.alineacion));
+    _apActaPreviewPendiente=JSON.parse(JSON.stringify(p.alineacion));
+    document.getElementById('ap-acta-status').textContent='✅ Este partido ya tiene una acta importada — puedes revisarla abajo, corregir el emparejamiento o volver a importar desde el enlace.';
+    _renderApActaPreview();
+  }
   document.getElementById('add-partido-modal').classList.add('open');
 }
 
@@ -11078,6 +11103,323 @@ function cerrarAddPartido(){
   // Limpiar preview de thumb
   _resetThumbPreview();
   _apLimpiarBlobsGoles();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  IMPORTAR ACTA (titulares/suplentes/cambios/tarjetas/minutos)
+//  ────────────────────────────────────────────────────────────────
+//  El navegador no puede pedir directamente la página del acta de otra
+//  web (bloqueo de seguridad CORS) — por eso el primer paso pasa por el
+//  backend (Code.gs → importarActaURL_, ver CODE_GS_IMPORTAR_ACTA.txt),
+//  que descarga la página y devuelve su texto plano. Aquí en el
+//  frontend se interpreta ese texto (_parsearActaTexto), se cruza cada
+//  nombre con la plantilla del club correspondiente (_actaEmparejarEquipo
+//  — por dorsal primero, y si no cuadra, por parecido del nombre) y se
+//  deja todo en una vista previa EDITABLE antes de aplicar nada. Los
+//  GOLES no se tocan por aquí — se siguen añadiendo a mano como
+//  siempre; esto solo rellena titulares/suplentes/cambios/tarjetas/
+//  minutos de cada jugador (ver _tallyGolesJugadores/
+//  recalcularStatsDesdePartidos más abajo, que a partir de esto
+//  calculan solos PT/PS/PJ/Minutos jugados, igual que ya hacían con
+//  goles/asistencias).
+//
+//  Se asume que la web lista primero al equipo LOCAL y después al
+//  VISITANTE (lo habitual en actas de federación) — si alguna vez sale
+//  al revés, el botón "🔄 Intercambiar" de la vista previa lo arregla
+//  sin tener que reimportar.
+// ════════════════════════════════════════════════════════════════
+let apActaImportada=null;        // {local:{titulares,suplentes,tarjetas},visitante:{...}} ya CONFIRMADA
+let _apActaPreviewPendiente=null; // lo mismo pero mientras se revisa, antes de confirmar
+let _apActaTextoCrudo='';         // último texto recibido, para depurar si algo no cuadra
+
+function _apActaResetEstado(){
+  apActaImportada=null; _apActaPreviewPendiente=null; _apActaTextoCrudo='';
+  const url=document.getElementById('ap-acta-url'); if(url) url.value='';
+  const st=document.getElementById('ap-acta-status'); if(st) st.textContent='';
+  const pv=document.getElementById('ap-acta-preview'); if(pv) pv.innerHTML='';
+}
+
+async function importarActaDesdeURL(){
+  if(!esAdminActual()){toast('Solo los administradores pueden importar',true);return;}
+  const url=(document.getElementById('ap-acta-url')||{}).value?.trim();
+  if(!url){ toast('Pega antes el enlace del acta',true); return; }
+  const estado=document.getElementById('ap-acta-status');
+  estado.textContent='⏳ Descargando e interpretando el acta...';
+  document.getElementById('ap-acta-preview').innerHTML='';
+  let resp;
+  try{ resp=await _apiAdmin('importarActaURL',{url}); }
+  catch(e){ resp={ok:false,motivo:String(e)}; }
+  if(!resp || !resp.ok){
+    estado.innerHTML='❌ No se pudo importar ('+eH((resp&&resp.motivo)||'error desconocido')+'). Puedes añadir todo a mano como hasta ahora. '
+      +(resp&&resp.motivo==='sin_conexion'?'¿Has añadido ya la acción <code>importarActaURL</code> en tu Code.gs?':'');
+    return;
+  }
+  _apActaTextoCrudo=resp.texto||'';
+  let datos;
+  try{ datos=_parsearActaTexto(_apActaTextoCrudo); }
+  catch(e){ estado.textContent='❌ No se pudo interpretar el texto del acta ('+e.message+'). Mira el texto crudo abajo y pásamelo si quieres que lo ajuste.'; _renderApActaDebug(); return; }
+  if(!datos || (!datos.local.titulares.length && !datos.visitante.titulares.length)){
+    estado.textContent='⚠️ Se descargó la página pero no se reconoció ningún jugador — puede que esta web tenga un formato algo distinto. Revisa el texto crudo abajo y pásamelo para ajustar el "traductor".';
+    _renderApActaDebug();
+    return;
+  }
+  const clubLocal=document.getElementById('ap-local').value.trim();
+  const clubVisitante=document.getElementById('ap-visitante').value.trim();
+  const temp=document.getElementById('ap-temp').value.trim();
+  datos.local.titulares=_actaEmparejarLista(datos.local.titulares,clubLocal,temp);
+  datos.local.suplentes=_actaEmparejarLista(datos.local.suplentes,clubLocal,temp);
+  datos.visitante.titulares=_actaEmparejarLista(datos.visitante.titulares,clubVisitante,temp);
+  datos.visitante.suplentes=_actaEmparejarLista(datos.visitante.suplentes,clubVisitante,temp);
+  _apActaPreviewPendiente=datos;
+  estado.textContent='✅ Acta interpretada — revisa el emparejamiento de cada jugador antes de confirmar.';
+  _renderApActaPreview();
+}
+
+/** Interpreta el texto plano de una ficha de partido (acta) y devuelve
+ *  {local:{titulares,suplentes,tarjetas}, visitante:{...}}. No asume UN
+ *  único formato exacto de línea (dorsal y nombre pueden venir en la
+ *  misma línea o en dos seguidas, según cómo la web monte la tabla) —
+ *  busca el patrón "número + NOMBRE EN MAYÚSCULAS CON COMA" dentro de
+ *  cada sección, delimitada por las palabras "Titulares"/"Suplentes"/
+ *  "Sustituciones"/"Tarjetas" (que se asume aparecen en ese orden, una
+ *  vez por cada equipo — la 2ª aparición de "Titulares" es la frontera
+ *  entre el bloque del equipo local y el del visitante). */
+function _parsearActaTexto(texto){
+  const t='\n'+(texto||'')+'\n';
+  const idxTitulares=[...t.matchAll(/Titulares/gi)].map(m=>m.index);
+  if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio()};
+  const bloque1=t.slice(idxTitulares[0],idxTitulares[1]);
+  const bloque2=t.slice(idxTitulares[1]);
+  return { local:_parsearBloqueEquipoActa(bloque1), visitante:_parsearBloqueEquipoActa(bloque2) };
+}
+function _actaBloqueVacio(){ return {titulares:[],suplentes:[],tarjetas:[]}; }
+
+const _ACTA_RE_NOMBRE='[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45},\\s*[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45}';
+/** Extrae todas las apariciones de "dorsal + NOMBRE, Apellidos" de un
+ *  trozo de texto (sin importar si dorsal y nombre están en la misma
+ *  línea o en dos seguidas), como [{dorsal,nombre,indice}]. */
+function _actaExtraerJugadores(texto){
+  const re=new RegExp('(\\d{1,2})\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
+  const out=[]; let m;
+  while((m=re.exec(texto))){
+    out.push({dorsal:m[1],nombre:m[2].replace(/\s+/g,' ').trim(),indice:m.index});
+  }
+  return out;
+}
+
+function _parsearBloqueEquipoActa(bloque){
+  const idxSuplentes=bloque.search(/Suplentes/i);
+  const idxSustituciones=bloque.search(/Sustituciones/i);
+  const idxTarjetas=bloque.search(/Tarjetas/i);
+  const finTitulares=idxSuplentes>=0?idxSuplentes:(idxSustituciones>=0?idxSustituciones:(idxTarjetas>=0?idxTarjetas:bloque.length));
+  const finSuplentes=idxSustituciones>=0?idxSustituciones:(idxTarjetas>=0?idxTarjetas:bloque.length);
+  const zonaTitulares=bloque.slice(0,finTitulares);
+  const zonaSuplentes=idxSuplentes>=0?bloque.slice(idxSuplentes,finSuplentes):'';
+  const zonaSustituciones=idxSustituciones>=0?bloque.slice(idxSustituciones,idxTarjetas>=0?idxTarjetas:bloque.length):'';
+  const zonaTarjetas=idxTarjetas>=0?bloque.slice(idxTarjetas):'';
+
+  const titularesRaw=_actaExtraerJugadores(zonaTitulares);
+  const suplentesRaw=_actaExtraerJugadores(zonaSuplentes);
+
+  // Sustituciones: el jugador que SALE no lleva minuto pegado a su
+  // nombre, así que _actaExtraerJugadores() ya lo detecta tal cual (su
+  // patrón exige solo espacios/salto de línea entre el dorsal y el
+  // nombre). El que ENTRA sí lo lleva, en cualquiera de los dos órdenes
+  // posibles ("(46') 18 Nombre" o "18 (46') Nombre"), así que se buscan
+  // ambos por separado. Se empareja cada salida con la entrada en la
+  // MISMA posición de la lista (la acta las lista siempre en parejas
+  // seguidas: sale, entra, sale, entra...) — no por dorsal, porque el
+  // dorsal del que sale no tiene por qué coincidir con nada más.
+  const salidas=_actaExtraerJugadores(zonaSustituciones).sort((a,b)=>a.indice-b.indice);
+  const entradas=[];
+  {
+    const reA=new RegExp('\\((\\d{1,3})(?:\\+\\d+)?\'\\)\\s*(\\d{1,2})\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
+    const reB=new RegExp('(\\d{1,2})\\s*\\n?\\s*\\((\\d{1,3})(?:\\+\\d+)?\'\\)\\s*('+_ACTA_RE_NOMBRE+')','g');
+    let m;
+    while((m=reB.exec(zonaSustituciones))){
+      entradas.push({dorsal:m[1],minuto:+m[2],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
+    }
+    while((m=reA.exec(zonaSustituciones))){
+      if(entradas.some(e=>Math.abs(e.indice-m.index)<4)) continue;
+      entradas.push({dorsal:m[2],minuto:+m[1],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
+    }
+    entradas.sort((a,b)=>a.indice-b.indice);
+  }
+  const parejas=[];
+  for(let i=0;i<Math.max(salidas.length,entradas.length);i++) parejas.push({sale:salidas[i]||null,entra:entradas[i]||null});
+
+  const titulares=titularesRaw.map(j=>{
+    const pareja=parejas.find(p=>p.sale && p.sale.dorsal===j.dorsal);
+    return {dorsal:j.dorsal,nombre:j.nombre,entro:true,minutoSalida:(pareja&&pareja.entra)?pareja.entra.minuto:null};
+  });
+  const suplentes=suplentesRaw.map(j=>{
+    const pareja=parejas.find(p=>p.entra && p.entra.dorsal===j.dorsal);
+    return {dorsal:j.dorsal,nombre:j.nombre,entro:!!pareja,minutoEntrada:pareja?pareja.entra.minuto:null};
+  });
+
+  // Tarjetas: dorsal+nombre igual que arriba; el minuto suele ir justo
+  // antes ("(40')"); el tipo (amarilla/roja) es la parte menos fiable
+  // de extraer como texto (en muchas webs es solo un icono de color, no
+  // una palabra) — se busca la palabra "roja" cerca, y si no se
+  // encuentra se asume amarilla (lo más habitual) y queda como campo
+  // editable en la vista previa.
+  const tarjetas=_actaExtraerJugadores(zonaTarjetas).map(j=>{
+    const antes=zonaTarjetas.slice(Math.max(0,j.indice-16),j.indice);
+    const mm=antes.match(/\((\d{1,3})(?:\+\d+)?'\)/);
+    const cerca=zonaTarjetas.slice(Math.max(0,j.indice-40),j.indice+5);
+    return {dorsal:j.dorsal,nombre:j.nombre,minuto:mm?+mm[1]:null,tipo:/roja/i.test(cerca)?'roja':'amarilla'};
+  });
+
+  return {titulares,suplentes,tarjetas};
+}
+
+/** Puntuación 0..1 de cuánto se parece el nombre tal y como sale en el
+ *  acta ("APELLIDOS, NOMBRE", en mayúsculas) al de un jugador de jDB
+ *  (nom+ape) — por PALABRAS, no por el orden exacto: un apellido doble
+ *  ("BLANCO ECHEVERRIA, BRAYAN DAVID") o un nombre compuesto encajan
+ *  igual aunque en tu ficha estén repartidos de otra forma entre
+ *  "Nombre" y "Apellidos". Reutiliza el mismo comparador difuso
+ *  (_palabraParecida) que ya usan los buscadores de la app, así que
+ *  tolera acentos, mayúsculas y alguna errata/OCR suelta. */
+function _actaPalabrasNombre(s){
+  return _normalizarBusqueda(s).replace(/,/g,' ').split(/\s+/).filter(Boolean);
+}
+function _actaPuntuacionNombre(nombreActa,jugador){
+  const palActa=_actaPalabrasNombre(nombreActa);
+  const palJug=_actaPalabrasNombre((jugador.nom||'')+' '+(jugador.ape||''));
+  if(!palActa.length||!palJug.length) return 0;
+  let coincidencias=0;
+  palActa.forEach(pa=>{ if(palJug.some(pj=>_palabraParecida(pa,pj))) coincidencias++; });
+  return coincidencias/Math.max(palActa.length,palJug.length);
+}
+
+/** Cruza una lista de jugadores del acta ([{dorsal,nombre,...}]) con la
+ *  plantilla de un club: primero por dorsal exacto, y si no hay ningún
+ *  jugador con ese dorsal en la ficha (o el acta no trae dorsal),
+ *  prueba por parecido de nombre y se queda con el mejor si supera un
+ *  mínimo de confianza. Devuelve la misma lista con jugadorId/
+ *  jugadorNom/confianza añadidos — "confianza" es 'dorsal' (segura),
+ *  'nombre' (razonable pero conviene repasarla) o 'sin_match' (no se
+ *  ha encontrado a nadie parecido, hay que elegirlo a mano). */
+function _actaEmparejarLista(lista,clubNombre,temporada){
+  const clubNorm=_normalizarBusqueda(clubNombre);
+  const candidatos=jDB.filter(j=>_normalizarBusqueda(j.club)===clubNorm && !j._bajaPlantilla);
+  const conTemp=temporada?candidatos.filter(j=>!j.temp||_normalizarBusqueda(j.temp)===_normalizarBusqueda(temporada)):candidatos;
+  const pool=conTemp.length?conTemp:candidatos;
+  return lista.map(pa=>{
+    let jugador=null,score=0,confianza='sin_match';
+    if(pa.dorsal!=null){
+      const porDorsal=pool.find(j=>String(j.dor||'').trim()!=='' && String(j.dor).trim()===String(pa.dorsal).trim());
+      if(porDorsal){ jugador=porDorsal; score=_actaPuntuacionNombre(pa.nombre,porDorsal); confianza='dorsal'; }
+    }
+    if(!jugador){
+      pool.forEach(j=>{ const s=_actaPuntuacionNombre(pa.nombre,j); if(s>score){ score=s; jugador=j; } });
+      confianza = jugador && score>=0.6 ? 'nombre' : 'sin_match';
+      if(confianza==='sin_match') jugador=null;
+    }
+    return {...pa, jugadorId:jugador?jugador.id:null, jugadorNom:jugador?(jugador.nom+' '+jugador.ape).trim():null, confianza, score:Math.round(score*100), _opciones:pool};
+  });
+}
+
+function _apActaBadgeConfianza(c){
+  if(c==='dorsal') return '<span class="tbdg to-jd" title="Emparejado por dorsal">✓ dorsal</span>';
+  if(c==='nombre') return '<span class="tbdg to-abpc" title="Emparejado por parecido de nombre — revísalo">≈ nombre</span>';
+  return '<span class="tbdg to-def" title="No se ha encontrado a nadie parecido en la plantilla">? sin emparejar</span>';
+}
+function _apActaSelectHTML(lado,tipo,idx,fila){
+  const opciones=(fila._opciones||[]).map(j=>`<option value="${eH(j.id)}"${j.id===fila.jugadorId?' selected':''}>#${eH(j.dor||'—')} ${eH((j.nom+' '+j.ape).trim())}</option>`).join('');
+  return `<select onchange="_apActaCambiarMatch('${lado}','${tipo}',${idx},this.value)" style="font-size:10px;padding:3px 4px">
+    <option value=""${fila.jugadorId?'':' selected'}>— Sin emparejar —</option>${opciones}</select>`;
+}
+function _apActaCambiarMatch(lado,tipo,idx,jugadorId){
+  if(!_apActaPreviewPendiente) return;
+  const fila=_apActaPreviewPendiente[lado][tipo][idx]; if(!fila) return;
+  const j=jDB.find(x=>x.id===jugadorId);
+  fila.jugadorId=jugadorId||null;
+  fila.jugadorNom=j?(j.nom+' '+j.ape).trim():null;
+  fila.confianza=jugadorId?'manual':'sin_match';
+}
+function _apActaIntercambiarLados(){
+  if(!_apActaPreviewPendiente) return;
+  const tmp=_apActaPreviewPendiente.local;
+  _apActaPreviewPendiente.local=_apActaPreviewPendiente.visitante;
+  _apActaPreviewPendiente.visitante=tmp;
+  _renderApActaPreview();
+}
+
+function _apActaFilaHTML(lado,tipo,idx,fila,mostrarMinuto){
+  const min = tipo==='titulares' ? (fila.minutoSalida!=null?`hasta m.${fila.minutoSalida}`:'90\'')
+            : tipo==='suplentes' ? (fila.entro?`entra m.${fila.minutoEntrada}`:'no entró')
+            : '';
+  return `<tr>
+    <td class="tmin">#${eH(fila.dorsal)}</td>
+    <td style="font-size:10px">${eH(fila.nombre)}</td>
+    <td>${_apActaSelectHTML(lado,tipo,idx,fila)}</td>
+    <td>${_apActaBadgeConfianza(fila.confianza)}</td>
+    ${mostrarMinuto?`<td style="font-size:9px;color:var(--gris2)">${min}</td>`:''}
+  </tr>`;
+}
+function _apActaTablaHTML(lado,titulo){
+  const d=_apActaPreviewPendiente[lado];
+  const tabla=(tipo,mostrarMinuto)=>{
+    const filas=d[tipo];
+    if(!filas.length) return '<p style="font-size:9px;color:var(--gris)">Ninguno detectado</p>';
+    return `<table class="tgj"><thead><tr><th>#</th><th>Nombre (acta)</th><th>Jugador</th><th></th>${mostrarMinuto?'<th>Minutos</th>':''}</tr></thead><tbody>
+      ${filas.map((f,i)=>_apActaFilaHTML(lado,tipo,i,f,mostrarMinuto)).join('')}
+    </tbody></table>`;
+  };
+  const tarjetasH=d.tarjetas.length
+    ?`<p style="font-size:9px;color:var(--gris2);margin:6px 0 2px">🟨 Tarjetas</p><ul style="font-size:10px;margin:0;padding-left:16px">${d.tarjetas.map(t=>`<li>#${eH(t.dorsal)} ${eH(t.nombre)}${t.minuto?` (m.${t.minuto})`:''} — ${t.tipo==='roja'?'🟥 roja':'🟨 amarilla'}</li>`).join('')}</ul>`
+    :'';
+  return `<div style="flex:1;min-width:260px">
+    <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">${eH(titulo)}</p>
+    <p style="font-size:9px;color:var(--gris2);margin:0 0 4px">Titulares</p>${tabla('titulares',true)}
+    <p style="font-size:9px;color:var(--gris2);margin:8px 0 4px">Suplentes</p>${tabla('suplentes',true)}
+    ${tarjetasH}
+  </div>`;
+}
+function _renderApActaPreview(){
+  const cont=document.getElementById('ap-acta-preview'); if(!cont || !_apActaPreviewPendiente) return;
+  const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
+  const nomVisit=document.getElementById('ap-visitante').value.trim()||'Visitante';
+  cont.innerHTML=`
+    <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:6px">
+      ${_apActaTablaHTML('local',nomLocal)}
+      ${_apActaTablaHTML('visitante',nomVisit)}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button type="button" class="btn b-ghost b-sm" onclick="_apActaIntercambiarLados()">🔄 Intercambiar local/visitante</button>
+      <button type="button" class="btn b-verde b-sm" onclick="_apActaConfirmar()">✅ Confirmar y rellenar</button>
+      <button type="button" class="btn b-ghost b-sm" onclick="_apActaResetEstado()">✕ Descartar</button>
+    </div>`;
+}
+function _renderApActaDebug(){
+  const cont=document.getElementById('ap-acta-preview'); if(!cont) return;
+  cont.innerHTML=`<details style="margin-top:6px"><summary style="font-size:10px;color:var(--gris2);cursor:pointer">Ver texto crudo importado (para depurar)</summary>
+    <textarea readonly style="width:100%;height:140px;font-size:9px;margin-top:4px">${eH(_apActaTextoCrudo)}</textarea></details>`;
+}
+
+/** Aplica la vista previa confirmada: guarda el emparejamiento final en
+ *  apActaImportada (lo que guardarPartido() persistirá en p.alineacion)
+ *  y, como ayuda extra, rellena "Portero local"/"Portero visitante" si
+ *  alguno de los titulares emparejados es de posición "Portero" (así no
+ *  hay que teclearlo también a mano). */
+function _apActaConfirmar(){
+  if(!_apActaPreviewPendiente) return;
+  apActaImportada=_apActaPreviewPendiente;
+  ['local','visitante'].forEach(lado=>{
+    const porteroTitular=apActaImportada[lado].titulares.find(f=>{
+      const j=f.jugadorId?jDB.find(x=>x.id===f.jugadorId):null;
+      return j && j.pos==='Portero';
+    });
+    if(porteroTitular){
+      const j=jDB.find(x=>x.id===porteroTitular.jugadorId);
+      const campo=document.getElementById(lado==='local'?'ap-portero-local':'ap-portero-visitante');
+      if(campo && j) campo.value=(j.nom+' '+j.ape).trim();
+    }
+  });
+  document.getElementById('ap-acta-status').textContent='✅ Acta aplicada — se guardará con el partido. Sigue añadiendo los goles abajo, como siempre.';
+  toast('📋 Acta importada — revisa porteros/goles y guarda el partido');
 }
 
 function _resetThumbPreview(){
@@ -11145,7 +11487,7 @@ const _mismaTemporadaTally=(tempA,tempB)=>{
  *  manual si el propio admin corrige un número a mano (ver ahí). */
 function _tallyGolesJugadores(){
   const tally={};
-  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0}; tally[id][campo]++; };
+  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0}; tally[id][campo]++; };
   const sumarSiTemporadaOk=(nombreJugador,campo,tempPartido)=>{
     const id=jugadorIdPorNombre(nombreJugador);
     if(!id) return;
@@ -11164,7 +11506,7 @@ function _tallyGolesJugadores(){
     const j=jDB.find(x=>x.id===id);
     if(!j) return;
     if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
-    if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0};
+    if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
     tally[id][campo]=(tally[id][campo]||0)+cantidad;
   };
 
@@ -11206,6 +11548,40 @@ function _tallyGolesJugadores(){
     });
   });
 
+  // Fuente 3: alineación importada de un acta ("📋 Importar acta" dentro
+  // de "Añadir Partido") — cada titular suma PJ+PT (90 minutos, o hasta el
+  // minuto en que salió si fue sustituido), y cada suplente que SÍ llegó a
+  // entrar suma PJ+PS (los minutos desde que entró hasta el 90). El
+  // suplente que se quedó en el banquillo sin entrar no suma nada — sigue
+  // sin haber jugado ese partido. Si el partido no tiene acta importada
+  // (alineacion===null, el caso de todo lo registrado hasta ahora), esta
+  // fuente simplemente no aporta nada, como hasta ahora — PJ/PT/PS/Minutos
+  // se siguen pudiendo rellenar a mano igual que siempre.
+  const sumarAlineacion=(jugadorId,tempPartido,campo,minutos)=>{
+    if(!jugadorId) return;
+    const j=jDB.find(x=>x.id===jugadorId); if(!j) return;
+    if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
+    if(!tally[jugadorId]) tally[jugadorId]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
+    tally[jugadorId][campo]++;
+    tally[jugadorId].p++;
+    tally[jugadorId].min+=Math.max(0,minutos||0);
+  };
+  pDB.forEach(p=>{
+    if(!p.alineacion) return;
+    ['local','visitante'].forEach(lado=>{
+      const bloque=p.alineacion[lado]; if(!bloque) return;
+      (bloque.titulares||[]).forEach(f=>{
+        const minutos=f.minutoSalida!=null?f.minutoSalida:90;
+        sumarAlineacion(f.jugadorId,p.temp,'pt',minutos);
+      });
+      (bloque.suplentes||[]).forEach(f=>{
+        if(!f.entro) return;
+        const minutos=f.minutoEntrada!=null?(90-f.minutoEntrada):0;
+        sumarAlineacion(f.jugadorId,p.temp,'ps',minutos);
+      });
+    });
+  });
+
   return tally;
 }
 
@@ -11232,20 +11608,21 @@ function _tallyStatsEquipos(){
   return tallyEq;
 }
 
-/** Recalcula Goles/Asistencias/ABP goles/Porterías a cero/Goles recibidos
- *  de cada jugador, y PJ/V/E/D/GF/GC de cada equipo, sumando lo registrado
- *  en "Goles del partido" (Partidos) por encima de su base manual
- *  histórica (statsManualBase). La base se congela la primera vez que se
- *  ejecuta esto para cada jugador/equipo, así nunca se pierden los datos
- *  que ya tenías metidos a mano — solo se suma lo nuevo que venga de los
- *  partidos. guardarJ()/guardarE() se encargan de traspasar esa base
+/** Recalcula Goles/Asistencias/ABP goles/Porterías a cero/Goles recibidos/
+ *  PJ/PT/PS/Minutos jugados de cada jugador, y PJ/V/E/D/GF/GC de cada
+ *  equipo, sumando lo registrado en "⚽ Partidos" por encima de su base
+ *  manual histórica (statsManualBase). La base se congela la primera vez
+ *  que se ejecuta esto para cada jugador/equipo, así nunca se pierden los
+ *  datos que ya tenías metidos a mano — solo se suma lo nuevo que venga de
+ *  los partidos. guardarJ()/guardarE() se encargan de traspasar esa base
  *  entre guardados (y de recongelarla si el propio admin corrige un
  *  número a mano), para que nunca se "descongele" por accidente y se
  *  vuelva a sumar el tally por encima de un total que ya lo incluía.
- *  "Partidos jugados" y "Minutos jugados" del JUGADOR NO se tocan aquí: la
- *  videoteca de Partidos no registra quién estuvo en el once de cada
- *  equipo, así que no hay de dónde deducirlos sin añadir una convocatoria/
- *  alineación por partido — de momento se siguen rellenando a mano. */
+ *  PJ/PT/PS/Minutos SOLO se recalculan para los partidos que tienen una
+ *  acta importada ("📋 Importar acta" en Añadir Partido, ver
+ *  _tallyGolesJugadores → Fuente 3) — si un partido no la tiene, esos
+ *  campos siguen sin tocarse y se pueden seguir rellenando a mano como
+ *  hasta ahora, exactamente igual que con los demás campos. */
 function recalcularStatsDesdePartidos(){
   const tally=_tallyGolesJugadores();
 
@@ -11259,14 +11636,26 @@ function recalcularStatsDesdePartidos(){
     if(j.statsManualBase.pz===undefined){ j.statsManualBase.pz=j.stats.pz||0; cambios=true; }
     if(j.statsManualBase.ab===undefined){ j.statsManualBase.ab=j.stats.ab||0; cambios=true; }
     if(j.statsManualBase.gr===undefined){ j.statsManualBase.gr=j.stats.gr||0; cambios=true; }
-    const t=tally[j.id]||{g:0,a:0,pz:0,ab:0,gr:0};
+    if(j.statsManualBase.pt===undefined){ j.statsManualBase.pt=j.stats.pt||0; cambios=true; }
+    if(j.statsManualBase.ps===undefined){ j.statsManualBase.ps=j.stats.ps||0; cambios=true; }
+    if(j.statsManualBase.p===undefined){ j.statsManualBase.p=j.stats.p||0; cambios=true; }
+    if(j.statsManualBase.min===undefined){ j.statsManualBase.min=j.stats.min||0; cambios=true; }
+    const t=tally[j.id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
     const nuevoG=(j.statsManualBase.g||0)+t.g;
     const nuevoA=(j.statsManualBase.a||0)+t.a;
     const nuevoPz=(j.statsManualBase.pz||0)+t.pz;
     const nuevoAb=(j.statsManualBase.ab||0)+(t.ab||0);
     const nuevoGr=(j.statsManualBase.gr||0)+(t.gr||0);
-    if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz || j.stats.ab!==nuevoAb || j.stats.gr!==nuevoGr){
-      j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; j.stats.ab=nuevoAb; j.stats.gr=nuevoGr; cambios=true;
+    const nuevoPt=(j.statsManualBase.pt||0)+(t.pt||0);
+    const nuevoPs=(j.statsManualBase.ps||0)+(t.ps||0);
+    const nuevoP=(j.statsManualBase.p||0)+(t.p||0);
+    const nuevoMin=(j.statsManualBase.min||0)+(t.min||0);
+    if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz || j.stats.ab!==nuevoAb || j.stats.gr!==nuevoGr
+      || j.stats.pt!==nuevoPt || j.stats.ps!==nuevoPs || j.stats.p!==nuevoP || j.stats.min!==nuevoMin){
+      j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; j.stats.ab=nuevoAb; j.stats.gr=nuevoGr;
+      j.stats.pt=nuevoPt; j.stats.ps=nuevoPs; j.stats.p=nuevoP; j.stats.min=nuevoMin;
+      j.stats.f=pctMinutosJugados(nuevoMin,nuevoP);
+      cambios=true;
     }
   });
   if(cambios) saveJDB();
@@ -11297,7 +11686,8 @@ function recalcularStatsDesdePartidos(){
 
 // Herramienta de mantenimiento (Config › "🔄 Recalcular estadísticas desde
 // Partidos"): pone statsManualBase a CERO en todos los jugadores y equipos
-// y fuerza un recálculo completo, así que stats.g/a/pz/ab/gr (jugadores) y
+// y fuerza un recálculo completo, así que stats.g/a/pz/ab/gr/pt/ps/p/min
+// (jugadores — estos 4 últimos solo para partidos con acta importada) y
 // stats.pj/v/e/d/gf/gc (equipos) quedan EXACTAMENTE igual a lo que hay
 // registrado en "⚽ Partidos" — nada de base "manual" arrastrada de antes.
 // Pensada para cuando un admin ya sabe que un número está mal (duplicado
@@ -11310,7 +11700,7 @@ async function adminRecalcularStatsDesdeCero(){
   askDel(
     '¿Recalcular TODAS las estadísticas de goles/asistencias/ABP/PJ/V/E/D/GF/GC de jugadores y equipos, contando solo lo registrado en "⚽ Partidos"? No se borra ningún gol, clip ni partido. Si tenías estadísticas metidas a mano sin su partido correspondiente en la videoteca, esas se perderán.',
     async ()=>{
-      jDB.forEach(j=>{ j.statsManualBase={g:0,a:0,pz:0,ab:0,gr:0}; });
+      jDB.forEach(j=>{ j.statsManualBase={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0}; });
       eDB.forEach(eq=>{ eq.statsManualBase={pj:0,v:0,e:0,d:0,gf:0,gc:0}; });
       saveJDB(); saveEDB();
       recalcularStatsDesdePartidos();
@@ -11667,6 +12057,7 @@ function guardarPartido(){
     goles: apGoles.map(_apGolParaGuardar),
     porteroLocal: document.getElementById('ap-portero-local').value.trim(),
     porteroVisitante: document.getElementById('ap-portero-visitante').value.trim(),
+    alineacion: apActaImportada || null,
     fechaReg: new Date().toISOString()
   };
   // Si el admin no le puso título al clip de un gol, se autogenera con
