@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-10-03">
+<meta name="app-version" content="2026-09-11-01">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2181,6 +2181,12 @@ body.solo-lectura .ed-panel-form {
           <input type="text" id="ap-acta-url" placeholder="https://www.fexfutbol.com/pnfg/...">
           <button type="button" class="btn b-azul b-sm" style="white-space:nowrap" onclick="importarActaDesdeURL()">📋 Importar</button>
         </div>
+        <details style="margin-top:8px">
+          <summary style="font-size:10px;color:var(--gris);cursor:pointer">¿No funciona el enlace? Pega el texto de la ficha a mano</summary>
+          <p style="font-size:9px;color:var(--gris);margin:6px 0">Abre la ficha del partido en el navegador de tu móvil/ordenador, selecciona todo el texto de la página (mantén pulsado → "Seleccionar todo", o Ctrl+A) y cópialo. Pégalo aquí abajo — esto funciona siempre, sin depender de la conexión del backend con la web de la federación.</p>
+          <textarea id="ap-acta-texto-pegado" placeholder="Pega aquí el texto completo de la ficha del partido..." style="width:100%;min-height:90px;font-size:10px"></textarea>
+          <button type="button" class="btn b-azul b-sm" style="margin-top:6px" onclick="importarActaDesdeTexto()">📋 Interpretar texto pegado</button>
+        </details>
         <div id="ap-acta-status" style="font-size:10px;color:var(--gris);margin-top:6px"></div>
         <div id="ap-acta-preview"></div>
       </div>
@@ -11135,6 +11141,7 @@ let _apActaTextoCrudo='';         // último texto recibido, para depurar si alg
 function _apActaResetEstado(){
   apActaImportada=null; _apActaPreviewPendiente=null; _apActaTextoCrudo='';
   const url=document.getElementById('ap-acta-url'); if(url) url.value='';
+  const texto=document.getElementById('ap-acta-texto-pegado'); if(texto) texto.value='';
   const st=document.getElementById('ap-acta-status'); if(st) st.textContent='';
   const pv=document.getElementById('ap-acta-preview'); if(pv) pv.innerHTML='';
 }
@@ -11150,16 +11157,40 @@ async function importarActaDesdeURL(){
   try{ resp=await _apiAdmin('importarActaURL',{url}); }
   catch(e){ resp={ok:false,motivo:String(e)}; }
   if(!resp || !resp.ok){
-    estado.innerHTML='❌ No se pudo importar ('+eH((resp&&resp.motivo)||'error desconocido')+'). Puedes añadir todo a mano como hasta ahora. '
+    estado.innerHTML='❌ No se pudo importar ('+eH((resp&&resp.motivo)||'error desconocido')+'). Puedes añadir todo a mano como hasta ahora, o probar la opción de abajo "¿No funciona el enlace? Pega el texto de la ficha a mano" — no depende del backend, así que funciona aunque esto falle. '
       +(resp&&resp.motivo==='sin_conexion'?'¿Has añadido ya la acción <code>importarActaURL</code> en tu Code.gs?':'');
     return;
   }
-  _apActaTextoCrudo=resp.texto||'';
+  _apActaProcesarTexto(resp.texto||'', estado);
+}
+
+/** Alternativa que NO pasa por el backend en absoluto: el propio admin
+ *  copia a mano el texto de la ficha del partido (seleccionar todo en el
+ *  navegador → copiar → pegar aquí) y se interpreta igual que si hubiera
+ *  venido de la descarga por enlace. Como no depende de UrlFetchApp ni de
+ *  ningún permiso de Apps Script, sirve de alternativa siempre disponible
+ *  si el enlace falla (permisos pendientes de autorizar, web que bloquea
+ *  peticiones automáticas, redirecciones que no sigue el backend, etc.). */
+function importarActaDesdeTexto(){
+  if(!esAdminActual()){toast('Solo los administradores pueden importar',true);return;}
+  const texto=(document.getElementById('ap-acta-texto-pegado')||{}).value||'';
+  if(!texto.trim()){ toast('Pega antes el texto de la ficha del partido',true); return; }
+  const estado=document.getElementById('ap-acta-status');
+  document.getElementById('ap-acta-preview').innerHTML='';
+  _apActaProcesarTexto(texto, estado);
+}
+
+/** Paso común a las dos vías de importar (por enlace o pegando el texto a
+ *  mano): interpreta el texto plano recibido, lo empareja con la
+ *  plantilla del club correspondiente y deja el resultado en la vista
+ *  previa editable. */
+function _apActaProcesarTexto(texto, estado){
+  _apActaTextoCrudo=texto||'';
   let datos;
   try{ datos=_parsearActaTexto(_apActaTextoCrudo); }
   catch(e){ estado.textContent='❌ No se pudo interpretar el texto del acta ('+e.message+'). Mira el texto crudo abajo y pásamelo si quieres que lo ajuste.'; _renderApActaDebug(); return; }
   if(!datos || (!datos.local.titulares.length && !datos.visitante.titulares.length)){
-    estado.textContent='⚠️ Se descargó la página pero no se reconoció ningún jugador — puede que esta web tenga un formato algo distinto. Revisa el texto crudo abajo y pásamelo para ajustar el "traductor".';
+    estado.textContent='⚠️ No se reconoció ningún jugador en ese texto — puede que la página tenga un formato algo distinto. Revisa el texto crudo abajo y pásamelo para ajustar el "traductor".';
     _renderApActaDebug();
     return;
   }
