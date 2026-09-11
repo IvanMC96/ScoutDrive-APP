@@ -395,13 +395,35 @@ async function scoutSincronizarPartidoVideo(p) {
 // resolución jugadorIdPorNombre()/_buscarEquipoPorNombre() que usa
 // sincronizarTacticaDesdePartidos(), para subir justo a quien haya
 // podido cambiar).
+//
+// IMPORTANTE: además de los goleadores/porteros, un partido con acta
+// importada ("📋 Importar acta") actualiza en local, vía
+// recalcularStatsDesdePartidos(), el PJ/PT/PS/Minutos/Amarillas/Rojas de
+// CUALQUIER jugador que fuera titular o suplente esa jornada — no solo
+// de quien marcó gol. Sin incluirlos aquí, esos jugadores se quedaban
+// con el dato actualizado SOLO en este dispositivo hasta que alguien
+// abriera su ficha a mano y la volviera a guardar (el mismo tipo de
+// fallo de sincronización ya corregido para equipos/goles antes).
 async function scoutSincronizarJugadoresYEquiposDePartido(p) {
   if (typeof jDB === 'undefined' || typeof eDB === 'undefined') return;
+  const idsJugadores = new Set();
   const nombresJugadores = new Set();
   (p.goles || []).forEach(g => { if (g.jugador) nombresJugadores.add(g.jugador); if (g.portero) nombresJugadores.add(g.portero); });
   nombresJugadores.forEach(nom => {
     const jid = (typeof jugadorIdPorNombre === 'function') ? jugadorIdPorNombre(nom) : null;
-    const j = jid ? jDB.find(x => String(x.id) === String(jid)) : null;
+    if (jid) idsJugadores.add(jid);
+  });
+  if (p.alineacion) {
+    ['local', 'visitante'].forEach(lado => {
+      const bloque = p.alineacion[lado];
+      if (!bloque) return;
+      ['titulares', 'suplentes'].forEach(tipo => {
+        (bloque[tipo] || []).forEach(f => { if (f && f.jugadorId) idsJugadores.add(f.jugadorId); });
+      });
+    });
+  }
+  idsJugadores.forEach(jid => {
+    const j = jDB.find(x => String(x.id) === String(jid));
     if (j) scoutSincronizarJugador(j);
   });
   [p.local, p.visitante].forEach(nomEq => {
