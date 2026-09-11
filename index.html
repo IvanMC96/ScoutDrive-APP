@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-04">
+<meta name="app-version" content="2026-09-11-05">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1626,6 +1626,8 @@ body.solo-lectura .ed-panel-form {
       <div class="pbody">
         <p style="font-size:10px;color:var(--gris)">Al empezar una temporada nueva, no hace falta crear otra ficha: archiva la actual (club, categoría, stats de ese curso) y deja esta misma ficha lista para la siguiente, con el mismo nombre, foto, nota técnica, vídeos y perfil de siempre.</p>
         <button class="badd" onclick="jNuevaTemporada()">➕ Nueva Temporada</button>
+        <p style="font-size:10px;color:var(--gris);margin-top:10px">¿Quieres dejar constancia de dónde jugó ANTES de esta ficha (un club/temporada que nunca se ha registrado aquí)? Esto no archiva ni toca nada de la temporada actual — solo añade una tarjeta vacía al histórico de abajo para rellenarla a mano (club, categoría, PJ/PT/PS/Minutos/Goles).</p>
+        <button class="badd" onclick="jAnadirTemporadaAnterior()" style="border-color:var(--gris2);color:var(--gris2)">📈 Añadir temporada anterior (solo dato)</button>
         <div id="j-trayectoria-form" style="margin-top:10px;overflow-x:auto"></div>
       </div>
     </div>
@@ -4346,6 +4348,29 @@ function jNuevaTemporada(){
   },{titulo:'Nueva temporada',okTexto:'📅 Archivar y continuar',okClase:'b-azul'});
 }
 
+// Añade una temporada ANTERIOR al histórico como puro dato — a
+// diferencia de "➕ Nueva Temporada" (que ARCHIVA la temporada EN CURSO
+// del formulario, la vacía a cero y avanza el año para seguir jugando),
+// esto no toca absolutamente nada del formulario ni de la temporada
+// actual: crea una fila vacía nueva directamente en el histórico
+// (jTemporadas) para dejar constancia de dónde jugó el jugador antes de
+// existir esta ficha (otro club/categoría/temporada que nunca se
+// registró aquí) — se rellena a mano ahí mismo, en su propia tarjeta de
+// "📈 Trayectoria del jugador" (temporada, club, categoría y
+// PJ/PT/PS/Minutos/Goles), igual que cualquier otra temporada archivada.
+// Como no tiene año todavía, se coloca la última (la más antigua) hasta
+// que se le ponga una temporada con un año de verdad.
+function jAnadirTemporadaAnterior(){
+  if(!esAdminActual()){toast('Solo los administradores pueden hacer esto',true);return;}
+  jTemporadas.push({
+    temp:'', club:'', liga:'', categoria:'', grupo:'',
+    pos:G('jpos')||'', dorsal:'', edad:'',
+    stats:{g:0,a:0,p:0,pt:0,ps:0,ab:0,f:0,pz:0,gr:0,min:0}
+  });
+  renderJ();
+  toast('📈 Temporada añadida al histórico — rellena su tarjeta (club, categoría, temporada y estadísticas) en "Trayectoria del jugador", abajo del todo');
+}
+
 // Borra una temporada archivada del histórico (por si se archivó por
 // error) — la temporada EN CURSO no se puede borrar desde aquí, solo se
 // sustituye archivando otra vez.
@@ -4450,6 +4475,16 @@ function _trayectoriaTarjetaHTML(t,editable){
   const catH=(editable&&!esActual)
     ?`<input type="text" value="${eH(catNombre)}" placeholder="Categoría" oninput="_trayEditarCampo(false,${idx},'categoria',this.value)" style="font-size:9px;background:transparent;border:none;border-bottom:1px dashed var(--border2);color:var(--gris);width:100%;padding:1px 0">`
     :`<div style="font-size:9px;color:var(--gris)">${eH(catNombre)||'—'}${eH(t.pos)?' · '+eH(t.pos):''}</div>`;
+  // Solo en una temporada ARCHIVADA (no en la actual, que ya tiene su
+  // propio selector "Posición" arriba del todo): de qué puesto jugó esa
+  // temporada decide si sus stats se muestran como "Goles" o como
+  // "Portería a 0" (ver esGKTemp más abajo) — una temporada añadida a
+  // mano con "📈 Añadir temporada anterior" empieza con la posición
+  // actual del jugador, así que si entonces jugaba de otro puesto (o de
+  // portero) conviene poder corregirlo aquí mismo.
+  const posToggleH=(editable&&!esActual)
+    ?`<label style="display:flex;align-items:center;gap:4px;font-size:8px;color:var(--gris);margin-top:3px;cursor:pointer"><input type="checkbox" ${esGKTemp?'checked':''} onchange="_trayEditarCampo(false,${idx},'pos',this.checked?'Portero':'')" style="width:11px;height:11px;margin:0">Jugó de portero esa temporada</label>`
+    :'';
   const tempH=(editable&&!esActual)
     ?`<input type="text" value="${eH(t.temp)||''}" oninput="_trayEditarCampo(false,${idx},'temp',this.value)" style="font-size:10px;font-weight:800;background:transparent;border:none;border-bottom:1px dashed var(--border2);color:var(--azul-cl);width:62px;text-align:right;padding:1px 0">`
     :`<span>${eH(t.temp)||'—'}</span>`;
@@ -4471,7 +4506,7 @@ function _trayectoriaTarjetaHTML(t,editable){
   return `<div class="fblk" style="min-width:210px;border:1px solid var(--border);border-radius:8px${esActual?';background:rgba(47,129,247,.06)':''}">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
       ${escudo?`<img src="${escudo}" style="width:30px;height:30px;object-fit:contain;border-radius:6px;flex:none">`:'<div style="width:30px;height:30px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex:none;font-size:13px">🛡️</div>'}
-      <div style="flex:1;min-width:0">${clubH}${catH}</div>
+      <div style="flex:1;min-width:0">${clubH}${catH}${posToggleH}</div>
       ${catLogoH}
       <div style="text-align:right;flex:none">${tempH}${esActual?'<div><span class="tbdg to-jd" style="font-size:8px">actual</span></div>':''}</div>
     </div>
