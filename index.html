@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-06">
+<meta name="app-version" content="2026-09-11-07">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1683,6 +1683,10 @@ body.solo-lectura .ed-panel-form {
         <div class="fg">
           <label>Minutos jugados (total)</label>
           <input class="nbig" id="kmj" type="number" value="0" oninput="renderJ()">
+        </div>
+        <div class="fg2">
+          <div class="fg"><label>🟨 Tarjetas amarillas</label><input class="nbig" id="kta" type="number" value="0" oninput="renderJ()"></div>
+          <div class="fg"><label>🟥 Tarjetas rojas</label><input class="nbig" id="ktr" type="number" value="0" oninput="renderJ()"></div>
         </div>
       </div>
     </div>
@@ -4325,7 +4329,7 @@ function _temporadaActualSnapshot(){
   return {
     temp:G('jtemp'), club, liga:ligaDeEquipoPorNombre(club)||'', categoria:categoriaDeEquipoPorNombre(club)||'', grupo:grupoDeEquipoPorNombre(club)||'',
     pos:G('jpos'), dorsal:G('jdor'), edad:G('jedad'),
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj'),ta:GN('kta'),tr:GN('ktr')},
   };
 }
 
@@ -4338,7 +4342,7 @@ function jNuevaTemporada(){
     // Stats/goles/forma de la temporada se reinician — son contadores de
     // ESTA temporada, no tendría sentido que la nueva empezara ya con los
     // goles de la anterior.
-    ['kg','ka','kab','kpz','kgr','kmj','kp','kpt','kps'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+    ['kg','ka','kab','kpz','kgr','kmj','kp','kpt','kps','kta','ktr'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
     { const e=document.getElementById('kf'); if(e) e.value=0; }
     jForma=Array(10).fill('nada');jGoles=[];jGolesEncajados=[];
     buildJForma();buildJGoles();buildJGolesEncajados();
@@ -4371,7 +4375,7 @@ function jAnadirTemporadaAnterior(){
   jTemporadas.push({
     temp:'', club:'', liga:'', categoria:'', grupo:'',
     pos:G('jpos')||'', dorsal:'', edad:'',
-    stats:{g:0,a:0,p:0,pt:0,ps:0,ab:0,f:0,pz:0,gr:0,min:0}
+    stats:{g:0,a:0,p:0,pt:0,ps:0,ab:0,f:0,pz:0,gr:0,min:0,ta:0,tr:0}
   });
   renderJ();
   toast('📈 Temporada añadida al histórico — rellena su tarjeta (club, categoría, temporada y estadísticas) en "Trayectoria del jugador", abajo del todo');
@@ -4411,7 +4415,7 @@ function _trayectoriaTodasOrdenadas(){
 function _trayEditarStat(esActual,idx,campo,valor){
   const v=Math.max(0,parseInt(valor,10)||0);
   if(esActual){
-    const map={p:'kp',pt:'kpt',ps:'kps',min:'kmj',g:'kg',pz:'kpz'};
+    const map={p:'kp',pt:'kpt',ps:'kps',min:'kmj',g:'kg',pz:'kpz',ta:'kta',tr:'ktr'};
     const el=document.getElementById(map[campo]); if(el) el.value=v;
   }else{
     if(!jTemporadas[idx]) return;
@@ -4523,6 +4527,8 @@ function _trayectoriaTarjetaHTML(t,editable){
       <div><div class="ckl">Minutos</div>${statInput('min',s.min,'var(--naranja-cl)')}</div>
       <div><div class="ckl">%Min</div><div class="ckv" style="font-size:12px;color:var(--naranja-cl)">${pct}%</div></div>
       <div><div class="ckl">${golesLbl}</div>${statInput(golesCampo,golesVal,'var(--verde)')}</div>
+      <div><div class="ckl">🟨 Amarillas</div>${statInput('ta',s.ta,'var(--naranja-cl)')}</div>
+      <div><div class="ckl">🟥 Rojas</div>${statInput('tr',s.tr,'var(--rojo-cl)')}</div>
     </div>
     ${borrarBtn?`<div style="display:flex;margin-top:8px">${borrarBtn}</div>`:''}
   </div>`;
@@ -5206,7 +5212,7 @@ async function xComparativaPDF(){
 function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  ['kg','ka','kp','kpt','kps','kab','kf','kpz','kgr','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
+  ['kg','ka','kp','kpt','kps','kab','kf','kpz','kgr','kmj','kta','ktr','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
   ['oatq','oabp','ocl','ojd','offr','otrn'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   poblarDatalistTemporadasJugador();
@@ -5232,7 +5238,7 @@ function editJ(id){
   poblarSelectClubJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
-  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kpt',j.stats?.pt);S('kps',j.stats?.ps);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
+  S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kpt',j.stats?.pt);S('kps',j.stats?.ps);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);S('kta',j.stats?.ta);S('ktr',j.stats?.tr);
   S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
   S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
   ['oatq','oabp','ocl','ojd','offr','otrn'].forEach(k=>{
@@ -5293,7 +5299,7 @@ function guardarJ(){
   const golesEncManualGuardar=jGolesEncajados.filter(g=>!g.srcPartido);
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
-    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
+    stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj'),ta:GN('kta'),tr:GN('ktr')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd'),ffr:GN('offr'),trn:GN('otrn')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
@@ -5322,7 +5328,7 @@ function guardarJ(){
   // el admin lo corrige a mano antes de guardar, la base se recongela
   // bien a partir de ahí, y a partir de ese guardado ya no se vuelve a
   // duplicar.
-  const _tG=_tallyGolesJugadores()[id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
+  const _tG=_tallyGolesJugadores()[id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
   j.statsManualBase={
     g:Math.max(0,(j.stats.g||0)-_tG.g),
     a:Math.max(0,(j.stats.a||0)-_tG.a),
@@ -5332,7 +5338,9 @@ function guardarJ(){
     pt:Math.max(0,(j.stats.pt||0)-(_tG.pt||0)),
     ps:Math.max(0,(j.stats.ps||0)-(_tG.ps||0)),
     p:Math.max(0,(j.stats.p||0)-(_tG.p||0)),
-    min:Math.max(0,(j.stats.min||0)-(_tG.min||0))
+    min:Math.max(0,(j.stats.min||0)-(_tG.min||0)),
+    ta:Math.max(0,(j.stats.ta||0)-(_tG.ta||0)),
+    tr:Math.max(0,(j.stats.tr||0)-(_tG.tr||0))
   };
   const idx=jDB.findIndex(x=>x.id===id);
   if(idx>=0)jDB[idx]=j;else jDB.unshift(j);
@@ -5521,6 +5529,7 @@ function renderJ(){
   const nom=(G('jnom')+' '+G('jape')).trim(),dor=G('jdor'),pos=G('jpos'),nac=G('jnac'),temp=G('jtemp'),club=G('jclub'),edad=G('jedad');
   const[kg,ka,kp,kab,kmj,kpt,kps]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj'),GN('kpt'),GN('kps')];
   const[kpz,kgr]=[GN('kpz'),GN('kgr')];
+  const[kta,ktr]=[GN('kta'),GN('ktr')];
   const kf=pctMinutosJugados(kmj,kp);
   { const e=document.getElementById('kf'); if(e) e.value=kf; }
   // Un portero se evalúa con datos totalmente distintos a un jugador de
@@ -5680,8 +5689,8 @@ function renderJ(){
   // que su fila de KPIs y el bloque de "perfil" que sigue son totalmente
   // distintos a los de un jugador de campo — ver _esPortero() más arriba.
   const kpisH=esGK
-    ? `<div class="fkpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
-    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
+    ? `<div class="fkpis" style="grid-template-columns:repeat(5,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">🟨 ${kta}</div><div class="kl">Amarillas</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--rojo-cl)">🟥 ${ktr}</div><div class="kl">Rojas</div></div></div>`
+    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">🟨 ${kta}</div><div class="kl">Amarillas</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--rojo-cl)">🟥 ${ktr}</div><div class="kl">Rojas</div></div></div>`;
   // Bloque táctico (Origen/Zona/Goles por periodo/Registro de goles) —
   // solo tiene sentido para un jugador de campo, así que no se muestra
   // para porteros.
@@ -11570,6 +11579,8 @@ function _apActaProcesarTexto(texto, estado){
   datos.local.suplentes=_actaEmparejarLista(datos.local.suplentes,clubLocal,temp);
   datos.visitante.titulares=_actaEmparejarLista(datos.visitante.titulares,clubVisitante,temp);
   datos.visitante.suplentes=_actaEmparejarLista(datos.visitante.suplentes,clubVisitante,temp);
+  datos.local.tarjetas=_actaEmparejarTarjetas(datos.local.tarjetas,datos.local.titulares,datos.local.suplentes);
+  datos.visitante.tarjetas=_actaEmparejarTarjetas(datos.visitante.tarjetas,datos.visitante.titulares,datos.visitante.suplentes);
   _apActaPreviewPendiente=datos;
   estado.textContent='✅ Acta interpretada — revisa el emparejamiento de cada jugador antes de confirmar.';
   _renderApActaPreview();
@@ -11753,9 +11764,34 @@ function _actaEmparejarLista(lista,clubNombre,temporada){
   });
 }
 
+/** Empareja cada tarjeta con el jugador correspondiente, reutilizando el
+ *  emparejamiento YA resuelto de titulares/suplentes de ESE MISMO equipo
+ *  (en vez de volver a cruzar contra toda la plantilla del club): primero
+ *  por dorsal exacto, y si no por parecido de nombre contra esa misma
+ *  lista de titulares+suplentes ya emparejados — así una tarjeta nunca
+ *  puede acabar asignada a alguien que ni siquiera jugó ese partido, y el
+ *  desplegable de "Jugador" del acta ofrece los mismos candidatos
+ *  (misma plantilla del club) que ya se usan para titulares/suplentes. */
+function _actaEmparejarTarjetas(tarjetas,titulares,suplentes){
+  const roster=[...titulares,...suplentes];
+  const opciones=(titulares[0]||suplentes[0]||{})._opciones||[];
+  return tarjetas.map(t=>{
+    let fila=null;
+    if(t.dorsal!=null) fila=roster.find(r=>String(r.dorsal||'').trim()!=='' && String(r.dorsal).trim()===String(t.dorsal).trim());
+    if(!fila){
+      let score=0;
+      roster.forEach(r=>{ const s=_actaPuntuacionNombre(t.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; } });
+      if(score<0.6) fila=null;
+    }
+    const confianza = fila ? ((t.dorsal!=null && String(fila.dorsal||'').trim()===String(t.dorsal).trim()) ? 'dorsal' : 'nombre') : 'sin_match';
+    return {...t, jugadorId:fila?fila.jugadorId:null, jugadorNom:fila?fila.jugadorNom:null, confianza, _opciones:opciones};
+  });
+}
+
 function _apActaBadgeConfianza(c){
   if(c==='dorsal') return '<span class="tbdg to-jd" title="Emparejado por dorsal">✓ dorsal</span>';
   if(c==='nombre') return '<span class="tbdg to-abpc" title="Emparejado por parecido de nombre — revísalo">≈ nombre</span>';
+  if(c==='manual') return '<span class="tbdg to-jd" title="Elegido a mano">✓ manual</span>';
   return '<span class="tbdg to-def" title="No se ha encontrado a nadie parecido en la plantilla">? sin emparejar</span>';
 }
 function _apActaSelectHTML(lado,tipo,idx,fila){
@@ -11782,9 +11818,10 @@ function _apActaIntercambiarLados(){
 function _apActaFilaHTML(lado,tipo,idx,fila,mostrarMinuto){
   const min = tipo==='titulares' ? (fila.minutoSalida!=null?`hasta m.${fila.minutoSalida}`:'90\'')
             : tipo==='suplentes' ? (fila.entro?`entra m.${fila.minutoEntrada}`:'no entró')
+            : tipo==='tarjetas' ? `m.${fila.minuto} ${fila.tipo==='roja'?'🟥':'🟨'}`
             : '';
   return `<tr>
-    <td class="tmin">#${eH(fila.dorsal)}</td>
+    <td class="tmin">${fila.dorsal?'#'+eH(fila.dorsal):'—'}</td>
     <td style="font-size:10px">${eH(fila.nombre)}</td>
     <td>${_apActaSelectHTML(lado,tipo,idx,fila)}</td>
     <td>${_apActaBadgeConfianza(fila.confianza)}</td>
@@ -11800,8 +11837,12 @@ function _apActaTablaHTML(lado,titulo){
       ${filas.map((f,i)=>_apActaFilaHTML(lado,tipo,i,f,mostrarMinuto)).join('')}
     </tbody></table>`;
   };
+  // Las tarjetas también se emparejan con un jugador (para poder sumarle
+  // sus amarillas/rojas de la temporada) — igual que titulares/suplentes,
+  // con su propio desplegable por si el emparejamiento automático se
+  // equivoca, revisable antes de confirmar.
   const tarjetasH=d.tarjetas.length
-    ?`<p style="font-size:9px;color:var(--gris2);margin:6px 0 2px">🟨 Tarjetas</p><ul style="font-size:10px;margin:0;padding-left:16px">${d.tarjetas.map(t=>`<li>${t.dorsal?'#'+eH(t.dorsal)+' ':''}${eH(t.nombre)}${t.minuto?` (m.${t.minuto})`:''} — ${t.tipo==='roja'?'🟥 roja':'🟨 amarilla'}</li>`).join('')}</ul>`
+    ?`<p style="font-size:9px;color:var(--gris2);margin:8px 0 4px">🟨 Tarjetas</p>${tabla('tarjetas',true)}`
     :'';
   return `<div style="flex:1;min-width:260px">
     <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">${eH(titulo)}</p>
@@ -11919,7 +11960,7 @@ const _mismaTemporadaTally=(tempA,tempB)=>{
  *  manual si el propio admin corrige un número a mano (ver ahí). */
 function _tallyGolesJugadores(){
   const tally={};
-  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0}; tally[id][campo]++; };
+  const sumar=(id,campo)=>{ if(!id) return; if(!tally[id])tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0}; tally[id][campo]++; };
   const sumarSiTemporadaOk=(nombreJugador,campo,tempPartido)=>{
     const id=jugadorIdPorNombre(nombreJugador);
     if(!id) return;
@@ -11938,7 +11979,7 @@ function _tallyGolesJugadores(){
     const j=jDB.find(x=>x.id===id);
     if(!j) return;
     if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
-    if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
+    if(!tally[id]) tally[id]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
     tally[id][campo]=(tally[id][campo]||0)+cantidad;
   };
 
@@ -11993,7 +12034,7 @@ function _tallyGolesJugadores(){
     if(!jugadorId) return;
     const j=jDB.find(x=>x.id===jugadorId); if(!j) return;
     if(!_mismaTemporadaTally(j.temp,tempPartido)) return;
-    if(!tally[jugadorId]) tally[jugadorId]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
+    if(!tally[jugadorId]) tally[jugadorId]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
     tally[jugadorId][campo]++;
     tally[jugadorId].p++;
     tally[jugadorId].min+=Math.max(0,minutos||0);
@@ -12010,6 +12051,17 @@ function _tallyGolesJugadores(){
         if(!f.entro) return;
         const minutos=f.minutoEntrada!=null?(90-f.minutoEntrada):0;
         sumarAlineacion(f.jugadorId,p.temp,'ps',minutos);
+      });
+      // Tarjetas amarillas/rojas del acta importada — cada una emparejada
+      // con un jugador (ver _actaEmparejarTarjetas) suma directamente a su
+      // contador de la temporada, sin tocar PJ/PT/PS/Minutos (una tarjeta
+      // no es un partido jugado, es solo la tarjeta en sí).
+      (bloque.tarjetas||[]).forEach(f=>{
+        if(!f.jugadorId) return;
+        const j=jDB.find(x=>x.id===f.jugadorId); if(!j) return;
+        if(!_mismaTemporadaTally(j.temp,p.temp)) return;
+        if(!tally[f.jugadorId]) tally[f.jugadorId]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
+        tally[f.jugadorId][f.tipo==='roja'?'tr':'ta']++;
       });
     });
   });
@@ -12072,7 +12124,9 @@ function recalcularStatsDesdePartidos(){
     if(j.statsManualBase.ps===undefined){ j.statsManualBase.ps=j.stats.ps||0; cambios=true; }
     if(j.statsManualBase.p===undefined){ j.statsManualBase.p=j.stats.p||0; cambios=true; }
     if(j.statsManualBase.min===undefined){ j.statsManualBase.min=j.stats.min||0; cambios=true; }
-    const t=tally[j.id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0};
+    if(j.statsManualBase.ta===undefined){ j.statsManualBase.ta=j.stats.ta||0; cambios=true; }
+    if(j.statsManualBase.tr===undefined){ j.statsManualBase.tr=j.stats.tr||0; cambios=true; }
+    const t=tally[j.id]||{g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
     const nuevoG=(j.statsManualBase.g||0)+t.g;
     const nuevoA=(j.statsManualBase.a||0)+t.a;
     const nuevoPz=(j.statsManualBase.pz||0)+t.pz;
@@ -12082,10 +12136,14 @@ function recalcularStatsDesdePartidos(){
     const nuevoPs=(j.statsManualBase.ps||0)+(t.ps||0);
     const nuevoP=(j.statsManualBase.p||0)+(t.p||0);
     const nuevoMin=(j.statsManualBase.min||0)+(t.min||0);
+    const nuevoTa=(j.statsManualBase.ta||0)+(t.ta||0);
+    const nuevoTr=(j.statsManualBase.tr||0)+(t.tr||0);
     if(j.stats.g!==nuevoG || j.stats.a!==nuevoA || j.stats.pz!==nuevoPz || j.stats.ab!==nuevoAb || j.stats.gr!==nuevoGr
-      || j.stats.pt!==nuevoPt || j.stats.ps!==nuevoPs || j.stats.p!==nuevoP || j.stats.min!==nuevoMin){
+      || j.stats.pt!==nuevoPt || j.stats.ps!==nuevoPs || j.stats.p!==nuevoP || j.stats.min!==nuevoMin
+      || j.stats.ta!==nuevoTa || j.stats.tr!==nuevoTr){
       j.stats.g=nuevoG; j.stats.a=nuevoA; j.stats.pz=nuevoPz; j.stats.ab=nuevoAb; j.stats.gr=nuevoGr;
       j.stats.pt=nuevoPt; j.stats.ps=nuevoPs; j.stats.p=nuevoP; j.stats.min=nuevoMin;
+      j.stats.ta=nuevoTa; j.stats.tr=nuevoTr;
       j.stats.f=pctMinutosJugados(nuevoMin,nuevoP);
       cambios=true;
     }
@@ -12132,7 +12190,7 @@ async function adminRecalcularStatsDesdeCero(){
   askDel(
     '¿Recalcular TODAS las estadísticas de goles/asistencias/ABP/PJ/V/E/D/GF/GC de jugadores y equipos, contando solo lo registrado en "⚽ Partidos"? No se borra ningún gol, clip ni partido. Si tenías estadísticas metidas a mano sin su partido correspondiente en la videoteca, esas se perderán.',
     async ()=>{
-      jDB.forEach(j=>{ j.statsManualBase={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0}; });
+      jDB.forEach(j=>{ j.statsManualBase={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0}; });
       eDB.forEach(eq=>{ eq.statsManualBase={pj:0,v:0,e:0,d:0,gf:0,gc:0}; });
       saveJDB(); saveEDB();
       recalcularStatsDesdePartidos();
