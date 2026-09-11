@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-11">
+<meta name="app-version" content="2026-09-11-12">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11954,7 +11954,111 @@ function _actaEmparejarGoles(goles,titLocal,supLocal,titVisit,supVisit){
   });
 }
 
+/** Pasa "APELLIDOS COMPUESTOS, NOMBRE COMPUESTO" (tal y como sale en el
+ *  acta, en mayúsculas) a {nom,ape} en formato normal — usado solo para
+ *  dar de alta automáticamente a un jugador nuevo a partir del acta. */
+function _actaTituloCase(s){
+  return (s||'').toLowerCase().replace(/(^|[\s\-'.])([a-záéíóúñü])/g,(m,pre,c)=>pre+c.toUpperCase());
+}
+function _actaNombreParaAlta(nombreActa){
+  const partes=(nombreActa||'').split(',');
+  const apeRaw=(partes[0]||'').trim();
+  const nomRaw=partes.length>1?partes.slice(1).join(',').trim():'';
+  return { nom:_actaTituloCase(nomRaw||apeRaw), ape:_actaTituloCase(nomRaw?apeRaw:'') };
+}
+
+/** Da de alta automáticamente, en jDB y sincronizado con la nube, a
+ *  cualquier titular/suplente del acta que no se haya podido emparejar
+ *  con NINGÚN jugador ya existente — p.ej. un club nuevo del que
+ *  todavía no tienes ninguna ficha metida: en vez de dejarlos "sin
+ *  emparejar" y obligar a crearlos uno a uno a mano antes de poder
+ *  importar el acta, se crean solos con su nombre/apellidos y dorsal
+ *  (mismo patrón que ya usaba "➕ Añadir jugador nuevo" para un portero
+ *  rival suelto — ver _apAltaRapidaPortero). Si el dorsal es "1" se
+ *  asume portero (casi siempre lo es en una ficha de federación), así
+ *  el auto-relleno de "Portero local"/"Portero visitante" de más abajo
+ *  también funciona con una plantilla recién creada del todo. Actualiza
+ *  cada fila (titulares/suplentes) con el jugadorId/jugadorNom recién
+ *  creado, directamente en el objeto que se está confirmando — el
+ *  usuario puede corregir el nombre o borrar la ficha después, como con
+ *  cualquier otro jugador. Devuelve cuántos se han creado. */
+function _actaAutoAltaJugadoresFaltantes(datos,clubLocal,clubVisitante,temp){
+  let creados=0;
+  ['local','visitante'].forEach(lado=>{
+    const club=(lado==='local'?clubLocal:clubVisitante).trim();
+    if(!club) return;
+    ['titulares','suplentes'].forEach(tipo=>{
+      (datos[lado][tipo]||[]).forEach(f=>{
+        if(f.jugadorId) return; // ya emparejado (dorsal/nombre/manual) — no tocar
+        const {nom,ape}=_actaNombreParaAlta(f.nombre);
+        if(!nom && !ape) return;
+        const nuevoJugador={
+          id:'j_'+Date.now()+'_'+(creados++)+'_'+Math.floor(Math.random()*100000),
+          nom, ape, club, dor:f.dorsal||'',
+          pos:String(f.dorsal||'').trim()==='1'?'Portero':'',
+          temp, stats:{},
+        };
+        jDB.push(nuevoJugador);
+        f.jugadorId=nuevoJugador.id;
+        f.jugadorNom=(nom+' '+ape).trim();
+        f.confianza='creado';
+        // Para que el desplegable de la vista previa lo muestre ya
+        // emparejado (y no "— Sin emparejar —") en vez de solo fiarse
+        // del badge — _opciones es la misma lista que comparten todas
+        // las filas de este mismo tipo (titulares/suplentes) de este
+        // equipo, así que basta con añadirlo aquí una vez.
+        if(Array.isArray(f._opciones)) f._opciones.push(nuevoJugador);
+        if(typeof scoutSincronizarJugador==='function') scoutSincronizarJugador(nuevoJugador);
+      });
+    });
+  });
+  if(creados) saveJDB();
+  return creados;
+}
+/** Tras dar de alta jugadores nuevos (ver _actaAutoAltaJugadoresFaltantes),
+ *  reintenta emparejar SOLO las tarjetas/goles que se habían quedado
+ *  "sin emparejar" — nunca toca una fila ya resuelta (por dorsal,
+ *  nombre o elegida a mano), así que ninguna corrección manual que el
+ *  usuario haya hecho en la vista previa se pierde. */
+function _actaReemparejarTarjetasSinMatch(tarjetas,titulares,suplentes){
+  const roster=[...(titulares||[]),...(suplentes||[])];
+  (tarjetas||[]).forEach(t=>{
+    if(t.jugadorId) return;
+    let fila=null;
+    if(t.dorsal!=null) fila=roster.find(r=>String(r.dorsal||'').trim()!=='' && String(r.dorsal).trim()===String(t.dorsal).trim());
+    if(!fila){
+      let score=0;
+      roster.forEach(r=>{ const s=_actaPuntuacionNombre(t.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; } });
+      if(score<0.6) fila=null;
+    }
+    if(fila){
+      t.jugadorId=fila.jugadorId; t.jugadorNom=fila.jugadorNom;
+      t.confianza=(t.dorsal!=null && String(fila.dorsal||'').trim()===String(t.dorsal).trim())?'dorsal':'nombre';
+    }
+  });
+}
+function _actaReemparejarGolesSinMatch(goles,titLocal,supLocal,titVisit,supVisit){
+  const rosterLocal=[...(titLocal||[]),...(supLocal||[])];
+  const rosterVisit=[...(titVisit||[]),...(supVisit||[])];
+  (goles||[]).forEach(g=>{
+    if(g.jugadorId) return;
+    let fila=null, equipo=null;
+    const exactaLocal=rosterLocal.find(r=>_normalizarBusqueda(r.nombre)===_normalizarBusqueda(g.nombreActa));
+    const exactaVisit=!exactaLocal?rosterVisit.find(r=>_normalizarBusqueda(r.nombre)===_normalizarBusqueda(g.nombreActa)):null;
+    if(exactaLocal){ fila=exactaLocal; equipo='local'; }
+    else if(exactaVisit){ fila=exactaVisit; equipo='visitante'; }
+    else{
+      let score=0;
+      rosterLocal.forEach(r=>{ const s=_actaPuntuacionNombre(g.nombreActa,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; equipo='local'; } });
+      rosterVisit.forEach(r=>{ const s=_actaPuntuacionNombre(g.nombreActa,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; equipo='visitante'; } });
+      if(!(fila && score>=0.6)){ fila=null; equipo=null; }
+    }
+    if(fila){ g.jugadorId=fila.jugadorId; g.jugadorNom=fila.jugadorNom; g.equipo=equipo; g.confianza='nombre'; }
+  });
+}
+
 function _apActaBadgeConfianza(c){
+  if(c==='creado') return '<span class="tbdg to-jd" title="Ficha de jugador creada automáticamente a partir del acta — puedes corregir el nombre o borrarla en Jugadores">＋ creado</span>';
   if(c==='exacta') return '<span class="tbdg to-jd" title="Coincide exacto con un jugador ya emparejado en esta ficha">✓ exacta</span>';
   if(c==='dorsal') return '<span class="tbdg to-jd" title="Emparejado por dorsal">✓ dorsal</span>';
   if(c==='nombre') return '<span class="tbdg to-abpc" title="Emparejado por parecido de nombre — revísalo">≈ nombre</span>';
@@ -12111,9 +12215,14 @@ function _renderApActaDebug(){
 
 /** Aplica la vista previa confirmada: guarda el emparejamiento final en
  *  apActaImportada (lo que guardarPartido() persistirá en p.alineacion),
- *  rellena "Portero local"/"Portero visitante" si alguno de los
- *  titulares emparejados es de posición "Portero" (así no hay que
- *  teclearlo también a mano — y con eso YA basta para que todos los
+ *  da de alta automáticamente a cualquier titular/suplente que se haya
+ *  quedado "sin emparejar" (club nuevo del que todavía no hay ninguna
+ *  ficha metida, o jugador suelto que falta) — ver
+ *  _actaAutoAltaJugadoresFaltantes — y con esos jugadores ya creados,
+ *  reintenta emparejar las tarjetas/goles que dependían de ellos. Rellena
+ *  "Portero local"/"Portero visitante" si alguno de los titulares
+ *  (incluidos los recién creados) es de posición "Portero" (así no hay
+ *  que teclearlo también a mano — y con eso YA basta para que todos los
  *  goles que encaje ese equipo, sean del acta o añadidos a mano, se
  *  sincronicen con la ficha de ESE portero: ver "3d" en
  *  sincronizarJugadoresEquiposDesdePartidos(), que usa este campo como
@@ -12123,6 +12232,15 @@ function _renderApActaDebug(){
 function _apActaConfirmar(){
   if(!_apActaPreviewPendiente) return;
   apActaImportada=_apActaPreviewPendiente;
+  const clubLocal=document.getElementById('ap-local').value.trim();
+  const clubVisitante=document.getElementById('ap-visitante').value.trim();
+  const temp=document.getElementById('ap-temp').value.trim()||_valoresUnicos(jDB,'temp').slice(-1)[0]||'';
+  const nCreados=_actaAutoAltaJugadoresFaltantes(apActaImportada,clubLocal,clubVisitante,temp);
+  if(nCreados){
+    _actaReemparejarTarjetasSinMatch(apActaImportada.local.tarjetas,apActaImportada.local.titulares,apActaImportada.local.suplentes);
+    _actaReemparejarTarjetasSinMatch(apActaImportada.visitante.tarjetas,apActaImportada.visitante.titulares,apActaImportada.visitante.suplentes);
+    _actaReemparejarGolesSinMatch(apActaImportada.goles,apActaImportada.local.titulares,apActaImportada.local.suplentes,apActaImportada.visitante.titulares,apActaImportada.visitante.suplentes);
+  }
   ['local','visitante'].forEach(lado=>{
     const porteroTitular=apActaImportada[lado].titulares.find(f=>{
       const j=f.jugadorId?jDB.find(x=>x.id===f.jugadorId):null;
@@ -12136,8 +12254,12 @@ function _apActaConfirmar(){
   });
   const nGoles=_apActaAnadirGolesDetectados(apActaImportada.goles||[]);
   document.getElementById('ap-acta-status').textContent='✅ Acta aplicada — se guardará con el partido. '
+    +(nCreados?`Se ${nCreados===1?'ha creado 1 ficha de jugador nueva':`han creado ${nCreados} fichas de jugador nuevas`} a partir del acta (puedes corregir el nombre o borrarlas en Jugadores). `:'')
     +(nGoles?`Se han añadido ${nGoles} gol${nGoles!==1?'es':''} detectados en "Goles del partido" (abajo) — revísalos y completa forma/asistencia/vídeo.`:'Sigue añadiendo los goles abajo, como siempre.');
-  toast('📋 Acta importada — revisa porteros/goles y guarda el partido');
+  toast(nCreados?`📋 Acta importada — ${nCreados} jugador${nCreados!==1?'es':''} nuevo${nCreados!==1?'s':''} creado${nCreados!==1?'s':''} y sincronizado${nCreados!==1?'s':''}`:'📋 Acta importada — revisa porteros/goles y guarda el partido');
+  // La vista previa muestra ahora el emparejamiento final (jugadores
+  // recién creados incluidos) en vez de "sin emparejar".
+  _renderApActaPreview();
 }
 
 /** Añade a apGoles ("Goles del partido", más abajo en el formulario)
