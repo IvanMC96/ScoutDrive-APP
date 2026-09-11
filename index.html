@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-05">
+<meta name="app-version" content="2026-09-11-06">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2180,13 +2180,19 @@ body.solo-lectura .ed-panel-form {
       </div>
       <div class="apf" id="apf-acta" style="border:1.5px dashed var(--border);border-radius:8px;padding:10px;background:var(--bg3)">
         <label>📋 Importar acta (titulares, suplentes, cambios, tarjetas y minutos)</label>
-        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Pega el enlace de la ficha del partido en la web de tu federación (FEX u otra) — se rellenan solos titulares/suplentes/cambios/tarjetas/minutos de cada jugador. Los goles se siguen añadiendo abajo, a mano, como hasta ahora.</p>
+        <p style="font-size:9px;color:var(--gris);margin:2px 0 8px">Descarga el PDF de la ficha del partido desde la web de tu federación (FEX u otra) y súbelo aquí — es la forma más fiable, se rellenan solos titulares/suplentes/cambios/tarjetas/minutos de cada jugador. Los goles se siguen añadiendo abajo, a mano, como hasta ahora.</p>
         <div class="apf-row">
-          <input type="text" id="ap-acta-url" placeholder="https://www.fexfutbol.com/pnfg/...">
-          <button type="button" class="btn b-azul b-sm" style="white-space:nowrap" onclick="importarActaDesdeURL()">📋 Importar</button>
+          <input type="file" id="ap-acta-pdf" accept="application/pdf,.pdf" onchange="importarActaDesdePDF(event)">
         </div>
         <details style="margin-top:8px">
-          <summary style="font-size:10px;color:var(--gris);cursor:pointer">¿No funciona el enlace? Pega el texto de la ficha a mano</summary>
+          <summary style="font-size:10px;color:var(--gris);cursor:pointer">¿No tienes el PDF? Pega el enlace de la ficha</summary>
+          <div class="apf-row" style="margin-top:6px">
+            <input type="text" id="ap-acta-url" placeholder="https://www.fexfutbol.com/pnfg/...">
+            <button type="button" class="btn b-azul b-sm" style="white-space:nowrap" onclick="importarActaDesdeURL()">📋 Importar</button>
+          </div>
+        </details>
+        <details style="margin-top:8px">
+          <summary style="font-size:10px;color:var(--gris);cursor:pointer">¿No funciona ninguna de las dos? Pega el texto de la ficha a mano</summary>
           <p style="font-size:9px;color:var(--gris);margin:6px 0">Abre la ficha del partido en el navegador de tu móvil/ordenador, selecciona todo el texto de la página (mantén pulsado → "Seleccionar todo", o Ctrl+A) y cópialo. Pégalo aquí abajo — esto funciona siempre, sin depender de la conexión del backend con la web de la federación.</p>
           <textarea id="ap-acta-texto-pegado" placeholder="Pega aquí el texto completo de la ficha del partido..." style="width:100%;min-height:90px;font-size:10px"></textarea>
           <button type="button" class="btn b-azul b-sm" style="margin-top:6px" onclick="importarActaDesdeTexto()">📋 Interpretar texto pegado</button>
@@ -11394,10 +11400,159 @@ function importarActaDesdeTexto(){
   _apActaProcesarTexto(texto, estado);
 }
 
-/** Paso común a las dos vías de importar (por enlace o pegando el texto a
- *  mano): interpreta el texto plano recibido, lo empareja con la
- *  plantilla del club correspondiente y deja el resultado en la vista
- *  previa editable. */
+/** Tercera vía (la más fiable): el admin descarga el PDF de la ficha del
+ *  partido desde la web de la federación y lo sube directamente aquí. El
+ *  texto que se extrae "en bruto" de un PDF con esta maquetación a dos
+ *  columnas (plantilla local a la izquierda, visitante a la derecha) sale
+ *  con el orden de lectura mezclado: las cabeceras "Titulares"/
+ *  "Suplentes"/etc. de las dos columnas quedan agrupadas entre sí, lejos
+ *  de sus jugadores. Por eso NO se usa la extracción de texto plano de
+ *  pdf.js tal cual — se piden los items con su posición (x,y) en la
+ *  página y se reconstruye el orden de lectura correcto columna por
+ *  columna, fila por fila, para producir un texto "canónico" que el
+ *  intérprete de siempre (_parsearActaTexto) ya sabe leer sin cambios. */
+let _pdfJsCargando=null;
+function _cargarPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(!_pdfJsCargando){
+    _pdfJsCargando=import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.min.mjs').then(mod=>{
+      mod.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/6.3.289/pdf.worker.min.mjs';
+      window.pdfjsLib=mod;
+      return mod;
+    });
+  }
+  return _pdfJsCargando;
+}
+function _actaPdfNorm(s){ return _normalizarBusqueda(s).toUpperCase(); }
+
+/** Agrupa los items de UNA columna (ya filtrados por pertenecer al
+ *  equipo local o al visitante) en "filas" por cercanía vertical —
+ *  dorsal y nombre no siempre comparten exactamente la misma Y dentro de
+ *  la celda de la tabla del PDF, así que se tolera un pequeño margen — y
+ *  reparte cada fila en su zona (titulares/suplentes/sustituciones/
+ *  tarjetas) según entre qué cabeceras de sección cae, con la misma
+ *  prioridad de cierre de zona que ya usa _parsearBloqueEquipoActa(). */
+function _actaPdfAcumularColumna(items,zonas){
+  if(!items.length) return;
+  const filas=[];
+  items.slice().sort((a,b)=>b.y-a.y).forEach(it=>{
+    let fila=filas.find(f=>Math.abs(f.y-it.y)<=3);
+    if(!fila){ fila={y:it.y,items:[]}; filas.push(fila); }
+    fila.items.push(it);
+  });
+  filas.sort((a,b)=>b.y-a.y);
+  filas.forEach(f=>f.items.sort((a,b)=>a.x-b.x));
+  const esCabecera=(fila,nombre)=>fila.items.length===1 && _actaPdfNorm(fila.items[0].str)===nombre;
+  const idx=nombre=>filas.findIndex(f=>esCabecera(f,nombre));
+  const idxTit=idx('TITULARES'), idxSup=idx('SUPLENTES'), idxCt=idx('CUERPO TECNICO'), idxSus=idx('SUSTITUCIONES'), idxTar=idx('TARJETAS');
+  const rango=(desde,hasta)=>desde<0?[]:filas.slice(desde+1, hasta<0?filas.length:hasta);
+  if(idxTit>=0){
+    const finTit=idxSup>=0?idxSup:(idxSus>=0?idxSus:(idxTar>=0?idxTar:-1));
+    zonas.tit.push(...rango(idxTit,finTit));
+  }
+  if(idxSup>=0){
+    const finSup=idxCt>=0?idxCt:(idxSus>=0?idxSus:(idxTar>=0?idxTar:-1));
+    zonas.sup.push(...rango(idxSup,finSup));
+  }
+  if(idxSus>=0) zonas.sus.push(...rango(idxSus, idxTar>=0?idxTar:-1));
+  if(idxTar>=0) zonas.tar.push(...rango(idxTar,-1));
+}
+/** Convierte una fila (dorsal + nombre, o solo nombre) en su línea de
+ *  texto. En el PDF el minuto de un cambio o una tarjeta va PEGADO al
+ *  final del nombre ("GODWIN, SUNDAY HEMBAOR (46')"), mientras que
+ *  _parsearBloqueEquipoActa() espera el minuto ANTES del nombre (igual
+ *  que en el texto pegado desde la web) — se detecta ese sufijo y se
+ *  recoloca aquí, antes de unir la fila. */
+function _actaPdfFilaATexto(fila){
+  const partes=fila.items.map(it=>it.str);
+  for(let i=0;i<partes.length;i++){
+    const m=partes[i].match(/^(.*?)\s*\((\d{1,3}'(?:\+\d+)?)\)$/);
+    if(m) partes[i]='('+m[2]+') '+m[1].trim();
+  }
+  return partes.join(' ');
+}
+/** Entre las dos columnas de plantillas va una franja central con datos
+ *  que no son de ningún jugador (árbitros, estadio, ciudad, resultado,
+ *  goles...). Cortar la página justo por la mitad cuela esa franja
+ *  dentro de la columna izquierda y puede pegar palabras sueltas al
+ *  último nombre de una fila. En vez de una mitad fija, se buscan las
+ *  DOS apariciones de "Titulares" de la página (una por equipo) y se
+ *  usan sus columnas X como "anclas": cada item se asigna a la ancla más
+ *  cercana, y si no hay ninguna razonablemente cerca (cae en la franja
+ *  central) se descarta en vez de colarlo en la columna que le pille más
+ *  a mano. */
+function _actaPdfAnclasColumnas(items){
+  const titulares=items.filter(it=>_actaPdfNorm(it.str)==='TITULARES').sort((a,b)=>a.x-b.x);
+  if(titulares.length>=2) return [titulares[0].x, titulares[titulares.length-1].x];
+  return null;
+}
+async function _extraerTextoActaDesdePDF(file){
+  const pdfjsLib=await _cargarPdfJs();
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+  const MAX_DIST=80; // pt — de sobra para dorsal+nombre de cada columna, no tanto como para alcanzar la franja central
+  const zonasIzq={tit:[],sup:[],sus:[],tar:[]};
+  const zonasDer={tit:[],sup:[],sus:[],tar:[]};
+  for(let n=1;n<=doc.numPages;n++){
+    const page=await doc.getPage(n);
+    const viewport=page.getViewport({scale:1});
+    const content=await page.getTextContent();
+    const limpio=content.items
+      .map(it=>({str:(it.str||'').trim(), x:it.transform[4], y:it.transform[5]}))
+      .filter(it=>it.str);
+    const anclas=_actaPdfAnclasColumnas(limpio);
+    if(anclas){
+      const [ax,bx]=anclas;
+      const izq=[], der=[];
+      limpio.forEach(it=>{
+        const dIzq=Math.abs(it.x-ax), dDer=Math.abs(it.x-bx);
+        if(dIzq>MAX_DIST && dDer>MAX_DIST) return;
+        (dIzq<=dDer?izq:der).push(it);
+      });
+      _actaPdfAcumularColumna(izq,zonasIzq);
+      _actaPdfAcumularColumna(der,zonasDer);
+    } else {
+      // Red de seguridad si no se encuentran las dos cabeceras
+      // "Titulares" (formato inesperado): vuelve al corte por la mitad.
+      const mitad=viewport.width/2;
+      _actaPdfAcumularColumna(limpio.filter(it=>it.x<mitad),zonasIzq);
+      _actaPdfAcumularColumna(limpio.filter(it=>it.x>=mitad),zonasDer);
+    }
+  }
+  const colTexto=z=>[
+    'Titulares', ...z.tit.map(_actaPdfFilaATexto),
+    'Suplentes', ...z.sup.map(_actaPdfFilaATexto),
+    'Sustituciones', ...z.sus.map(_actaPdfFilaATexto),
+    'Tarjetas', ...z.tar.map(_actaPdfFilaATexto),
+  ].join('\n');
+  return colTexto(zonasIzq)+'\n'+colTexto(zonasDer);
+}
+async function importarActaDesdePDF(event){
+  if(!esAdminActual()){toast('Solo los administradores pueden importar',true);return;}
+  const file=event.target.files && event.target.files[0];
+  if(!file) return;
+  const estado=document.getElementById('ap-acta-status');
+  estado.textContent='⏳ Leyendo el PDF...';
+  document.getElementById('ap-acta-preview').innerHTML='';
+  let texto;
+  try{ texto=await _extraerTextoActaDesdePDF(file); }
+  catch(e){
+    estado.innerHTML='❌ No se pudo leer ese PDF ('+eH(String(e&&e.message||e))+'). Prueba a pegar el enlace de la ficha o su texto a mano, más abajo.';
+    event.target.value='';
+    return;
+  }
+  if(!texto || !texto.trim()){
+    estado.textContent='⚠️ No se encontró texto en ese PDF (¿es una ficha escaneada como imagen?). Prueba a pegar el texto a mano, más abajo.';
+    event.target.value='';
+    return;
+  }
+  _apActaProcesarTexto(texto, estado);
+}
+
+/** Paso común a las tres vías de importar (por enlace, pegando el texto a
+ *  mano, o subiendo el PDF): interpreta el texto plano recibido, lo
+ *  empareja con la plantilla del club correspondiente y deja el
+ *  resultado en la vista previa editable. */
 function _apActaProcesarTexto(texto, estado){
   _apActaTextoCrudo=texto||'';
   let datos;
