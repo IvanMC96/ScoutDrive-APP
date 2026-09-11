@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-08">
+<meta name="app-version" content="2026-09-11-09">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -8706,9 +8706,45 @@ function _scoutPrepararLogin(){
   initPullToRefresh();
 }
 
+/** Migración puntual (una sola vez por dispositivo, automática): antes de
+ *  corregirse en _apActaSanearParaGuardar(), guardar un partido con acta
+ *  importada dejaba colgado en CADA fila de titulares/suplentes/tarjetas
+ *  el campo "_opciones" (la plantilla entera del club, con foto y
+ *  estadísticas de cada candidato) — solo hacía falta para pintar el
+ *  desplegable de la vista previa, nunca para guardar. Eso podía hacer
+ *  que la celda del Google Sheet superara su límite de 50.000 caracteres
+ *  y la sincronización con la nube fallara SOLO para ese partido (quedaba
+ *  guardado bien en este dispositivo, pero nunca llegaba a los demás).
+ *  Aquí se detecta y limpia cualquier partido ya guardado con ese campo
+ *  de más, y se reintenta subirlo — así el partido afectado no se queda
+ *  atascado para siempre esperando a que alguien lo vuelva a editar y
+ *  guardar a mano. */
+function _migrarLimpiarOpcionesActaPDB(){
+  const afectados=[];
+  pDB.forEach(p=>{
+    if(!p.alineacion) return;
+    let tocado=false;
+    ['local','visitante'].forEach(lado=>{
+      const bloque=p.alineacion[lado]; if(!bloque) return;
+      ['titulares','suplentes','tarjetas'].forEach(tipo=>{
+        (bloque[tipo]||[]).forEach(f=>{ if(f && Object.prototype.hasOwnProperty.call(f,'_opciones')){ delete f._opciones; tocado=true; } });
+      });
+    });
+    if(tocado) afectados.push(p);
+  });
+  if(afectados.length){
+    savePDB();
+    if(typeof scoutSincronizarPartidoVideo==='function'){
+      afectados.forEach(p=>{ scoutSincronizarPartidoVideo(p).catch(e=>console.warn('No se pudo re-subir tras limpiar _opciones:',p.id,e)); });
+    }
+  }
+  return afectados.length;
+}
+
 // Se ejecuta SOLO después de un login correcto.
 function _scoutCargarDatosYAbrirApp(){
   loadAll();loadPDB();recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
+  _migrarLimpiarOpcionesActaPDB();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
   buildEPartidos();buildEGC();
   // loadAll() (arriba) es quien realmente lee la config guardada (nombre,
@@ -12569,6 +12605,30 @@ function _sincronizarCampogramaDesdeActa(p){
   return sincronizados;
 }
 
+/** Antes de guardar la alineación confirmada del acta dentro del
+ *  partido, quita de cada fila (titulares/suplentes/tarjetas, de los dos
+ *  equipos) el campo "_opciones" — la plantilla ENTERA del club (todos
+ *  sus candidatos, con foto y estadísticas) que _actaEmparejarLista()/
+ *  _actaEmparejarTarjetas() dejan colgado en CADA fila solo para poder
+ *  pintar el desplegable "Jugador" de la vista previa. Guardarlo tal
+ *  cual dentro del partido (y por tanto subirlo al Google Sheet) podía
+ *  hacer que esa celda superara su límite de 50.000 caracteres y la
+ *  sincronización con la nube fallara para ese partido entero, aunque
+ *  quedara guardado bien en este dispositivo. No se toca la vista previa
+ *  en pantalla (_apActaPreviewPendiente) por si el admin la sigue
+ *  editando después de confirmar — solo se limpia la copia que se va a
+ *  guardar. */
+function _apActaSanearParaGuardar(datos){
+  if(!datos) return null;
+  const limpiarFila=f=>{ if(!f) return f; const {_opciones,...resto}=f; return resto; };
+  const limpiarLado=b=>b?{
+    titulares:(b.titulares||[]).map(limpiarFila),
+    suplentes:(b.suplentes||[]).map(limpiarFila),
+    tarjetas:(b.tarjetas||[]).map(limpiarFila),
+  }:b;
+  return {local:limpiarLado(datos.local), visitante:limpiarLado(datos.visitante)};
+}
+
 function guardarPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
@@ -12591,7 +12651,7 @@ function guardarPartido(){
     goles: apGoles.map(_apGolParaGuardar),
     porteroLocal: document.getElementById('ap-portero-local').value.trim(),
     porteroVisitante: document.getElementById('ap-portero-visitante').value.trim(),
-    alineacion: apActaImportada || null,
+    alineacion: _apActaSanearParaGuardar(apActaImportada),
     fechaReg: new Date().toISOString()
   };
   // Si el admin no le puso título al clip de un gol, se autogenera con
