@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-12">
+<meta name="app-version" content="2026-09-11-13">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11967,6 +11967,43 @@ function _actaNombreParaAlta(nombreActa){
   return { nom:_actaTituloCase(nomRaw||apeRaw), ape:_actaTituloCase(nomRaw?apeRaw:'') };
 }
 
+/** Si el club local/visitante del acta NO tiene todavía ficha de equipo
+ *  (eDB) — típico al importar el acta de un club completamente nuevo, del
+ *  que solo se ha escrito el nombre en "Local"/"Visitante" — se le crea
+ *  una mínima automáticamente, con la categoría/grupo que se le haya
+ *  puesto al partido (mismo criterio que "➕ Nuevo equipo" para componer
+ *  eq.liga, ver guardarE/_eTemporadaActualSnapshot). Así los jugadores
+ *  recién creados (ver _actaAutoAltaJugadoresFaltantes) SÍ tienen una liga
+ *  asociada a su club y usuarioPuedeVerLiga() puede resolverla — si no,
+ *  cualquier admin con su acceso restringido a ligas concretas (no super
+ *  admin) se quedaba sin poder ni siquiera ver/editar la ficha del
+ *  jugador que acababa de crear, porque "sin liga" se trata como "sin
+ *  acceso" por seguridad (ver el comentario de usuarioPuedeVerLiga). Si
+ *  el club YA existe no se toca nada (ni categoría ni grupo ni liga),
+ *  para no pisar lo que tuviera guardado. Devuelve el equipo (ya
+ *  existente o recién creado), o null si no hay nombre de club. */
+function _actaAsegurarEquipoExiste(nombreClub,temp){
+  const nombre=(nombreClub||'').trim();
+  if(!nombre) return null;
+  const existente=_buscarEquipoPorNombre(nombre,temp);
+  if(existente) return existente;
+  const categoria=document.getElementById('ap-comp')?.value.trim()||'';
+  const grupo=document.getElementById('ap-grupo')?.value.trim()||'';
+  const eq={
+    id:'e_'+Date.now()+'_'+Math.floor(Math.random()*100000),
+    nom:nombre, tipo:'', temp:temp||'', categoria, grupo,
+    liga:[categoria,grupo].filter(Boolean).join(' · '),
+    ent:'', sist:'', nota:'', color:'#2f81f7',
+    stats:{pj:0,v:0,e:0,d:0,gf:0,gc:0},
+    orig:{eoatq:0,eoabp:0,eocl:0,eojd:0,eotr:0,egcatq:0,egcabp:0,egctr:0,egcjd:0},
+    imgEsc:null, partidos:[], gcGoles:[], temporadas:[], clips:[], clipsGC:[],
+    fecha:new Date().toLocaleDateString('es-ES'),
+  };
+  eDB.push(eq);
+  saveEDB();
+  if(typeof scoutSincronizarEquipo==='function') scoutSincronizarEquipo(eq);
+  return eq;
+}
 /** Da de alta automáticamente, en jDB y sincronizado con la nube, a
  *  cualquier titular/suplente del acta que no se haya podido emparejar
  *  con NINGÚN jugador ya existente — p.ej. un club nuevo del que
@@ -12235,6 +12272,13 @@ function _apActaConfirmar(){
   const clubLocal=document.getElementById('ap-local').value.trim();
   const clubVisitante=document.getElementById('ap-visitante').value.trim();
   const temp=document.getElementById('ap-temp').value.trim()||_valoresUnicos(jDB,'temp').slice(-1)[0]||'';
+  // Antes de dar de alta jugadores nuevos, nos aseguramos de que su club
+  // exista como ficha de equipo (aunque sea mínima) — si no, el jugador
+  // recién creado se queda sin liga asociada y los admins con acceso
+  // restringido a ligas concretas no pueden ni verlo ni editarlo (ver
+  // _actaAsegurarEquipoExiste).
+  _actaAsegurarEquipoExiste(clubLocal,temp);
+  _actaAsegurarEquipoExiste(clubVisitante,temp);
   const nCreados=_actaAutoAltaJugadoresFaltantes(apActaImportada,clubLocal,clubVisitante,temp);
   if(nCreados){
     _actaReemparejarTarjetasSinMatch(apActaImportada.local.tarjetas,apActaImportada.local.titulares,apActaImportada.local.suplentes);
@@ -12276,10 +12320,35 @@ function _apActaAnadirGolesDetectados(goles){
   let anadidos=0;
   (goles||[]).forEach(g=>{
     const equipo=g.equipo==='visitante'?'visitante':'local';
+    // Si el acta ha podido emparejar el gol con una ficha de jugador real
+    // (ya existiera o se acabe de crear — ver _actaAutoAltaJugadoresFaltantes),
+    // se usa el nombre EXACTO de esa ficha, no el texto suelto del acta —
+    // así los goles se sincronizan bien con jDB (ver jugadorIdPorNombre,
+    // usado al guardar el partido). Solo si de verdad no hay ninguna
+    // ficha asociada se usa el nombre tal cual viene del acta (y el
+    // usuario podrá corregirlo luego en la ficha del jugador).
     const nombre=(g.jugadorNom||g.nombreActa||'').trim();
     if(!nombre) return;
-    const yaExiste=apGoles.some(ex=>(ex.equipo||'local')===equipo && (ex.minuto??null)===(g.minuto??null) && _normalizarBusqueda(ex.jugador||'')===_normalizarBusqueda(nombre));
-    if(yaExiste) return;
+    // Mismo equipo+minuto ya metido a mano — puede ser el mismo gol real
+    // aunque el nombre no coincida letra a letra (p.ej. "JESÚS GARCÍA"
+    // escrito a mano vs. "Jesus Garcia Jarana" tal y como se acaba de dar
+    // de alta desde el acta): además de la coincidencia exacta de texto,
+    // se comprueba el parecido de nombre (mismo criterio que al emparejar
+    // el resto del acta) para no duplicar el gol.
+    const existente=apGoles.find(ex=>{
+      if((ex.equipo||'local')!==equipo) return false;
+      if((ex.minuto??null)!==(g.minuto??null)) return false;
+      if(_normalizarBusqueda(ex.jugador||'')===_normalizarBusqueda(nombre)) return true;
+      return _actaPuntuacionNombre(nombre,{nom:ex.jugador||'',ape:''})>=0.6;
+    });
+    if(existente){
+      // El gol ya estaba metido a mano (p.ej. con el nombre escrito de
+      // otra forma) — si el acta sí ha resuelto una ficha real, se
+      // corrige el nombre para que coincida exactamente con ella, para
+      // que la sincronización de estadísticas del jugador funcione bien.
+      if(g.jugadorId && existente.jugador!==nombre) existente.jugador=nombre;
+      return;
+    }
     apGoles.push({equipo,minuto:g.minuto??null,jugador:nombre,asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
     anadidos++;
   });
