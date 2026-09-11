@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-07">
+<meta name="app-version" content="2026-09-11-08">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -12525,6 +12525,50 @@ function sincronizarTacticaDesdePartidos(){
   if(cambiosE) saveEDB();
 }
 
+/** Traslada la alineación ya emparejada del acta importada (titulares +
+ *  suplentes con jugadorId, ver "📋 Importar acta") a eq.alineaciones —
+ *  la MISMA estructura por jornada que ya usa el 🏟️ Campograma (la que
+ *  hasta ahora solo se podía rellenar a mano con "📋 Editar alineación de
+ *  esta jornada") — para que la alineación de cada equipo en esa jornada
+ *  se vea automáticamente en su campograma, con cada jugador ya colocado
+ *  en su posición según el sistema del equipo, sin tener que repetir el
+ *  trabajo de marcar titular/suplente/no convocado jugador a jugador.
+ *  Solo entran jugadores YA emparejados con un id real de la BD (uno
+ *  "sin emparejar" no se puede colocar en el campograma); si un lado no
+ *  tiene ni un solo titular emparejado, ese equipo simplemente no se
+ *  toca — mejor dejar su campograma como estaba que sobrescribirlo con
+ *  una alineación vacía. Como SÍ hay un partido vinculado (este mismo,
+ *  por jornada+equipo), el rival y el resultado del campograma se leen
+ *  de Partidos automáticamente — igual que ya hace _alGuardarAlineacion()
+ *  cuando detecta ese mismo vínculo — así que los campos manuales de la
+ *  alineación se dejan en blanco. Devuelve los nombres de los equipos
+ *  cuyo campograma se ha actualizado, para poder avisar de ello. */
+function _sincronizarCampogramaDesdeActa(p){
+  if(!p.alineacion || !p.jornada) return [];
+  const sincronizados=[];
+  let cambios=false;
+  ['local','visitante'].forEach(lado=>{
+    const bloque=p.alineacion[lado]; if(!bloque) return;
+    const nomEquipo=lado==='local'?p.local:p.visitante;
+    const eq=_buscarEquipoPorNombre(nomEquipo,p.temp);
+    if(!eq) return;
+    const titulares=[...new Set((bloque.titulares||[]).map(f=>f.jugadorId).filter(Boolean))];
+    const suplentes=[...new Set((bloque.suplentes||[]).map(f=>f.jugadorId).filter(Boolean))];
+    if(!titulares.length) return; // nada fiable que colocar en el campograma
+    eq.alineaciones=eq.alineaciones||[];
+    let entry=eq.alineaciones.find(a=>a.jornada===p.jornada);
+    if(!entry){ entry={jornada:p.jornada}; eq.alineaciones.push(entry); }
+    entry.titulares=titulares;
+    entry.suplentes=suplentes;
+    entry.rivalManual=''; entry.gfManual=null; entry.gcManual=null;
+    cambios=true;
+    _campogramaSincronizarNube(eq);
+    sincronizados.push(eq.nom);
+  });
+  if(cambios) saveEDB();
+  return sincronizados;
+}
+
 function guardarPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
@@ -12565,9 +12609,12 @@ function guardarPartido(){
   savePDB();
   recalcularStatsDesdePartidos();
   sincronizarTacticaDesdePartidos();
+  const camposCampograma=_sincronizarCampogramaDesdeActa(partido);
   cerrarAddPartido(); renderPartidos();
   if(currentSection==='inicio') renderInicio();
-  if(typeof toast==='function') toast('✅ Partido guardado');
+  if(typeof toast==='function') toast(camposCampograma.length
+    ? `✅ Partido guardado — campograma de ${camposCampograma.join(' y ')} actualizado con la alineación de esta jornada`
+    : '✅ Partido guardado');
 }
 
 function borrarPartido(id){
