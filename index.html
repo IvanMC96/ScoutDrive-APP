@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-09">
+<meta name="app-version" content="2026-09-11-10">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -8741,10 +8741,45 @@ function _migrarLimpiarOpcionesActaPDB(){
   return afectados.length;
 }
 
+/** Migración puntual (UNA sola vez por dispositivo, marcada en
+ *  localStorage para no repetirla en cada apertura): antes de
+ *  corregirse en sync-bridge.js, guardar un partido con acta importada
+ *  actualizaba en LOCAL el PJ/PT/PS/Minutos/Amarillas/Rojas de
+ *  cualquier jugador que fuera titular o suplente esa jornada — pero
+ *  scoutSincronizarJugadoresYEquiposDePartido() solo subía a la nube a
+ *  quien además hubiera marcado gol. El resto se quedaba con el dato ya
+ *  actualizado SOLO en este dispositivo, sin llegar a los demás, hasta
+ *  que alguien abriera su ficha a mano y la volviera a guardar. Esto
+ *  pone al día, una única vez, a todos los jugadores que ya aparecen en
+ *  alguna alineación de acta guardada en Partidos. */
+function _migrarResincronizarJugadoresDeActas(){
+  const FLAG='scout_migrada_sync_jugadores_acta_v1';
+  if(localStorage.getItem(FLAG)) return 0;
+  const ids=new Set();
+  pDB.forEach(p=>{
+    if(!p.alineacion) return;
+    ['local','visitante'].forEach(lado=>{
+      const bloque=p.alineacion[lado]; if(!bloque) return;
+      ['titulares','suplentes'].forEach(tipo=>{
+        (bloque[tipo]||[]).forEach(f=>{ if(f && f.jugadorId) ids.add(f.jugadorId); });
+      });
+    });
+  });
+  localStorage.setItem(FLAG,'1');
+  if(ids.size && typeof scoutSincronizarJugador==='function'){
+    ids.forEach(id=>{
+      const j=jDB.find(x=>x.id===id);
+      if(j) scoutSincronizarJugador(j).catch(e=>console.warn('No se pudo resincronizar jugador tras migración de actas:',id,e));
+    });
+  }
+  return ids.size;
+}
+
 // Se ejecuta SOLO después de un login correcto.
 function _scoutCargarDatosYAbrirApp(){
   loadAll();loadPDB();recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
   _migrarLimpiarOpcionesActaPDB();
+  _migrarResincronizarJugadoresDeActas();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
   buildEPartidos();buildEGC();
   // loadAll() (arriba) es quien realmente lee la config guardada (nombre,
