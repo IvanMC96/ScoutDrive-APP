@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-10">
+<meta name="app-version" content="2026-09-11-11">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11566,6 +11566,32 @@ function _actaPdfAnclasColumnas(items){
   if(titulares.length>=2) return [titulares[0].x, titulares[titulares.length-1].x];
   return null;
 }
+/** Reconstruye en texto, SIN dividir en columnas, la franja CENTRAL de
+ *  la página (demasiado lejos de las dos anclas de columna como para
+ *  pertenecer a la plantilla de ningún equipo) — ahí es donde vive
+ *  Árbitros/Estadio/Ciudad y, sobre todo, "Goles" (minuto + quién
+ *  marca), que hasta ahora se descartaba sin más al reconstruir el
+ *  texto del PDF (esos items se ignoraban directamente por caer fuera
+ *  de MAX_DIST de ambas anclas). Ojo: esta franja NO está por encima de
+ *  "TITULARES" como en el texto pegado de la web — en el PDF va en
+ *  medio de la página, entre las dos columnas, a la misma altura que
+ *  Sustituciones/Tarjetas — así que se agrupa por fila (y) igual que
+ *  _actaPdfAcumularColumna pero sin buscar ninguna cabecera de sección,
+ *  y se devuelve tal cual como texto para que _actaExtraerGolesCrudo()
+ *  encuentre el mismo patrón "(min') Nombre, Apellidos" que ya busca en
+ *  el texto pegado a mano. */
+function _actaPdfExtraerCentro(items){
+  if(!items.length) return '';
+  const filas=[];
+  items.slice().sort((a,b)=>b.y-a.y).forEach(it=>{
+    let fila=filas.find(f=>Math.abs(f.y-it.y)<=3);
+    if(!fila){ fila={y:it.y,items:[]}; filas.push(fila); }
+    fila.items.push(it);
+  });
+  filas.sort((a,b)=>b.y-a.y);
+  filas.forEach(f=>f.items.sort((a,b)=>a.x-b.x));
+  return filas.map(_actaPdfFilaATexto).join('\n');
+}
 async function _extraerTextoActaDesdePDF(file){
   const pdfjsLib=await _cargarPdfJs();
   const buf=await file.arrayBuffer();
@@ -11573,6 +11599,7 @@ async function _extraerTextoActaDesdePDF(file){
   const MAX_DIST=80; // pt — de sobra para dorsal+nombre de cada columna, no tanto como para alcanzar la franja central
   const zonasIzq={tit:[],sup:[],sus:[],tar:[]};
   const zonasDer={tit:[],sup:[],sus:[],tar:[]};
+  const cabeceraAcumulada=[];
   for(let n=1;n<=doc.numPages;n++){
     const page=await doc.getPage(n);
     const viewport=page.getViewport({scale:1});
@@ -11583,17 +11610,22 @@ async function _extraerTextoActaDesdePDF(file){
     const anclas=_actaPdfAnclasColumnas(limpio);
     if(anclas){
       const [ax,bx]=anclas;
-      const izq=[], der=[];
+      const izq=[], der=[], centro=[];
       limpio.forEach(it=>{
         const dIzq=Math.abs(it.x-ax), dDer=Math.abs(it.x-bx);
-        if(dIzq>MAX_DIST && dDer>MAX_DIST) return;
+        if(dIzq>MAX_DIST && dDer>MAX_DIST){ centro.push(it); return; }
         (dIzq<=dDer?izq:der).push(it);
       });
+      const centroTxt=_actaPdfExtraerCentro(centro);
+      if(centroTxt) cabeceraAcumulada.push(centroTxt);
       _actaPdfAcumularColumna(izq,zonasIzq);
       _actaPdfAcumularColumna(der,zonasDer);
     } else {
       // Red de seguridad si no se encuentran las dos cabeceras
       // "Titulares" (formato inesperado): vuelve al corte por la mitad.
+      // Sin anclas no se puede aislar con garantías la franja central
+      // (Goles incluido) sin arriesgarse a colar jugadores por error, así
+      // que aquí se renuncia a los goles de esta página.
       const mitad=viewport.width/2;
       _actaPdfAcumularColumna(limpio.filter(it=>it.x<mitad),zonasIzq);
       _actaPdfAcumularColumna(limpio.filter(it=>it.x>=mitad),zonasDer);
@@ -11605,7 +11637,10 @@ async function _extraerTextoActaDesdePDF(file){
     'Sustituciones', ...z.sus.map(_actaPdfFilaATexto),
     'Tarjetas', ...z.tar.map(_actaPdfFilaATexto),
   ].join('\n');
-  return colTexto(zonasIzq)+'\n'+colTexto(zonasDer);
+  // La cabecera (con la sección "Goles") va delante de todo — así
+  // _parsearActaTexto() la trata igual que en el texto pegado a mano: es
+  // todo lo que hay ANTES de la primera "Titulares".
+  return cabeceraAcumulada.join('\n')+'\n'+colTexto(zonasIzq)+'\n'+colTexto(zonasDer);
 }
 async function importarActaDesdePDF(event){
   if(!esAdminActual()){toast('Solo los administradores pueden importar',true);return;}
@@ -11652,6 +11687,7 @@ function _apActaProcesarTexto(texto, estado){
   datos.visitante.suplentes=_actaEmparejarLista(datos.visitante.suplentes,clubVisitante,temp);
   datos.local.tarjetas=_actaEmparejarTarjetas(datos.local.tarjetas,datos.local.titulares,datos.local.suplentes);
   datos.visitante.tarjetas=_actaEmparejarTarjetas(datos.visitante.tarjetas,datos.visitante.titulares,datos.visitante.suplentes);
+  datos.goles=_actaEmparejarGoles(datos.goles,datos.local.titulares,datos.local.suplentes,datos.visitante.titulares,datos.visitante.suplentes);
   _apActaPreviewPendiente=datos;
   estado.textContent='✅ Acta interpretada — revisa el emparejamiento de cada jugador antes de confirmar.';
   _renderApActaPreview();
@@ -11676,12 +11712,35 @@ function _parsearActaTexto(texto){
   const textoLimpio=(texto||'').replace(/\s*No disponible\b/gi,'');
   const t='\n'+textoLimpio+'\n';
   const idxTitulares=[...t.matchAll(/Titulares/gi)].map(m=>m.index);
-  if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio()};
+  if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio(),goles:[]};
+  // La sección "Goles" (minuto + quién marca) va SIEMPRE antes del bloque
+  // del primer equipo, junto a Árbitros/Estadio/Ciudad — no se repite por
+  // equipo, así que se extrae de la cabecera común, antes de partir el
+  // texto en bloque local/visitante.
+  const goles=_actaExtraerGolesCrudo(t.slice(0,idxTitulares[0]));
   const bloque1=t.slice(idxTitulares[0],idxTitulares[1]);
   const bloque2=t.slice(idxTitulares[1]);
-  return { local:_parsearBloqueEquipoActa(bloque1), visitante:_parsearBloqueEquipoActa(bloque2) };
+  return { local:_parsearBloqueEquipoActa(bloque1), visitante:_parsearBloqueEquipoActa(bloque2), goles };
 }
 function _actaBloqueVacio(){ return {titulares:[],suplentes:[],tarjetas:[]}; }
+/** Extrae del texto de cabecera (antes de la primera "Titulares") cada
+ *  gol anotado como "(minuto') NOMBRE, Apellidos" — el mismo patrón que
+ *  ya se usa para Tarjetas, así que da igual qué haya delante en la
+ *  línea (el marcador parcial tipo "1 -" que trae la ficha de la
+ *  federación, una tabulación, etc.): solo se busca el minuto entre
+ *  paréntesis seguido del nombre. Devuelve [{minuto,nombre}] en el orden
+ *  en que aparecen (que en la ficha siempre es cronológico). No decide
+ *  todavía a qué equipo pertenece cada gol — eso lo hace
+ *  _actaEmparejarGoles(), cruzando el nombre contra las plantillas YA
+ *  emparejadas de ambos equipos. */
+function _actaExtraerGolesCrudo(texto){
+  const re=new RegExp('\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
+  const out=[]; let m;
+  while((m=re.exec(texto||''))){
+    out.push({minuto:+m[1], nombre:m[2].replace(/\s+/g,' ').trim()});
+  }
+  return out;
+}
 
 const _ACTA_RE_NOMBRE='[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45},\\s*[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45}';
 /** Extrae todas las apariciones de "dorsal + NOMBRE, Apellidos" de un
@@ -11859,7 +11918,44 @@ function _actaEmparejarTarjetas(tarjetas,titulares,suplentes){
   });
 }
 
+/** Empareja cada gol detectado en la cabecera del acta (minuto + nombre
+ *  de quien marca) con el jugador Y EL EQUIPO correspondiente — a
+ *  diferencia de titulares/suplentes/tarjetas, la sección "Goles" no
+ *  dice de qué equipo es cada uno, así que aquí se prueba el nombre
+ *  contra las plantillas YA emparejadas de AMBOS equipos (los mismos
+ *  titulares+suplentes que ya se usan para tarjetas) y se elige el
+ *  equipo/jugador con mejor coincidencia. Si el nombre del acta coincide
+ *  EXACTO con el de otra fila ya extraída de la MISMA ficha (mismo
+ *  documento, mismo formato de texto) se prioriza sobre el parecido
+ *  difuso, igual que ocurre de forma natural con dorsal vs. nombre en
+ *  _actaEmparejarLista/_actaEmparejarTarjetas. */
+function _actaEmparejarGoles(goles,titLocal,supLocal,titVisit,supVisit){
+  const rosterLocal=[...titLocal,...supLocal];
+  const rosterVisit=[...titVisit,...supVisit];
+  const opcionesLocal=(titLocal[0]||supLocal[0]||{})._opciones||[];
+  const opcionesVisit=(titVisit[0]||supVisit[0]||{})._opciones||[];
+  return (goles||[]).map(g=>{
+    let fila=null, equipo=null, confianza='sin_match';
+    const exactaLocal=rosterLocal.find(r=>_normalizarBusqueda(r.nombre)===_normalizarBusqueda(g.nombre));
+    const exactaVisit=!exactaLocal ? rosterVisit.find(r=>_normalizarBusqueda(r.nombre)===_normalizarBusqueda(g.nombre)) : null;
+    if(exactaLocal){ fila=exactaLocal; equipo='local'; confianza='exacta'; }
+    else if(exactaVisit){ fila=exactaVisit; equipo='visitante'; confianza='exacta'; }
+    else{
+      let score=0;
+      rosterLocal.forEach(r=>{ const s=_actaPuntuacionNombre(g.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; equipo='local'; } });
+      rosterVisit.forEach(r=>{ const s=_actaPuntuacionNombre(g.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; equipo='visitante'; } });
+      if(fila && score>=0.6){ confianza='nombre'; } else { fila=null; equipo=null; confianza='sin_match'; }
+    }
+    return {
+      minuto:g.minuto, nombreActa:g.nombre,
+      equipo, jugadorId:fila?fila.jugadorId:null, jugadorNom:fila?fila.jugadorNom:null,
+      confianza, _opcionesLocal:opcionesLocal, _opcionesVisit:opcionesVisit,
+    };
+  });
+}
+
 function _apActaBadgeConfianza(c){
+  if(c==='exacta') return '<span class="tbdg to-jd" title="Coincide exacto con un jugador ya emparejado en esta ficha">✓ exacta</span>';
   if(c==='dorsal') return '<span class="tbdg to-jd" title="Emparejado por dorsal">✓ dorsal</span>';
   if(c==='nombre') return '<span class="tbdg to-abpc" title="Emparejado por parecido de nombre — revísalo">≈ nombre</span>';
   if(c==='manual') return '<span class="tbdg to-jd" title="Elegido a mano">✓ manual</span>';
@@ -11883,6 +11979,15 @@ function _apActaIntercambiarLados(){
   const tmp=_apActaPreviewPendiente.local;
   _apActaPreviewPendiente.local=_apActaPreviewPendiente.visitante;
   _apActaPreviewPendiente.visitante=tmp;
+  // Los goles llevan su propio "equipo" (local/visitante) y sus propias
+  // listas de candidatos por equipo — al intercambiar los lados hay que
+  // voltear ambos, si no cada gol se quedaría apuntando al equipo
+  // equivocado tras el cambio.
+  (_apActaPreviewPendiente.goles||[]).forEach(g=>{
+    if(g.equipo==='local') g.equipo='visitante';
+    else if(g.equipo==='visitante') g.equipo='local';
+    const tmpOp=g._opcionesLocal; g._opcionesLocal=g._opcionesVisit; g._opcionesVisit=tmpOp;
+  });
   _renderApActaPreview();
 }
 
@@ -11922,6 +12027,66 @@ function _apActaTablaHTML(lado,titulo){
     ${tarjetasH}
   </div>`;
 }
+/** Fila de la vista previa de un gol detectado en el acta: minuto,
+ *  nombre tal cual sale en la ficha, y dos desplegables para corregir a
+ *  mano el equipo y el jugador emparejado (por si el parecido de nombre
+ *  se equivoca, o es un gol en propia puerta — el acta no lo distingue
+ *  en texto plano, así que se deja siempre revisable). */
+function _apActaGolFilaHTML(idx,g,nomLocal,nomVisit){
+  const esVisit=g.equipo==='visitante';
+  const opciones=(esVisit?g._opcionesVisit:g._opcionesLocal)||[];
+  const opcionesHTML=opciones.map(j=>`<option value="${eH(j.id)}"${j.id===g.jugadorId?' selected':''}>#${eH(j.dor||'—')} ${eH((j.nom+' '+j.ape).trim())}</option>`).join('');
+  return `<tr>
+    <td class="tmin">m.${eH(String(g.minuto??'—'))}</td>
+    <td style="font-size:10px">${eH(g.nombreActa)}</td>
+    <td>
+      <select onchange="_apActaGolCambiarEquipo(${idx},this.value)" style="font-size:10px;padding:3px 4px">
+        <option value="local"${esVisit?'':' selected'}>${eH(nomLocal)}</option>
+        <option value="visitante"${esVisit?' selected':''}>${eH(nomVisit)}</option>
+      </select>
+    </td>
+    <td>
+      <select onchange="_apActaGolCambiarMatch(${idx},this.value)" style="font-size:10px;padding:3px 4px">
+        <option value=""${g.jugadorId?'':' selected'}>— Sin emparejar —</option>${opcionesHTML}
+      </select>
+    </td>
+    <td>${_apActaBadgeConfianza(g.confianza)}</td>
+  </tr>`;
+}
+function _apActaGolesTablaHTML(nomLocal,nomVisit){
+  const goles=(_apActaPreviewPendiente&&_apActaPreviewPendiente.goles)||[];
+  if(!goles.length) return '';
+  return `<div style="margin-top:10px">
+    <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">⚽ Goles detectados en el acta</p>
+    <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Al confirmar se añaden a "Goles del partido" (más abajo) con el minuto y el jugador — revisa aquí a quién se le ha emparejado cada uno. La forma del gol, la asistencia, si fue de penalti y el vídeo/miniatura se siguen añadiendo a mano, como hasta ahora.</p>
+    <table class="tgj"><thead><tr><th>Min.</th><th>Nombre (acta)</th><th>Equipo</th><th>Jugador</th><th></th></tr></thead><tbody>
+      ${goles.map((g,i)=>_apActaGolFilaHTML(i,g,nomLocal,nomVisit)).join('')}
+    </tbody></table>
+  </div>`;
+}
+function _apActaGolCambiarEquipo(idx,equipo){
+  const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
+  g.equipo=equipo;
+  // Al cambiar de equipo a mano, el jugador emparejado ya no tiene
+  // sentido — se intenta reemparejar por nombre dentro del equipo nuevo,
+  // o se deja sin emparejar si no hay nadie parecido.
+  const roster=(equipo==='visitante'?g._opcionesVisit:g._opcionesLocal)||[];
+  let jugador=null,score=0;
+  roster.forEach(j=>{ const s=_actaPuntuacionNombre(g.nombreActa,j); if(s>score){ score=s; jugador=j; } });
+  if(score<0.6) jugador=null;
+  g.jugadorId=jugador?jugador.id:null;
+  g.jugadorNom=jugador?(jugador.nom+' '+jugador.ape).trim():null;
+  g.confianza=jugador?'nombre':'sin_match';
+  _renderApActaPreview();
+}
+function _apActaGolCambiarMatch(idx,jugadorId){
+  const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
+  const roster=(g.equipo==='visitante'?g._opcionesVisit:g._opcionesLocal)||[];
+  const j=roster.find(x=>x.id===jugadorId)||jDB.find(x=>x.id===jugadorId);
+  g.jugadorId=jugadorId||null;
+  g.jugadorNom=j?(j.nom+' '+j.ape).trim():null;
+  g.confianza=jugadorId?'manual':'sin_match';
+}
 function _renderApActaPreview(){
   const cont=document.getElementById('ap-acta-preview'); if(!cont || !_apActaPreviewPendiente) return;
   const nomLocal=document.getElementById('ap-local').value.trim()||'Local';
@@ -11931,6 +12096,7 @@ function _renderApActaPreview(){
       ${_apActaTablaHTML('local',nomLocal)}
       ${_apActaTablaHTML('visitante',nomVisit)}
     </div>
+    ${_apActaGolesTablaHTML(nomLocal,nomVisit)}
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
       <button type="button" class="btn b-ghost b-sm" onclick="_apActaIntercambiarLados()">🔄 Intercambiar local/visitante</button>
       <button type="button" class="btn b-verde b-sm" onclick="_apActaConfirmar()">✅ Confirmar y rellenar</button>
@@ -11944,10 +12110,16 @@ function _renderApActaDebug(){
 }
 
 /** Aplica la vista previa confirmada: guarda el emparejamiento final en
- *  apActaImportada (lo que guardarPartido() persistirá en p.alineacion)
- *  y, como ayuda extra, rellena "Portero local"/"Portero visitante" si
- *  alguno de los titulares emparejados es de posición "Portero" (así no
- *  hay que teclearlo también a mano). */
+ *  apActaImportada (lo que guardarPartido() persistirá en p.alineacion),
+ *  rellena "Portero local"/"Portero visitante" si alguno de los
+ *  titulares emparejados es de posición "Portero" (así no hay que
+ *  teclearlo también a mano — y con eso YA basta para que todos los
+ *  goles que encaje ese equipo, sean del acta o añadidos a mano, se
+ *  sincronicen con la ficha de ESE portero: ver "3d" en
+ *  sincronizarJugadoresEquiposDesdePartidos(), que usa este campo como
+ *  respaldo si un gol en concreto no lleva su propio "portero") y añade
+ *  a "Goles del partido" cada gol detectado en el acta que todavía no
+ *  esté ahí. */
 function _apActaConfirmar(){
   if(!_apActaPreviewPendiente) return;
   apActaImportada=_apActaPreviewPendiente;
@@ -11962,8 +12134,35 @@ function _apActaConfirmar(){
       if(campo && j) campo.value=(j.nom+' '+j.ape).trim();
     }
   });
-  document.getElementById('ap-acta-status').textContent='✅ Acta aplicada — se guardará con el partido. Sigue añadiendo los goles abajo, como siempre.';
+  const nGoles=_apActaAnadirGolesDetectados(apActaImportada.goles||[]);
+  document.getElementById('ap-acta-status').textContent='✅ Acta aplicada — se guardará con el partido. '
+    +(nGoles?`Se han añadido ${nGoles} gol${nGoles!==1?'es':''} detectados en "Goles del partido" (abajo) — revísalos y completa forma/asistencia/vídeo.`:'Sigue añadiendo los goles abajo, como siempre.');
   toast('📋 Acta importada — revisa porteros/goles y guarda el partido');
+}
+
+/** Añade a apGoles ("Goles del partido", más abajo en el formulario)
+ *  cada gol detectado en el acta que todavía no esté ahí — mismo
+ *  equipo+minuto+jugador — para no duplicar si el acta se vuelve a
+ *  confirmar (p.ej. al editar un partido ya guardado) o si el usuario ya
+ *  había añadido ese gol a mano. Solo rellena equipo/minuto/jugador: la
+ *  forma del gol (origen táctico), el subtipo ABP, si fue de penalti, la
+ *  asistencia, el portero batido gol a gol y el vídeo/miniatura se dejan
+ *  con los mismos valores por defecto que "➕ Añadir gol" — se completan
+ *  a mano, exactamente igual que con cualquier gol manual. Devuelve
+ *  cuántos goles nuevos se han añadido. */
+function _apActaAnadirGolesDetectados(goles){
+  let anadidos=0;
+  (goles||[]).forEach(g=>{
+    const equipo=g.equipo==='visitante'?'visitante':'local';
+    const nombre=(g.jugadorNom||g.nombreActa||'').trim();
+    if(!nombre) return;
+    const yaExiste=apGoles.some(ex=>(ex.equipo||'local')===equipo && (ex.minuto??null)===(g.minuto??null) && _normalizarBusqueda(ex.jugador||'')===_normalizarBusqueda(nombre));
+    if(yaExiste) return;
+    apGoles.push({equipo,minuto:g.minuto??null,jugador:nombre,asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
+    anadidos++;
+  });
+  buildApGoles();
+  return anadidos;
 }
 
 function _resetThumbPreview(){
