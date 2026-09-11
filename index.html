@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-01">
+<meta name="app-version" content="2026-09-11-04">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1691,6 +1691,8 @@ body.solo-lectura .ed-panel-form {
         <label>ABP Ofensiva</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="oabp" min="0" max="40" value="0" oninput="sv('oabp_v',this.value);renderJ()"><span id="oabp_v" style="font-size:10px;color:var(--naranja-cl);font-weight:800;width:16px">0</span></div>
         <label>Centro Lateral</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="ocl" min="0" max="40" value="0" oninput="sv('ocl_v',this.value);renderJ()"><span id="ocl_v" style="font-size:10px;color:var(--lila);font-weight:800;width:16px">0</span></div>
         <label>Juego Directo</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="ojd" min="0" max="40" value="0" oninput="sv('ojd_v',this.value);renderJ()"><span id="ojd_v" style="font-size:10px;color:var(--gris);font-weight:800;width:16px">0</span></div>
+        <label>Finalización Frontal</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="offr" min="0" max="40" value="0" oninput="sv('offr_v',this.value);renderJ()"><span id="offr_v" style="font-size:10px;color:#e3b341;font-weight:800;width:16px">0</span></div>
+        <label>Transición Ofensiva</label><div style="display:flex;align-items:center;gap:5px"><input type="range" id="otrn" min="0" max="40" value="0" oninput="sv('otrn_v',this.value);renderJ()"><span id="otrn_v" style="font-size:10px;color:#39d3f0;font-weight:800;width:16px">0</span></div>
         <div class="fg2">
           <div class="fg"><label>Área Grande</label><input type="number" id="zag" value="0" oninput="renderJ()"></div>
           <div class="fg"><label>Área Pequeña</label><input type="number" id="zap" value="0" oninput="renderJ()"></div>
@@ -2766,11 +2768,47 @@ const OCSS_GC={'Error individual':'to-err','Mano a mano perdido':'to-mm','Salida
 // ══════════════════════════════════════════════════════════════════
 // BD KEYS + CONFIG
 // ══════════════════════════════════════════════════════════════════
-const JDB='scout_j_v1', EDB='scout_e_v1', CFG_KEY='scout_cfg_v1', ADS_KEY='scout_ads_v1';
+const JDB='scout_j_v1', EDB='scout_e_v1', CFG_KEY='scout_cfg_v1', ADS_KEY='scout_ads_v1', CATLOGOS_KEY='scout_catlogos_v1';
 let jDB=[], eDB=[], adsDB=[];
 let cfg={nombre:'Scoutdrive',sub:'Plataforma de análisis táctico',logo:null,footer:'Scoutdrive · Uso interno · Cuerpo técnico'};
+// Logos de categoría/competición (p.ej. "3ª RFEF") para la Trayectoria del
+// Jugador — es un mapa GLOBAL nombre-de-categoría → imagen, no algo propio
+// de cada jugador/temporada: así, en cuanto se sube el logo de una
+// categoría una vez, todas las temporadas (de cualquier jugador) que
+// jueguen en esa misma categoría lo muestran solas, igual que el escudo
+// del club ya se resuelve solo desde eDB (ver escudoDeEquipoPorNombre).
+// Se guarda DENTRO de "cfg" (cfg.catLogos) para viajar entre dispositivos
+// y usuarios por el mismo camino que ya usa el nombre/logo de la
+// plataforma — ver guardarCatLogos() más abajo y _loginRefrescarBrand-
+// DesdeSheet(), que lo trae de vuelta al abrir la app en un aparato nuevo.
+// CATLOGOS_KEY es solo una caché local (se lee al arrancar por si "cfg"
+// tarda en llegar del Sheet, y de respaldo si algún día se trabaja offline).
+let catLogos={};
+function loadCatLogos(){
+  try{catLogos=JSON.parse(localStorage.getItem(CATLOGOS_KEY)||'{}');}catch(e){catLogos={};}
+  // "cfg" (cargado por loadCfg(), justo antes de esta llamada dentro de
+  // loadAll()) es la copia que de verdad sincroniza — si ya trae logos de
+  // categoría, mandan sobre la caché puramente local de este aparato.
+  if(cfg.catLogos && typeof cfg.catLogos==='object') catLogos={...catLogos,...cfg.catLogos};
+}
+// Guarda en la caché local de este dispositivo Y en "cfg" — cfg sí viaja a
+// Google Sheets (ver guardarCfg()/scoutSincronizarConfig en sync-bridge.js),
+// así que enganchando los logos de categoría ahí dentro se ven desde
+// cualquier dispositivo/usuario, no solo el que los subió. Ojo: NO se llama
+// a guardarCfg() a secas, porque esa función relee los campos del propio
+// formulario de "Configuración" (nombre/subtítulo/pie) — si se llamara
+// desde la ficha de un jugador, donde ese formulario no está en pantalla,
+// los machacaría con vacío. Se empuja "cfg" tal cual está directamente a
+// scoutSincronizarConfig(), la misma función que usa guardarCfg() por
+// debajo, sin tocar el resto de campos.
+function saveCatLogos(){
+  try{localStorage.setItem(CATLOGOS_KEY,JSON.stringify(catLogos));}catch(e){}
+  cfg.catLogos=catLogos;
+  saveCfg();
+  if(typeof scoutSincronizarConfig==='function') scoutSincronizarConfig(cfg);
+}
 
-function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} try{adsDB=JSON.parse(localStorage.getItem(ADS_KEY)||'[]');}catch(e){adsDB=[];} loadCfg(); }
+function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} try{adsDB=JSON.parse(localStorage.getItem(ADS_KEY)||'[]');}catch(e){adsDB=[];} loadCfg(); loadCatLogos(); }
 function saveJDB(){ try{localStorage.setItem(JDB,JSON.stringify(jDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
 function saveEDB(){ try{localStorage.setItem(EDB,JSON.stringify(eDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
 function saveAds(){ try{localStorage.setItem(ADS_KEY,JSON.stringify(adsDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
@@ -4319,37 +4357,140 @@ function jBorrarTemporada(i){
   });
 }
 
-// Construye la tabla de trayectoria (histórico + temporada en curso,
-// ordenadas de más antigua a más reciente) — se usa tanto en el panel de
-// edición como en la ficha/PDF, con la única diferencia de si se muestra
-// el botón de borrar por fila (edición) o no (ficha/PDF).
-function _trayectoriaFilas(editable){
+// Junta el histórico archivado (jTemporadas) + la temporada en curso (leída
+// en vivo del formulario) y lo ordena de la más RECIENTE arriba a la más
+// antigua abajo — al revés que el orden interno de guardado — para que la
+// Trayectoria del Jugador se lea siempre "de ahora hacia atrás".
+function _trayectoriaTodasOrdenadas(){
   const actual={...(_temporadaActualSnapshot()),_actual:true};
   const todas=[...jTemporadas.map((t,i)=>({...t,_i:i})),actual];
   // Orden cronológico por el primer año de 4 dígitos que aparezca en el
   // texto de la temporada; si no se puede leer un año, se manda al final
   // en vez de romper el orden del resto.
-  const anio=t=>{const m=(t.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):9999;};
-  todas.sort((a,b)=>anio(a)-anio(b));
-  return todas.map(t=>{
-    const g=t.stats?.g||0,a=t.stats?.a||0,p=t.stats?.p||0,f=t.stats?.f||0;
-    const golesRow=(t.pos==='Portero')?`${t.stats?.pz||0} portería${(t.stats?.pz||0)===1?'':'s'} a 0`:`${g} goles · ${a} asist.`;
-    return `<tr${t._actual?' style="background:rgba(47,129,247,.08)"':''}>
-      <td class="tmin">${eH(t.temp)||'—'}${t._actual?' <span class="tbdg to-jd" style="margin-left:4px">actual</span>':''}</td>
-      <td>${eH(t.club)||'—'}</td>
-      <td style="font-size:9px;color:var(--gris2)">${eH(t.categoria||t.liga||'—')}</td>
-      <td style="font-size:9px;color:var(--gris)">${eH(t.pos)||'—'}</td>
-      <td style="text-align:center">${p}</td>
-      <td style="font-size:10px">${golesRow}</td>
-      <td style="text-align:center">${f}%</td>
-      ${editable?`<td>${t._actual?'':`<button class="brm2" onclick="jBorrarTemporada(${t._i})">✕</button>`}</td>`:''}
-    </tr>`;
-  }).join('');
+  const anio=t=>{const m=(t.temp||'').match(/(\d{4})/);return m?parseInt(m[1],10):-9999;};
+  todas.sort((a,b)=>anio(b)-anio(a));
+  return todas;
+}
+
+// Edita a mano un número (PJ/PT/PS/Minutos/Goles/Porterías a 0) de una fila
+// de la Trayectoria. Si es la temporada EN CURSO, escribe directamente en
+// el campo normal del formulario (kp/kpt/kps/kmj/kg/kpz) — así sigue siendo
+// el mismo dato de siempre, no uno paralelo — y si es una temporada ya
+// ARCHIVADA, corrige el snapshot guardado en jTemporadas[idx].stats.
+function _trayEditarStat(esActual,idx,campo,valor){
+  const v=Math.max(0,parseInt(valor,10)||0);
+  if(esActual){
+    const map={p:'kp',pt:'kpt',ps:'kps',min:'kmj',g:'kg',pz:'kpz'};
+    const el=document.getElementById(map[campo]); if(el) el.value=v;
+  }else{
+    if(!jTemporadas[idx]) return;
+    if(!jTemporadas[idx].stats) jTemporadas[idx].stats={};
+    jTemporadas[idx].stats[campo]=v;
+  }
+  renderJ();
+}
+// Igual que _trayEditarStat pero para el club/categoría/temporada (texto)
+// de una fila de la Trayectoria — en la temporada en curso, el club y la
+// temporada van a los campos jclub/jtemp de siempre (con su propio
+// autoescudo); en una temporada archivada se corrige el snapshot.
+function _trayEditarCampo(esActual,idx,campo,valor){
+  if(esActual){
+    if(campo==='club'){ const el=document.getElementById('jclub'); if(el){el.value=valor;_autoescudoJugadorDesdeClub();} }
+    else if(campo==='temp'){ const el=document.getElementById('jtemp'); if(el) el.value=valor; }
+  }else{
+    if(!jTemporadas[idx]) return;
+    jTemporadas[idx][campo]=valor;
+  }
+  renderJ();
+}
+// Sube (comprimida, igual que fotos/escudos) una imagen como logo GLOBAL
+// de una categoría — la usan por igual todas las temporadas (de cualquier
+// jugador) que compartan ese mismo nombre de categoría.
+async function _catLogoSubir(inputEl,categoriaNombre){
+  const f=inputEl.files&&inputEl.files[0]; if(!f||!categoriaNombre) return;
+  const dataUrl=await _comprimirImagenArchivo(f,{maxDim:300,formato:'image/png'});
+  if(!dataUrl) return;
+  catLogos[categoriaNombre]=dataUrl;
+  saveCatLogos();
+  renderJ();
+}
+// Alternativa por URL (igual que "— o URL —" en foto/escudo) para no
+// obligar a subir un archivo si ya se tiene un enlace del logo.
+function _catLogoURL(categoriaNombre){
+  if(!categoriaNombre) return;
+  const u=prompt(`URL del logo de la categoría "${categoriaNombre}":`,catLogos[categoriaNombre]||'');
+  if(u===null) return;
+  const v=u.trim();
+  if(!v){ delete catLogos[categoriaNombre]; }
+  else{
+    let uu=v; const m=uu.match(/\/d\/([a-zA-Z0-9_-]+)/); if(m) uu=`https://drive.google.com/uc?export=view&id=${m[1]}`;
+    catLogos[categoriaNombre]=uu;
+  }
+  saveCatLogos();
+  renderJ();
+}
+
+// Tarjeta de UNA temporada de la Trayectoria: escudo del club (se resuelve
+// solo desde eDB, igual que en el resto de la app), logo de la categoría
+// (mapa global catLogos, editable aquí mismo), y PJ/PT/PS/Minutos/%Min +
+// Goles (o Porterías a 0 si esa temporada jugó de portero). En modo
+// "editable" (panel de administración) los números y el club/categoría/
+// temporada se pueden corregir a mano ahí mismo; en modo lectura (ficha/
+// PDF) se muestra tal cual, sin controles.
+function _trayectoriaTarjetaHTML(t,editable){
+  const esActual=!!t._actual, idx=t._i;
+  const s=t.stats||{};
+  const escudo=escudoDeEquipoPorNombre(t.club);
+  const catNombre=(t.categoria||t.liga||'').trim();
+  const catLogo=catNombre?(catLogos[catNombre]||null):null;
+  const esGKTemp=t.pos==='Portero';
+  const clubH=(editable&&!esActual)
+    ?`<input type="text" value="${eH(t.club)||''}" placeholder="Club" oninput="_trayEditarCampo(false,${idx},'club',this.value)" style="font-size:11px;font-weight:800;background:transparent;border:none;border-bottom:1px dashed var(--border2);color:var(--txt);width:100%;padding:2px 0">`
+    :`<div class="fclub" style="font-size:11px">${eH(t.club)||'—'}</div>`;
+  const catH=(editable&&!esActual)
+    ?`<input type="text" value="${eH(catNombre)}" placeholder="Categoría" oninput="_trayEditarCampo(false,${idx},'categoria',this.value)" style="font-size:9px;background:transparent;border:none;border-bottom:1px dashed var(--border2);color:var(--gris);width:100%;padding:1px 0">`
+    :`<div style="font-size:9px;color:var(--gris)">${eH(catNombre)||'—'}${eH(t.pos)?' · '+eH(t.pos):''}</div>`;
+  const tempH=(editable&&!esActual)
+    ?`<input type="text" value="${eH(t.temp)||''}" oninput="_trayEditarCampo(false,${idx},'temp',this.value)" style="font-size:10px;font-weight:800;background:transparent;border:none;border-bottom:1px dashed var(--border2);color:var(--azul-cl);width:62px;text-align:right;padding:1px 0">`
+    :`<span>${eH(t.temp)||'—'}</span>`;
+  const statInput=(campo,val,color)=>editable
+    ?`<input type="number" value="${val||0}" oninput="_trayEditarStat(${esActual},${idx},'${campo}',this.value)" style="width:100%;text-align:center;font-size:12px;font-weight:800;color:${color};background:transparent;border:none;border-bottom:1px dashed var(--border2);padding:1px 0">`
+    :`<div class="ckv" style="font-size:12px;color:${color}">${val||0}</div>`;
+  const golesLbl=esGKTemp?'Portería a 0':'Goles';
+  const golesCampo=esGKTemp?'pz':'g';
+  const golesVal=esGKTemp?(s.pz||0):(s.g||0);
+  const pct=pctMinutosJugados(s.min||0,s.p||0);
+  const catNombreJS=catNombre.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  const catLogoH=editable?`<div style="position:relative;width:26px;height:26px;flex:none">
+      <input type="file" accept="image/*" id="tray-catlogo-${esActual?'actual':idx}" style="display:none" onchange="_catLogoSubir(this,'${catNombreJS}')">
+      <div onclick="${catNombre?`document.getElementById('tray-catlogo-${esActual?'actual':idx}').click()`:''}" oncontextmenu="if('${catNombreJS}'){event.preventDefault();_catLogoURL('${catNombreJS}');}" title="${catNombre?'Logo de '+eH(catNombre)+' — clic para subir, clic derecho para pegar una URL':'Escribe antes la categoría para poder subirle un logo'}" style="width:26px;height:26px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:${catNombre?'pointer':'default'};border:1px solid var(--border)">
+        ${catLogo?`<img src="${catLogo}" style="width:100%;height:100%;object-fit:contain">`:'<span style="font-size:11px;opacity:.5">🏆</span>'}
+      </div>
+    </div>`:(catLogo?`<img src="${catLogo}" style="width:22px;height:22px;object-fit:contain;border-radius:5px;flex:none" title="${eH(catNombre)}">`:'');
+  const borrarBtn=(editable&&!esActual)?`<button class="brm2" onclick="jBorrarTemporada(${idx})" title="Borrar esta temporada del histórico" style="margin-left:auto">✕ Borrar temporada</button>`:'';
+  return `<div class="fblk" style="min-width:210px;border:1px solid var(--border);border-radius:8px${esActual?';background:rgba(47,129,247,.06)':''}">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      ${escudo?`<img src="${escudo}" style="width:30px;height:30px;object-fit:contain;border-radius:6px;flex:none">`:'<div style="width:30px;height:30px;border-radius:6px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex:none;font-size:13px">🛡️</div>'}
+      <div style="flex:1;min-width:0">${clubH}${catH}</div>
+      ${catLogoH}
+      <div style="text-align:right;flex:none">${tempH}${esActual?'<div><span class="tbdg to-jd" style="font-size:8px">actual</span></div>':''}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center">
+      <div><div class="ckl">PJ</div>${statInput('p',s.p,'var(--txt)')}</div>
+      <div><div class="ckl">PT</div>${statInput('pt',s.pt,'var(--azul-cl)')}</div>
+      <div><div class="ckl">PS</div>${statInput('ps',s.ps,'var(--gris)')}</div>
+      <div><div class="ckl">Minutos</div>${statInput('min',s.min,'var(--naranja-cl)')}</div>
+      <div><div class="ckl">%Min</div><div class="ckv" style="font-size:12px;color:var(--naranja-cl)">${pct}%</div></div>
+      <div><div class="ckl">${golesLbl}</div>${statInput(golesCampo,golesVal,'var(--verde)')}</div>
+    </div>
+    ${borrarBtn?`<div style="display:flex;margin-top:8px">${borrarBtn}</div>`:''}
+  </div>`;
 }
 
 function _trayectoriaTablaHTML(editable){
-  const filas=_trayectoriaFilas(editable);
-  return `<table class="tgj"><thead><tr><th>Temp.</th><th>Club</th><th>Categoría</th><th>Pos.</th><th>PJ</th><th>Producción</th><th>%Min</th>${editable?'<th></th>':''}</tr></thead><tbody>${filas}</tbody></table>`;
+  const todas=_trayectoriaTodasOrdenadas();
+  const tarjetas=todas.map(t=>_trayectoriaTarjetaHTML(t,editable)).join('');
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px">${tarjetas}</div>`;
 }
 
 // Mini gráfico de progresión: barras horizontales con los goles (o, si es
@@ -5025,7 +5166,7 @@ function nuevoJ(){
   jId=null;
   ['jnom','jape','jnac','jedad','jnota'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   ['kg','ka','kp','kpt','kps','kab','kf','kpz','kgr','kmj','zag','zap','cpd','ccab','cpi','pp1','pp2'].forEach(id=>{const e=document.getElementById(id);if(e)e.value=0;});
-  ['oatq','oabp','ocl','ojd'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
+  ['oatq','oabp','ocl','ojd','offr','otrn'].forEach(id=>{const e=document.getElementById(id);if(e){e.value=0;sv(id+'_v',0);}});
   document.getElementById('jclub').value=cfg.nombre||'Mi Club';
   poblarDatalistTemporadasJugador();
   poblarSelectClubJugador();
@@ -5053,8 +5194,8 @@ function editJ(id){
   S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kpt',j.stats?.pt);S('kps',j.stats?.ps);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);
   S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
   S('javcolor',j.avColor||'#2f81f7');S('javcolor-hex',j.avColor||'');
-  ['oatq','oabp','ocl','ojd'].forEach(k=>{
-    const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd'
+  ['oatq','oabp','ocl','ojd','offr','otrn'].forEach(k=>{
+    const claveCorta = k.slice(1); // 'oatq'->'atq', 'oabp'->'abp', 'ocl'->'cl', 'ojd'->'jd', 'offr'->'ffr', 'otrn'->'trn'
     const v=j.orig?.[claveCorta]||0;
     const e2=document.getElementById(k);if(e2){e2.value=v;sv(k+'_v',v);}
   });
@@ -5112,7 +5253,7 @@ function guardarJ(){
   const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
     stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj')},
-    orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd')},
+    orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd'),ffr:GN('offr'),trn:GN('otrn')},
     zona:{ag:GN('zag'),ap:GN('zap')},cuerpo:{pd:GN('cpd'),cab:GN('ccab'),pi:GN('cpi')},
     periodo:{p1:GN('pp1'),p2:GN('pp2')},
     forma:[...jForma],goles:[...golesSincronizados,...golesManualGuardar],radar:[...jRadar],gk:[...jGK],golesEncajados:[...golesEncSincronizados,...golesEncManualGuardar],nota:G('jnota'),
@@ -5378,14 +5519,22 @@ function renderJ(){
   // goles correctamente. Solo se cae a los sliders manuales (oatq/zag/
   // cpd/pp1...) cuando el jugador no tiene ningún gol con taxonomía
   // registrada todavía.
-  let oA,oAb,oCl,oJd,zA,zAp,cPd,cCab,cPi,p1,p2;
+  // "Finalización Frontal" y "Transición Ofensiva" son dos de los 6 orígenes
+  // tácticos posibles (ver ORIGENES) que se pueden elegir en cada gol, pero
+  // se quedaban SIN contar aquí (solo se tallaban 4 de los 6) — así, un gol
+  // con uno de esos dos orígenes salía bien en "Registro Goles" (la tabla
+  // de al lado) pero desaparecía sin más del resumen "Origen táctico" de
+  // abajo. Ahora se cuentan los 6.
+  let oA,oAb,oCl,oJd,oFf,oTr,zA,zAp,cPd,cCab,cPi,p1,p2;
   if(jGoles.length>0){
-    oA=oAb=oCl=oJd=zA=zAp=cPd=cCab=cPi=p1=p2=0;
+    oA=oAb=oCl=oJd=oFf=oTr=zA=zAp=cPd=cCab=cPi=p1=p2=0;
     jGoles.forEach(gl=>{
       if(gl.origen==='Ataque Organizado') oA++;
       else if(gl.origen==='ABP Ofensiva') oAb++;
       else if(gl.origen==='Centro Lateral') oCl++;
       else if(gl.origen==='Juego Directo') oJd++;
+      else if(gl.origen==='Finalización Frontal') oFf++;
+      else if(gl.origen==='Transición Ofensiva') oTr++;
       if(gl.zona==='Área Grande') zA++;
       else if(gl.zona==='Área Pequeña') zAp++;
       if(gl.cuerpo==='Pie Derecho') cPd++;
@@ -5394,17 +5543,41 @@ function renderJ(){
       if((gl.min||0)<=45) p1++; else p2++;
     });
   }else{
-    [oA,oAb,oCl,oJd]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd')];
+    [oA,oAb,oCl,oJd,oFf,oTr]=[GN('oatq'),GN('oabp'),GN('ocl'),GN('ojd'),GN('offr'),GN('otrn')];
     [zA,zAp]=[GN('zag'),GN('zap')];
     [cPd,cCab,cPi]=[GN('cpd'),GN('ccab'),GN('cpi')];
     [p1,p2]=[GN('pp1'),GN('pp2')];
   }
-  const oMx=Math.max(oA,oAb,oCl,oJd,1);
+  const oMx=Math.max(oA,oAb,oCl,oJd,oFf,oTr,1);
   const zMx=Math.max(zA,zAp,1);
   const cMx=Math.max(cPd,cCab,cPi,1);
   const pMx=Math.max(p1,p2,1);
   const p1h=Math.round(p1/pMx*80),p2h=Math.round(p2/pMx*80);
-  const formaH=jForma.map(f=>`<div class="fchip ${f==='g'||f==='gol'?'fcg':f==='a'||f==='asist'?'fca':'fcn'}">${f==='g'||f==='gol'?'⚽':f==='a'||f==='asist'?'🅰️':'·'}</div>`).join('');
+  // Forma reciente (últimos 10 partidos): igual que el bloque de arriba,
+  // se calcula sola a partir de datos REALES ya registrados en "⚽
+  // Partidos" (quién marcó/asistió en cada partido de ESTE club y ESTA
+  // temporada) en cuanto hay al menos uno vinculado — solo si no hay
+  // ninguno todavía se cae al array editable a mano (jForma, los
+  // cuadraditos que se pueden ciclar a mano en "🔥 Forma Reciente").
+  const _mismaTempForma=(a,b)=>{const x=(a||'').trim(),y=(b||'').trim();return !x||!y||x===y;};
+  const _clubKeyForma=(club||'').trim().toLowerCase();
+  const _partidosClubForma=(nom.trim()&&_clubKeyForma)?pDB.filter(p=>{
+    if(p.gf==null||p.gc==null) return false;
+    const esLocal=(p.local||'').trim().toLowerCase()===_clubKeyForma;
+    const esVisit=(p.visitante||'').trim().toLowerCase()===_clubKeyForma;
+    if(!esLocal&&!esVisit) return false;
+    return _mismaTempForma(temp,p.temp);
+  }).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')):[];
+  const formaAuto=_partidosClubForma.slice(-10).map(p=>{
+    const esLocal=(p.local||'').trim().toLowerCase()===_clubKeyForma;
+    const lado=esLocal?'local':'visitante';
+    const golesLado=(p.goles||[]).filter(g=>(g.equipo||'local')===lado);
+    const hizoGol=golesLado.some(g=>_normalizarBusqueda(g.jugador)===_normalizarBusqueda(nom));
+    const hizoAsist=golesLado.some(g=>_normalizarBusqueda(g.asistencia)===_normalizarBusqueda(nom));
+    return hizoGol?'g':(hizoAsist?'a':'nada');
+  });
+  const formaUsada=formaAuto.length>0?formaAuto:jForma;
+  const formaH=formaUsada.map(f=>`<div class="fchip ${f==='g'||f==='gol'?'fcg':f==='a'||f==='asist'?'fca':'fcn'}">${f==='g'||f==='gol'?'⚽':f==='a'||f==='asist'?'🅰️':'·'}</div>`).join('');
   const golesH=jGoles.length===0?'<p style="font-size:10px;color:var(--gris)">Sin goles</p>'
     :`<table class="tgj"><thead><tr><th>Min</th><th>Rival</th><th>Origen</th><th>Sub.</th><th>Fase</th><th>Zona</th><th>Cuerpo</th></tr></thead><tbody>
     ${jGoles.slice(0,10).map(gl=>{const isA=gl.origen==='ABP Ofensiva';const oc=OCSS[isA&&gl.subtipo?gl.subtipo:gl.origen]||'to-atq';return `<tr><td class="tmin">m.${gl.min}</td><td>${eH(gl.rival)||'—'}</td><td><span class="tbdg ${OCSS[gl.origen]||'to-atq'}">${gl.origen}</span></td><td>${isA&&gl.subtipo?`<span class="tbdg ${oc}">${gl.subtipo}</span>`:'—'}</td><td style="font-size:9px;color:var(--gris2)">${eH(gl.fase||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.zona||'—')}</td><td style="font-size:9px;color:var(--gris)">${eH(gl.cuerpo||'—')}</td></tr>`;}).join('')}
@@ -5466,12 +5639,12 @@ function renderJ(){
   // que su fila de KPIs y el bloque de "perfil" que sigue son totalmente
   // distintos a los de un jugador de campo — ver _esPortero() más arriba.
   const kpisH=esGK
-    ? `<div class="fkpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
-    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kab}</div><div class="kl">ABP</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
+    ? `<div class="fkpis" style="grid-template-columns:repeat(4,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div></div>`
+    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div></div>`;
   // Bloque táctico (Origen/Zona/Goles por periodo/Registro de goles) —
   // solo tiene sentido para un jugador de campo, así que no se muestra
   // para porteros.
-  const bloqueTacticoH=`<div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}</div>
+  const bloqueTacticoH=`<div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}${barra('Finalización Frontal',oFf,oMx,'#e3b341')}${barra('Transición Ofensiva',oTr,oMx,'#39d3f0')}</div>
     <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
     <div class="fblk" style="overflow-x:auto"><div class="fblkt">Registro Goles · Taxonomía Táctica</div>${golesH}</div></div>`;
@@ -5479,24 +5652,18 @@ function renderJ(){
   // jugador de campo) se muestra en su lugar el registro de goles
   // encajados — mismo objetivo (ver patrones) pero desde la portería.
   const bloqueGolesEncH=`<div class="fg2b"><div class="fblk" style="overflow-x:auto;grid-column:1/-1"><div class="fblkt">🥅 Goles Encajados · Cómo se producen</div>${golesEncH}</div></div>`;
-  // Trayectoria en la ficha/PDF: solo aparece si ya hay al menos una
-  // temporada archivada — un jugador en su primera temporada no tiene
-  // "trayectoria" que mostrar todavía, así que no se le añade un bloque
-  // vacío/redundante con la fila de la temporada actual sola.
-  const trayectoriaH=jTemporadas.length>0?`<div class="fg2b"><div class="fblk" style="overflow-x:auto;grid-column:1/-1">
-    <div class="fblkt">📈 Trayectoria · ${jTemporadas.length+1} temporadas</div>
+  // Trayectoria del jugador: ocupa en la ficha/PDF el mismo hueco donde
+  // antes iba "Perfil jugador / Índices del perfil" (el radar 0-100) — se
+  // pidió sustituirlo por esto, que son datos reales (no una valoración
+  // subjetiva) y además se puede corregir aquí mismo desde el panel de
+  // administración (ver "📈 Trayectoria" → _trayectoriaTablaHTML(true)).
+  // Se muestra siempre, aunque solo haya la temporada en curso — no hace
+  // falta ya tener historial archivado para ver al menos esa fila.
+  const trayectoriaH=`<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="overflow-x:auto;grid-column:1/-1">
+    <div class="fblkt">📈 Trayectoria del jugador · ${jTemporadas.length+1} temporada${jTemporadas.length+1===1?'':'s'}</div>
     ${_trayectoriaTablaHTML(false)}
     <div style="margin-top:10px">${_trayectoriaProgresoHTML()}</div>
-  </div></div>`:'';
-  // Bloque de perfil (radar + barras) — mismo hueco visual para los dos
-  // casos, pero con datos y ejes completamente distintos: perfil de
-  // jugador de campo (Goles/Asistencias/ABP/...) o perfil de portero
-  // (salidas aéreas, mano a mano, juego de pies...).
-  const bloquePerfilH=esGK
-    ? `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">🧤 Perfil de Portero</div>${radarSVG(jGK,jGKEjes,190)}</div>
-    <div class="fblk"><div class="fblkt">Evaluación por facetas</div>${jGKEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:88px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jGK[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jGK[i]}</span></div>`).join('')}</div></div>`
-    : `<div class="fg2b" style="border-top:1px solid var(--border)"><div class="fblk" style="display:flex;flex-direction:column;align-items:center;justify-content:center"><div class="fblkt">Perfil jugador</div>${radarSVG(jRadar,jRadarEjes,190)}</div>
-    <div class="fblk"><div class="fblkt">Índices del perfil <span style="font-size:8px;font-weight:400;color:var(--gris2)">(0-100, no son el número real de goles/asist./ABP — eso está arriba)</span></div>${jRadarEjes.map((e,i)=>`<div style="display:flex;align-items:center;gap:5px;margin-bottom:5px"><span style="font-size:9px;color:var(--gris);width:74px">${e}</span><div class="brt" style="flex:1;height:5px"><div class="brf" style="width:${jRadar[i]}%;background:#2f81f7"></div></div><span style="font-size:9px;font-weight:800;color:var(--azul-cl);width:22px;text-align:right">${jRadar[i]}</span></div>`).join('')}</div></div>`;
+  </div></div>`;
   document.getElementById('j-ficha-container').innerHTML=`
   <div class="ficha" id="j-ficha-pdf">
     <div class="fhdr"><div class="fhdr-l">${avH}<div><div class="fnm">${eH(nom)||'Jugador'}</div><div class="fmeta"><span style="font-size:11px;color:var(--gris)">#${dor}</span><span class="badge bp">${eH(pos)}</span><span class="badge bn">${eH(nac)}</span>${edad?`<span class="badge bt">${eH(edad)} años</span>`:''}<span class="badge bt">${eH(temp)}</span></div></div></div>
@@ -5506,7 +5673,6 @@ function renderJ(){
     ${kpisH}
     ${esGK?bloqueGolesEncH:bloqueTacticoH}
     <div class="fforma"><div class="fblkt">Forma reciente · últimos 10 partidos</div><div class="fchips">${formaH}</div></div>
-    ${bloquePerfilH}
     ${trayectoriaH}
     ${clipsH}
     ${esGK?renderJClipsGC():''}
@@ -10186,8 +10352,21 @@ function guardarEConFeedback(){
         cfg.sub = remoto.sub || cfg.sub;
         cfg.footer = remoto.footer || cfg.footer;
         cfg.logo = remoto.logo || cfg.logo;
+        // Logos de categoría (Trayectoria del jugador) — igual que el
+        // resto de "cfg", así se ven en cualquier dispositivo/usuario que
+        // abra la app, no solo en el que los subió (ver saveCatLogos()).
+        if (remoto.catLogos && typeof remoto.catLogos === 'object') {
+          cfg.catLogos = remoto.catLogos;
+          if (typeof catLogos !== 'undefined') {
+            catLogos = { ...catLogos, ...remoto.catLogos };
+            // Se cachea en local SIN volver a empujarlo al Sheet (evitaría
+            // un ida-y-vuelta inútil justo después de haberlo traído de ahí).
+            try { localStorage.setItem('scout_catlogos_v1', JSON.stringify(catLogos)); } catch(e) {}
+          }
+        }
         if (typeof saveCfg === 'function') saveCfg();
         if (typeof applyCfg === 'function') applyCfg();
+        if (typeof renderJ === 'function' && typeof jId !== 'undefined' && jId) renderJ();
       } else {
         localStorage.setItem('scout_cfg_v1', JSON.stringify(remoto));
       }
@@ -11216,7 +11395,14 @@ function _apActaProcesarTexto(texto, estado){
  *  vez por cada equipo — la 2ª aparición de "Titulares" es la frontera
  *  entre el bloque del equipo local y el del visitante). */
 function _parsearActaTexto(texto){
-  const t='\n'+(texto||'')+'\n';
+  // Algunas actas de federación marcan a un jugador con un aviso pegado a
+  // su nombre en la MISMA línea, sin ningún separador claro (p.ej.
+  // "GODWIN, SUNDAY HEMBAOR No disponible") — es una nota del sistema,
+  // no parte del nombre, pero al no llevar coma ni salto de línea antes,
+  // corrompía el nombre extraído (se colaba una letra suelta de "No..."
+  // dentro del último "trozo" del nombre). Se quita aquí, antes de nada.
+  const textoLimpio=(texto||'').replace(/\s*No disponible\b/gi,'');
+  const t='\n'+textoLimpio+'\n';
   const idxTitulares=[...t.matchAll(/Titulares/gi)].map(m=>m.index);
   if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio()};
   const bloque1=t.slice(idxTitulares[0],idxTitulares[1]);
@@ -11240,10 +11426,15 @@ function _actaExtraerJugadores(texto){
 
 function _parsearBloqueEquipoActa(bloque){
   const idxSuplentes=bloque.search(/Suplentes/i);
+  const idxCuerpoTecnico=bloque.search(/Cuerpo T[ée]cnico/i);
   const idxSustituciones=bloque.search(/Sustituciones/i);
   const idxTarjetas=bloque.search(/Tarjetas/i);
   const finTitulares=idxSuplentes>=0?idxSuplentes:(idxSustituciones>=0?idxSustituciones:(idxTarjetas>=0?idxTarjetas:bloque.length));
-  const finSuplentes=idxSustituciones>=0?idxSustituciones:(idxTarjetas>=0?idxTarjetas:bloque.length);
+  // El bloque "Suplentes" termina en lo primero que aparezca después:
+  // "Cuerpo Técnico" (si la web lo mete ahí en medio, como FEX), si no
+  // "Sustituciones", si no "Tarjetas" — para no colar al cuerpo técnico
+  // como si fueran jugadores suplentes.
+  const finSuplentes=idxCuerpoTecnico>=0?idxCuerpoTecnico:(idxSustituciones>=0?idxSustituciones:(idxTarjetas>=0?idxTarjetas:bloque.length));
   const zonaTitulares=bloque.slice(0,finTitulares);
   const zonaSuplentes=idxSuplentes>=0?bloque.slice(idxSuplentes,finSuplentes):'';
   const zonaSustituciones=idxSustituciones>=0?bloque.slice(idxSustituciones,idxTarjetas>=0?idxTarjetas:bloque.length):'';
@@ -11252,54 +11443,74 @@ function _parsearBloqueEquipoActa(bloque){
   const titularesRaw=_actaExtraerJugadores(zonaTitulares);
   const suplentesRaw=_actaExtraerJugadores(zonaSuplentes);
 
-  // Sustituciones: el jugador que SALE no lleva minuto pegado a su
-  // nombre, así que _actaExtraerJugadores() ya lo detecta tal cual (su
+  // Sustituciones: cada cambio se lista como DOS bloques seguidos. El
+  // PRIMERO (sin minuto pegado, solo dorsal+nombre) es el SUPLENTE que
+  // ENTRA — _actaExtraerJugadores() ya lo detecta tal cual, porque su
   // patrón exige solo espacios/salto de línea entre el dorsal y el
-  // nombre). El que ENTRA sí lo lleva, en cualquiera de los dos órdenes
-  // posibles ("(46') 18 Nombre" o "18 (46') Nombre"), así que se buscan
-  // ambos por separado. Se empareja cada salida con la entrada en la
-  // MISMA posición de la lista (la acta las lista siempre en parejas
-  // seguidas: sale, entra, sale, entra...) — no por dorsal, porque el
-  // dorsal del que sale no tiene por qué coincidir con nada más.
-  const salidas=_actaExtraerJugadores(zonaSustituciones).sort((a,b)=>a.indice-b.indice);
-  const entradas=[];
+  // nombre y el minuto (que va en el segundo bloque) rompe esa
+  // adyacencia. El SEGUNDO bloque (con el minuto, en cualquiera de los
+  // dos órdenes posibles: "(46') 18 Nombre" o "18 (46') Nombre") es el
+  // TITULAR que SALE en ese minuto — comprobado contra una ficha real de
+  // la federación: el jugador del primer bloque de cada pareja siempre
+  // aparece en la lista de Suplentes, y el del segundo (con minuto)
+  // siempre en la de Titulares, nunca al revés. Se empareja cada
+  // bloque-sin-minuto con el bloque-con-minuto en la MISMA posición de
+  // la lista (la acta las lista siempre en parejas seguidas) — no por
+  // dorsal, porque el dorsal del que entra no tiene por qué coincidir
+  // con nada más.
+  const bloqueSinMinuto=_actaExtraerJugadores(zonaSustituciones).sort((a,b)=>a.indice-b.indice);
+  const bloqueConMinuto=[];
   {
-    const reA=new RegExp('\\((\\d{1,3})(?:\\+\\d+)?\'\\)\\s*(\\d{1,2})\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
-    const reB=new RegExp('(\\d{1,2})\\s*\\n?\\s*\\((\\d{1,3})(?:\\+\\d+)?\'\\)\\s*('+_ACTA_RE_NOMBRE+')','g');
+    // El minuto de prolongación se escribe como "(45'+1)" — el apóstrofo
+    // va PEGADO al minuto base, y el "+N" va DESPUÉS del apóstrofo, no
+    // antes (ojo, es fácil poner esto al revés).
+    const reA=new RegExp('\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*(\\d{1,2})\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
+    const reB=new RegExp('(\\d{1,2})\\s*\\n?\\s*\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*('+_ACTA_RE_NOMBRE+')','g');
     let m;
     while((m=reB.exec(zonaSustituciones))){
-      entradas.push({dorsal:m[1],minuto:+m[2],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
+      bloqueConMinuto.push({dorsal:m[1],minuto:+m[2],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
     }
     while((m=reA.exec(zonaSustituciones))){
-      if(entradas.some(e=>Math.abs(e.indice-m.index)<4)) continue;
-      entradas.push({dorsal:m[2],minuto:+m[1],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
+      if(bloqueConMinuto.some(e=>Math.abs(e.indice-m.index)<4)) continue;
+      bloqueConMinuto.push({dorsal:m[2],minuto:+m[1],nombre:m[3].replace(/\s+/g,' ').trim(),indice:m.index});
     }
-    entradas.sort((a,b)=>a.indice-b.indice);
+    bloqueConMinuto.sort((a,b)=>a.indice-b.indice);
   }
   const parejas=[];
-  for(let i=0;i<Math.max(salidas.length,entradas.length);i++) parejas.push({sale:salidas[i]||null,entra:entradas[i]||null});
+  for(let i=0;i<Math.max(bloqueSinMinuto.length,bloqueConMinuto.length);i++) parejas.push({entra:bloqueSinMinuto[i]||null,sale:bloqueConMinuto[i]||null});
 
   const titulares=titularesRaw.map(j=>{
+    // El titular puede aparecer como el lado "sale" de una pareja (su
+    // propio dorsal+minuto es directamente el de su salida).
     const pareja=parejas.find(p=>p.sale && p.sale.dorsal===j.dorsal);
-    return {dorsal:j.dorsal,nombre:j.nombre,entro:true,minutoSalida:(pareja&&pareja.entra)?pareja.entra.minuto:null};
+    return {dorsal:j.dorsal,nombre:j.nombre,entro:true,minutoSalida:pareja?pareja.sale.minuto:null};
   });
   const suplentes=suplentesRaw.map(j=>{
+    // El suplente aparece como el lado "entra" de una pareja — su minuto
+    // de entrada es el mismo que el de salida de su pareja (es el mismo
+    // instante del cambio, solo que ese bloque no repite el minuto).
     const pareja=parejas.find(p=>p.entra && p.entra.dorsal===j.dorsal);
-    return {dorsal:j.dorsal,nombre:j.nombre,entro:!!pareja,minutoEntrada:pareja?pareja.entra.minuto:null};
+    return {dorsal:j.dorsal,nombre:j.nombre,entro:!!pareja,minutoEntrada:(pareja&&pareja.sale)?pareja.sale.minuto:null};
   });
 
-  // Tarjetas: dorsal+nombre igual que arriba; el minuto suele ir justo
-  // antes ("(40')"); el tipo (amarilla/roja) es la parte menos fiable
-  // de extraer como texto (en muchas webs es solo un icono de color, no
-  // una palabra) — se busca la palabra "roja" cerca, y si no se
-  // encuentra se asume amarilla (lo más habitual) y queda como campo
-  // editable en la vista previa.
-  const tarjetas=_actaExtraerJugadores(zonaTarjetas).map(j=>{
-    const antes=zonaTarjetas.slice(Math.max(0,j.indice-16),j.indice);
-    const mm=antes.match(/\((\d{1,3})(?:\+\d+)?'\)/);
-    const cerca=zonaTarjetas.slice(Math.max(0,j.indice-40),j.indice+5);
-    return {dorsal:j.dorsal,nombre:j.nombre,minuto:mm?+mm[1]:null,tipo:/roja/i.test(cerca)?'roja':'amarilla'};
-  });
+  // Tarjetas: a diferencia de titulares/suplentes/sustituciones, en una
+  // ficha real de federación las tarjetas NO llevan el dorsal delante
+  // del nombre — solo "(minuto') NOMBRE, Apellidos". El color (amarilla/
+  // roja) normalmente es solo un icono que se pierde al pasar a texto
+  // plano, así que se busca la palabra "roja" cerca y si no aparece se
+  // asume amarilla (lo más habitual); el dorsal se intenta recuperar
+  // buscando el mismo nombre entre los titulares/suplentes ya
+  // extraídos de este bloque, solo para mostrarlo en la vista previa
+  // (no afecta a ningún cálculo).
+  const roster=[...titularesRaw,...suplentesRaw];
+  const tarjetasRe=new RegExp('\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
+  const tarjetas=[]; let mT;
+  while((mT=tarjetasRe.exec(zonaTarjetas))){
+    const nombre=mT[2].replace(/\s+/g,' ').trim();
+    const cerca=zonaTarjetas.slice(Math.max(0,mT.index-10),mT.index+nombre.length+60);
+    const enRoster=roster.find(j=>_normalizarBusqueda(j.nombre)===_normalizarBusqueda(nombre));
+    tarjetas.push({dorsal:enRoster?enRoster.dorsal:null,nombre,minuto:+mT[1],tipo:/roja/i.test(cerca)?'roja':'amarilla'});
+  }
 
   return {titulares,suplentes,tarjetas};
 }
@@ -11400,7 +11611,7 @@ function _apActaTablaHTML(lado,titulo){
     </tbody></table>`;
   };
   const tarjetasH=d.tarjetas.length
-    ?`<p style="font-size:9px;color:var(--gris2);margin:6px 0 2px">🟨 Tarjetas</p><ul style="font-size:10px;margin:0;padding-left:16px">${d.tarjetas.map(t=>`<li>#${eH(t.dorsal)} ${eH(t.nombre)}${t.minuto?` (m.${t.minuto})`:''} — ${t.tipo==='roja'?'🟥 roja':'🟨 amarilla'}</li>`).join('')}</ul>`
+    ?`<p style="font-size:9px;color:var(--gris2);margin:6px 0 2px">🟨 Tarjetas</p><ul style="font-size:10px;margin:0;padding-left:16px">${d.tarjetas.map(t=>`<li>${t.dorsal?'#'+eH(t.dorsal)+' ':''}${eH(t.nombre)}${t.minuto?` (m.${t.minuto})`:''} — ${t.tipo==='roja'?'🟥 roja':'🟨 amarilla'}</li>`).join('')}</ul>`
     :'';
   return `<div style="flex:1;min-width:260px">
     <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">${eH(titulo)}</p>
