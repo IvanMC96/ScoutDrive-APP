@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-11-13">
+<meta name="app-version" content="2026-09-16-2">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -964,6 +964,12 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 .tg-v2 tr:hover td{background:rgba(255,255,255,.03);}
 .tg-min{color:var(--azul-cl);font-weight:800;font-size:10px;}
 .tg-min-gc{color:var(--rojo-cl);font-weight:800;font-size:10px;}
+/* Agrupación de "🥅 Goles" por liga — para que no se mezclen goles de
+   competiciones distintas en una sola tabla (ver renderGolesView). */
+.goles-grupo-liga{margin-bottom:18px;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+.goles-grupo-liga+.goles-grupo-liga{margin-top:18px;}
+.goles-grupo-liga-hdr{padding:8px 12px;background:var(--bg3);font-size:12px;font-weight:800;
+  color:var(--blanco);border-bottom:1px solid var(--border);}
 
 /* Galería clips mejorada */
 .eclips-section{padding:14px 16px;border-bottom:1px solid var(--border);overflow:hidden;}
@@ -1504,6 +1510,12 @@ body.solo-lectura .ed-panel-form {
   <div class="inicio-card" id="inicio-origen-card">
     <div class="inicio-card-tit">🎯 Cómo se marcan los goles</div>
     <div id="inicio-origen-goles"></div>
+  </div>
+
+  <div class="inicio-card" id="inicio-podios-card">
+    <div class="inicio-card-tit">🏆 Podio por tipo de acción</div>
+    <div style="font-size:10px;color:var(--gris2);margin:-8px 0 12px">Los 3 equipos que más goles hacen y más encajan por cada vía táctica — con los goles ya registrados en Partidos/Jugadores/Equipos.</div>
+    <div id="inicio-podios-origen"></div>
   </div>
 
   <div class="inicio-card" id="inicio-ads-card">
@@ -2976,6 +2988,7 @@ function renderInicio(){
   renderGoleadoresInicio();
   renderClasificacionInicio();
   renderOrigenGolesInicio();
+  renderPodiosOrigenInicio();
   renderAdsList();
 }
 
@@ -3653,6 +3666,80 @@ function renderOrigenGolesInicio(){
       <div class="inicio-origen-badge">🔥 Se marca más de <strong>${eH(top.label)}</strong> (${topPct}% de los goles)</div>
     </div>`;
   }).join('')}</div>`;
+}
+
+/** Colores para el podio por tipo de acción — mismos tonos que ya usan
+ *  los badges de taxonomía (OCSS/.to-atq etc.), para que un mismo origen
+ *  se vea siempre del mismo color en toda la app. */
+const _PODIO_ORIGEN_COLOR={
+  'Ataque Organizado':'var(--azul-cl)','Juego Directo':'var(--verde-cl)','Centro Lateral':'var(--lila)',
+  'Finalización Frontal':'var(--naranja-cl)','Transición Ofensiva':'var(--cian)','ABP Ofensiva':'var(--naranja-cl)',
+};
+/** Para cada tipo de acción táctica (ORIGENES), calcula qué 3 equipos
+ *  marcan más goles por esa vía ("a favor") y qué 3 encajan más goles
+ *  por esa misma vía ("en contra") — a partir de calcularTodosLosGoles(),
+ *  que ya junta TODAS las fuentes de gol de la app (ficha de jugador,
+ *  ficha de equipo, Partidos, clips) y ya está filtrado por la liga a la
+ *  que tiene acceso la cuenta (usuarioPuedeVerLiga) — así este podio
+ *  siempre sale sincronizado con lo que haya en Partidos/Jugadores/
+ *  Equipos, sin necesidad de rellenar nada aparte (a diferencia de
+ *  "🎯 Cómo se marcan los goles" de arriba, que usa el "Análisis de
+ *  origen" que se rellena a mano en cada equipo). "En contra" se lee del
+ *  campo "rival" de cada gol: el mismo origen con el que un equipo
+ *  marca es, visto desde el equipo rival, un gol encajado por esa vía. */
+function calcularPodiosPorOrigen(){
+  const goles=calcularTodosLosGoles();
+  const porOrigen={};
+  ORIGENES.forEach(o=>{ porOrigen[o]={favor:{},contra:{}}; });
+  goles.forEach(g=>{
+    const bucket=porOrigen[g.origen]; if(!bucket) return; // tipos de clip sueltos u otra taxonomía — se ignoran aquí
+    if(g.equipo && g.equipo!=='—') bucket.favor[g.equipo]=(bucket.favor[g.equipo]||0)+1;
+    if(g.rival && g.rival!=='—') bucket.contra[g.rival]=(bucket.contra[g.rival]||0)+1;
+  });
+  const top3=(obj)=>Object.entries(obj)
+    .sort((a,b)=>b[1]-a[1])
+    .slice(0,3)
+    .map(([equipo,valor])=>({equipo,valor,escudo:escudoDeEquipoPorNombre(equipo)}));
+  return ORIGENES.map(o=>({
+    origen:o,
+    color:_PODIO_ORIGEN_COLOR[o]||'var(--azul-cl)',
+    favor:top3(porOrigen[o].favor),
+    contra:top3(porOrigen[o].contra),
+    total:Object.values(porOrigen[o].favor).reduce((s,v)=>s+v,0),
+  })).filter(o=>o.total>0);
+}
+const _PODIO_MEDALLAS=['🥇','🥈','🥉'];
+function _podioListaHTML(lista){
+  if(!lista.length) return '<div class="inicio-empty" style="padding:4px 0">Sin datos todavía</div>';
+  return lista.map((it,i)=>{
+    const escH=it.escudo?`<img src="${eH(it.escudo)}" class="inicio-escudo">`:`<div class="inicio-escudo inicio-escudo-fallback"></div>`;
+    return `<div class="inicio-row clicable" onclick="irAEquipoPorNombre('${eH(it.equipo).replace(/'/g,"\\'")}')">
+      <span class="inicio-row-l" style="display:flex;align-items:center;gap:6px;min-width:0">
+        <span>${_PODIO_MEDALLAS[i]||''}</span>${escH}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${eH(it.equipo)}</span>
+      </span>
+      <span class="inicio-row-r">${it.valor}</span>
+    </div>`;
+  }).join('');
+}
+function renderPodiosOrigenInicio(){
+  const cont=document.getElementById('inicio-podios-origen');
+  if(!cont) return;
+  const datos=calcularPodiosPorOrigen();
+  if(!datos.length){ cont.innerHTML='<div class="inicio-empty">Todavía no hay goles con taxonomía registrada</div>'; return; }
+  cont.innerHTML=`<div class="inicio-origen-grid">${datos.map(o=>`
+    <div class="inicio-origen-card">
+      <div class="inicio-liga-tit" style="color:${o.color}">${eH(o.origen)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <div>
+          <div style="font-size:9px;font-weight:800;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">⚽ A favor</div>
+          ${_podioListaHTML(o.favor)}
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:800;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🥅 En contra</div>
+          ${_podioListaHTML(o.contra)}
+        </div>
+      </div>
+    </div>`).join('')}</div>`;
 }
 
 // ── NAVEGACIÓN DIRECTA DESDE EL DASHBOARD ───────────────────────
@@ -11827,20 +11914,39 @@ function _parsearBloqueEquipoActa(bloque){
   // Tarjetas: a diferencia de titulares/suplentes/sustituciones, en una
   // ficha real de federación las tarjetas NO llevan el dorsal delante
   // del nombre — solo "(minuto') NOMBRE, Apellidos". El color (amarilla/
-  // roja) normalmente es solo un icono que se pierde al pasar a texto
-  // plano, así que se busca la palabra "roja" cerca y si no aparece se
-  // asume amarilla (lo más habitual); el dorsal se intenta recuperar
-  // buscando el mismo nombre entre los titulares/suplentes ya
-  // extraídos de este bloque, solo para mostrarlo en la vista previa
-  // (no afecta a ningún cálculo).
+  // roja) en la web/PDF original es solo un icono (cuadrado de color o
+  // imagen) que se pierde POR COMPLETO al pasar a texto plano — no hay
+  // ninguna palabra "amarilla"/"roja" en el texto ni en el PDF (comprobado
+  // contra una ficha real de la federación), así que no se puede saber el
+  // color con certeza solo con el texto. Se aplican dos señales que SÍ
+  // están disponibles:
+  //   1) Si el mismo jugador aparece más de una vez en la lista de
+  //      tarjetas de su equipo, la 2ª (y siguientes) SOLO puede ser una
+  //      segunda amarilla — no se pueden mostrar 2 amarillas sueltas sin
+  //      que la 2ª sea expulsión, es una regla del reglamento — así que
+  //      se marca como 'segunda_amarilla' (cuenta como amarilla Y como
+  //      roja al sincronizar, ver _tallyGolesJugadores).
+  //   2) Si por lo que sea el texto SÍ trae la palabra "roja" cerca (otras
+  //      federaciones a veces sí la escriben), se respeta como roja
+  //      directa.
+  // El resto se deja como 'amarilla' por defecto, pero SIEMPRE editable a
+  // mano en la vista previa (ver _apActaTipoTarjetaSelectHTML) porque una
+  // roja directa (sin que haya habido antes una amarilla) es indetectable
+  // desde este texto — el admin la corrige ahí mismo antes de confirmar.
   const roster=[...titularesRaw,...suplentesRaw];
   const tarjetasRe=new RegExp('\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
   const tarjetas=[]; let mT;
+  const vecesVistoPorNombre={};
   while((mT=tarjetasRe.exec(zonaTarjetas))){
     const nombre=mT[2].replace(/\s+/g,' ').trim();
     const cerca=zonaTarjetas.slice(Math.max(0,mT.index-10),mT.index+nombre.length+60);
     const enRoster=roster.find(j=>_normalizarBusqueda(j.nombre)===_normalizarBusqueda(nombre));
-    tarjetas.push({dorsal:enRoster?enRoster.dorsal:null,nombre,minuto:+mT[1],tipo:/roja/i.test(cerca)?'roja':'amarilla'});
+    const clave=_normalizarBusqueda(nombre);
+    vecesVistoPorNombre[clave]=(vecesVistoPorNombre[clave]||0)+1;
+    let tipo='amarilla';
+    if(/roja/i.test(cerca)) tipo='roja';
+    else if(vecesVistoPorNombre[clave]>=2) tipo='segunda_amarilla';
+    tarjetas.push({dorsal:enRoster?enRoster.dorsal:null,nombre,minuto:+mT[1],tipo});
   }
 
   return {titulares,suplentes,tarjetas};
@@ -12132,16 +12238,42 @@ function _apActaIntercambiarLados(){
   _renderApActaPreview();
 }
 
+/** Icono + nombre corto para cada tipo de tarjeta detectado/corregido. */
+const _ACTA_TIPOS_TARJETA=[
+  {v:'amarilla',ic:'🟨',lbl:'Amarilla'},
+  {v:'segunda_amarilla',ic:'🟨🟥',lbl:'2ª amarilla (expulsión)'},
+  {v:'roja',ic:'🟥',lbl:'Roja directa'},
+];
+function _apActaIconoTarjeta(tipo){
+  return (_ACTA_TIPOS_TARJETA.find(t=>t.v===tipo)||_ACTA_TIPOS_TARJETA[0]).ic;
+}
+/** El color de la tarjeta no se puede leer del texto del acta (el icono
+ *  de color se pierde al extraer texto plano, tanto pegado como del PDF
+ *  — ver el comentario en _parsearBloqueEquipoActa) — así que, aunque se
+ *  intenta adivinar (2ª aparición del mismo jugador = segunda amarilla),
+ *  SIEMPRE se deja elegible a mano aquí, igual que el emparejamiento de
+ *  jugador de al lado. */
+function _apActaTipoTarjetaSelectHTML(lado,idx,fila){
+  const opciones=_ACTA_TIPOS_TARJETA.map(t=>`<option value="${t.v}"${fila.tipo===t.v?' selected':''}>${t.ic} ${eH(t.lbl)}</option>`).join('');
+  return `<select onchange="_apActaCambiarTipoTarjeta('${lado}',${idx},this.value)" style="font-size:10px;padding:3px 4px">${opciones}</select>`;
+}
+function _apActaCambiarTipoTarjeta(lado,idx,valor){
+  if(!_apActaPreviewPendiente) return;
+  const fila=_apActaPreviewPendiente[lado].tarjetas[idx]; if(!fila) return;
+  fila.tipo=valor;
+  _renderApActaPreview();
+}
 function _apActaFilaHTML(lado,tipo,idx,fila,mostrarMinuto){
   const min = tipo==='titulares' ? (fila.minutoSalida!=null?`hasta m.${fila.minutoSalida}`:'90\'')
             : tipo==='suplentes' ? (fila.entro?`entra m.${fila.minutoEntrada}`:'no entró')
-            : tipo==='tarjetas' ? `m.${fila.minuto} ${fila.tipo==='roja'?'🟥':'🟨'}`
+            : tipo==='tarjetas' ? `m.${fila.minuto}`
             : '';
   return `<tr>
     <td class="tmin">${fila.dorsal?'#'+eH(fila.dorsal):'—'}</td>
     <td style="font-size:10px">${eH(fila.nombre)}</td>
     <td>${_apActaSelectHTML(lado,tipo,idx,fila)}</td>
     <td>${_apActaBadgeConfianza(fila.confianza)}</td>
+    ${tipo==='tarjetas'?`<td>${_apActaTipoTarjetaSelectHTML(lado,idx,fila)}</td>`:''}
     ${mostrarMinuto?`<td style="font-size:9px;color:var(--gris2)">${min}</td>`:''}
   </tr>`;
 }
@@ -12150,7 +12282,7 @@ function _apActaTablaHTML(lado,titulo){
   const tabla=(tipo,mostrarMinuto)=>{
     const filas=d[tipo];
     if(!filas.length) return '<p style="font-size:9px;color:var(--gris)">Ninguno detectado</p>';
-    return `<table class="tgj"><thead><tr><th>#</th><th>Nombre (acta)</th><th>Jugador</th><th></th>${mostrarMinuto?'<th>Minutos</th>':''}</tr></thead><tbody>
+    return `<table class="tgj"><thead><tr><th>#</th><th>Nombre (acta)</th><th>Jugador</th><th></th>${tipo==='tarjetas'?'<th>Tipo</th>':''}${mostrarMinuto?'<th>Minutos</th>':''}</tr></thead><tbody>
       ${filas.map((f,i)=>_apActaFilaHTML(lado,tipo,i,f,mostrarMinuto)).join('')}
     </tbody></table>`;
   };
@@ -12516,13 +12648,18 @@ function _tallyGolesJugadores(){
       // Tarjetas amarillas/rojas del acta importada — cada una emparejada
       // con un jugador (ver _actaEmparejarTarjetas) suma directamente a su
       // contador de la temporada, sin tocar PJ/PT/PS/Minutos (una tarjeta
-      // no es un partido jugado, es solo la tarjeta en sí).
+      // no es un partido jugado, es solo la tarjeta en sí). Una segunda
+      // amarilla es a la vez una amarilla (la tarjeta que se enseña) Y una
+      // roja (el jugador acaba expulsado) — cuenta para las dos, para que
+      // no se pierda la expulsión en su ficha (ver _ACTA_TIPOS_TARJETA).
       (bloque.tarjetas||[]).forEach(f=>{
         if(!f.jugadorId) return;
         const j=jDB.find(x=>x.id===f.jugadorId); if(!j) return;
         if(!_mismaTemporadaTally(j.temp,p.temp)) return;
         if(!tally[f.jugadorId]) tally[f.jugadorId]={g:0,a:0,pz:0,ab:0,gr:0,pt:0,ps:0,p:0,min:0,ta:0,tr:0};
-        tally[f.jugadorId][f.tipo==='roja'?'tr':'ta']++;
+        if(f.tipo==='roja') tally[f.jugadorId].tr++;
+        else if(f.tipo==='segunda_amarilla'){ tally[f.jugadorId].ta++; tally[f.jugadorId].tr++; }
+        else tally[f.jugadorId].ta++;
       });
     });
   });
@@ -13507,19 +13644,10 @@ function _golesFiltrados(){
   });
 }
 
-function renderGolesView(){
-  const lista=_golesFiltrados();
-  document.getElementById('goles-stat-total').textContent=lista.length;
-  const wrap=document.getElementById('goles-tabla-wrap');
-  if(!wrap) return;
-  if(!lista.length){
-    wrap.innerHTML=`<div class="partidos-empty"><span>⚽</span><p>No hay goles que coincidan con estos filtros.</p></div>`;
-  }else{
-  wrap.innerHTML=`<table class="tg-v2">
-    <thead><tr>
-      <th>Jugador</th><th>Equipo</th><th>Rival</th><th>Min</th><th>Origen</th><th>Subtipo</th><th>Portero</th><th>Asist.</th><th>Penalti</th><th>Fuente</th>
-    </tr></thead>
-    <tbody>${lista.map(g=>`<tr>
+/** Fila <tr> de la tabla de "🥅 Goles" — extraída de renderGolesView()
+ *  para poder reutilizarla al pintar cada grupo de liga por separado. */
+function _golFilaHTML(g){
+  return `<tr>
       <td style="font-weight:700;color:var(--blanco);cursor:${g.jugadorId?'pointer':'default'}" ${g.jugadorId?`onclick="irAJugador('${g.jugadorId}')"`:''}>${eH(g.jugador)}</td>
       <td style="cursor:pointer" onclick="irAEquipoPorNombre('${eH(g.equipo).replace(/'/g,"\\'")}')">${eH(g.equipo)}</td>
       <td style="font-size:10px;color:var(--gris2)">${eH(g.rival)}</td>
@@ -13530,9 +13658,44 @@ function renderGolesView(){
       <td style="font-size:10px;color:var(--gris)">${eH(g.asistencia)||'—'}</td>
       <td>${g.penalti?'⚽ Sí':'—'}</td>
       <td style="font-size:9px;color:var(--gris2)">${eH(g.fuente)}</td>
-    </tr>`).join('')}</tbody>
-  </table>`;
+    </tr>`;
+}
+function renderGolesView(){
+  const lista=_golesFiltrados();
+  document.getElementById('goles-stat-total').textContent=lista.length;
+  const wrap=document.getElementById('goles-tabla-wrap');
+  if(!wrap) return;
+  if(!lista.length){
+    wrap.innerHTML=`<div class="partidos-empty"><span>⚽</span><p>No hay goles que coincidan con estos filtros.</p></div>`;
+    renderGolesClipsView();
+    return;
   }
+  // Agrupados por liga (la misma con la que usuarioPuedeVerLiga() ya
+  // restringe el acceso) para que, en una cuenta con acceso a varias
+  // ligas (o sin restricción, como el super admin), los goles de cada
+  // competición salgan separados en vez de todos mezclados en una sola
+  // tabla — cada cuenta restringida solo llega a ver aquí los grupos de
+  // SU liga, porque _golesFiltrados()/calcularTodosLosGoles() ya filtra
+  // el resto antes de llegar a este punto.
+  const grupos=new Map();
+  lista.forEach(g=>{
+    const liga=ligaDeEquipoPorNombre(g.equipo)||'Sin liga asignada';
+    if(!grupos.has(liga)) grupos.set(liga,[]);
+    grupos.get(liga).push(g);
+  });
+  const ligasOrdenadas=[...grupos.keys()].sort((a,b)=>a.localeCompare(b,'es'));
+  wrap.innerHTML=ligasOrdenadas.map(liga=>{
+    const filas=grupos.get(liga);
+    return `<div class="goles-grupo-liga">
+      <div class="goles-grupo-liga-hdr">🏆 ${eH(liga)} <span style="font-weight:400;color:var(--gris2)">· ${filas.length} gol${filas.length!==1?'es':''}</span></div>
+      <table class="tg-v2">
+        <thead><tr>
+          <th>Jugador</th><th>Equipo</th><th>Rival</th><th>Min</th><th>Origen</th><th>Subtipo</th><th>Portero</th><th>Asist.</th><th>Penalti</th><th>Fuente</th>
+        </tr></thead>
+        <tbody>${filas.map(_golFilaHTML).join('')}</tbody>
+      </table>
+    </div>`;
+  }).join('');
   renderGolesClipsView();
 }
 
