@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-16-2">
+<meta name="app-version" content="2026-09-16-3">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11578,6 +11578,23 @@ function importarActaDesdeTexto(){
  *  página y se reconstruye el orden de lectura correcto columna por
  *  columna, fila por fila, para producir un texto "canónico" que el
  *  intérprete de siempre (_parsearActaTexto) ya sabe leer sin cambios. */
+// pdf.js 6.3.289 usa internamente Map.prototype.getOrInsertComputed()
+// (propuesta reciente de TC39) en getOperatorList() — necesaria para
+// leer los iconos de las tarjetas (ver _actaPdfDetectarIconosRojos) —
+// pero muchos navegadores en uso real todavía no la traen incorporada,
+// y sin ella getOperatorList() lanza un TypeError. Se rellena aquí con
+// un polyfill mínimo y equivalente (comprobado contra el uso real que
+// hace pdf.js: siempre con una función sin argumentos) para que la
+// detección del icono funcione también en esos navegadores; si el
+// método ya existe de forma nativa, no se toca.
+if(!Map.prototype.getOrInsertComputed){
+  Map.prototype.getOrInsertComputed=function(clave,calcular){
+    if(this.has(clave)) return this.get(clave);
+    const valor=calcular(clave);
+    this.set(clave,valor);
+    return valor;
+  };
+}
 let _pdfJsCargando=null;
 function _cargarPdfJs(){
   if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
@@ -11679,6 +11696,105 @@ function _actaPdfExtraerCentro(items){
   filas.forEach(f=>f.items.sort((a,b)=>a.x-b.x));
   return filas.map(_actaPdfFilaATexto).join('\n');
 }
+/** El color de una tarjeta (amarilla/roja) NUNCA aparece como texto en
+ *  la ficha — ni pegando el texto a mano, ni en el PDF — así que
+ *  _extraerTextoActaDesdePDF() no puede encontrarlo simplemente leyendo
+ *  caracteres. Pero en el PDF sí existe una señal: el icono de la
+ *  tarjeta se dibuja como una imagen diminuta incrustada justo delante
+ *  del nombre del jugador, y su color medio de píxel distingue amarilla
+ *  de roja sin ambigüedad (comprobado con la ficha real de un partido:
+ *  icono amarillo ≈ RGB(210-246,181-199,51-91), icono rojo ≈
+ *  RGB(216-255,0-59,0-59)). Esta función recorre la lista de
+ *  operaciones de dibujo de la página (getOperatorList) llevando a mano
+ *  la matriz de transformación actual (CTM, con save/restore/transform,
+ *  igual que hace pdf.js internamente al pintar) y, por cada imagen
+ *  pintada (paintImageXObject/paintImageXObjectRepeat), mira su
+ *  posición — en el MISMO sistema de coordenadas que usan los items de
+ *  getTextContent(), así que se puede mezclar directamente con el texto
+ *  — y su color medio. Los iconos de tarjeta son pequeños y "de pie"
+ *  (más altos que anchos, ~8x11pt); las flechas de sustitución son
+ *  parecidas de tamaño pero "tumbadas" (más anchas que altas, ~14x10pt,
+ *  y alguna es de un rojo oscuro que daría un falso positivo) — se
+ *  descartan por forma, no solo por tamaño, para no confundirlas con
+ *  una tarjeta roja. Solo se devuelven las posiciones de los iconos
+ *  ROJOS (no hace falta devolver los amarillos: si no se detecta rojo
+ *  ni es una repetición del mismo jugador, ya se asume amarilla por
+ *  defecto en _parsearBloqueEquipoActa).
+ *
+ *  Ojo con page.objs.get(): en un navegador real (que es lo único que
+ *  importa aquí, esto nunca se ejecuta en Node) la imagen resuelta NO
+ *  trae un array de píxeles en bruto (eso solo pasa en el build
+ *  "legacy" pensado para entornos sin canvas) — trae un
+ *  ImageBitmap ya decodificado en `img.bitmap`, así que hay que
+ *  dibujarlo en un <canvas> de 1 icono y leer sus píxeles con
+ *  getImageData() para poder calcular el color medio. Se soportan las
+ *  dos formas por si el CDN sirviera alguna vez el build legacy. */
+async function _actaPdfDetectarIconosRojos(page,pdfjsLib){
+  const OPS=pdfjsLib.OPS;
+  const mul=(a,b)=>[
+    a[0]*b[0]+a[2]*b[1], a[1]*b[0]+a[3]*b[1],
+    a[0]*b[2]+a[2]*b[3], a[1]*b[2]+a[3]*b[3],
+    a[0]*b[4]+a[2]*b[5]+a[4], a[1]*b[4]+a[3]*b[5]+a[5],
+  ];
+  let opList;
+  try{ opList=await page.getOperatorList(); }catch(e){ return []; }
+  const {fnArray,argsArray}=opList;
+  let ctm=[1,0,0,1,0,0];
+  const pila=[];
+  const posiciones=[];
+  for(let i=0;i<fnArray.length;i++){
+    const fn=fnArray[i], args=argsArray[i];
+    if(fn===OPS.save) pila.push(ctm.slice());
+    else if(fn===OPS.restore) ctm=pila.pop()||ctm;
+    else if(fn===OPS.transform) ctm=mul(ctm,args);
+    else if(fn===OPS.paintImageXObject || fn===OPS.paintImageXObjectRepeat) posiciones.push({name:args[0],x:ctm[4],y:ctm[5]});
+  }
+  if(!posiciones.length) return [];
+  const nombres=[...new Set(posiciones.map(p=>p.name))];
+  const imagenes={};
+  await Promise.all(nombres.map(nombre=>new Promise(resolve=>{
+    try{ page.objs.get(nombre, img=>{ imagenes[nombre]=img; resolve(); }); }
+    catch(e){ resolve(); }
+  })));
+  let lienzo=null, ctxLienzo=null;
+  const colorMedio=img=>{
+    if(img.bitmap){
+      try{
+        if(!lienzo){ lienzo=document.createElement('canvas'); ctxLienzo=lienzo.getContext('2d',{willReadFrequently:true}); }
+        lienzo.width=img.width; lienzo.height=img.height;
+        ctxLienzo.clearRect(0,0,img.width,img.height);
+        ctxLienzo.drawImage(img.bitmap,0,0);
+        const datos=ctxLienzo.getImageData(0,0,img.width,img.height).data;
+        let r=0,g=0,b=0,n=0;
+        for(let i=0;i<datos.length;i+=4){ r+=datos[i]; g+=datos[i+1]; b+=datos[i+2]; n++; }
+        return n?[r/n,g/n,b/n]:null;
+      }catch(e){ return null; }
+    }
+    if(img.data && img.data.length){
+      const canales=img.kind===3?4:(img.kind===2?3:1);
+      if(canales<3) return null; // en gris no se distingue amarillo de rojo
+      let r=0,g=0,b=0,n=0;
+      for(let i=0;i+canales<=img.data.length;i+=canales){ r+=img.data[i]; g+=img.data[i+1]; b+=img.data[i+2]; n++; }
+      return n?[r/n,g/n,b/n]:null;
+    }
+    return null;
+  };
+  const rojos=[];
+  posiciones.forEach(p=>{
+    const img=imagenes[p.name];
+    if(!img || !img.width || !img.height) return;
+    // Solo iconos pequeños y "de pie" (tarjeta), nunca escudos/logos ni
+    // las flechas (tumbadas) de las sustituciones.
+    if(img.width<2 || img.width>12 || img.height<2 || img.height>16) return;
+    if(img.height<=img.width) return;
+    const color=colorMedio(img);
+    if(!color) return;
+    let [r,g,b]=color;
+    const esRojo=r>140 && g<110 && b<110 && (r-g)>60 && (r-b)>60;
+    if(esRojo) rojos.push({x:p.x,y:p.y});
+  });
+  return rojos;
+}
 async function _extraerTextoActaDesdePDF(file){
   const pdfjsLib=await _cargarPdfJs();
   const buf=await file.arrayBuffer();
@@ -11694,6 +11810,16 @@ async function _extraerTextoActaDesdePDF(file){
     const limpio=content.items
       .map(it=>({str:(it.str||'').trim(), x:it.transform[4], y:it.transform[5]}))
       .filter(it=>it.str);
+    // Los iconos de tarjeta roja del PDF (imágenes, no texto) se
+    // inyectan aquí como si fueran un item de texto más — con la marca
+    // "[ROJA]" en la misma posición (x,y) que el icono real — para que
+    // caigan en la misma fila/columna que el nombre del jugador al
+    // reagrupar por cercanía más abajo, y así _parsearBloqueEquipoActa()
+    // los detecta con la misma búsqueda de texto "roja" que ya usaba
+    // para el texto pegado a mano (ver _actaPdfDetectarIconosRojos).
+    let iconosRojos=[];
+    try{ iconosRojos=await _actaPdfDetectarIconosRojos(page,pdfjsLib); }catch(e){ iconosRojos=[]; }
+    iconosRojos.forEach(ic=>limpio.push({str:'[ROJA]', x:ic.x, y:ic.y}));
     const anclas=_actaPdfAnclasColumnas(limpio);
     if(anclas){
       const [ax,bx]=anclas;
@@ -11914,38 +12040,53 @@ function _parsearBloqueEquipoActa(bloque){
   // Tarjetas: a diferencia de titulares/suplentes/sustituciones, en una
   // ficha real de federación las tarjetas NO llevan el dorsal delante
   // del nombre — solo "(minuto') NOMBRE, Apellidos". El color (amarilla/
-  // roja) en la web/PDF original es solo un icono (cuadrado de color o
-  // imagen) que se pierde POR COMPLETO al pasar a texto plano — no hay
-  // ninguna palabra "amarilla"/"roja" en el texto ni en el PDF (comprobado
-  // contra una ficha real de la federación), así que no se puede saber el
-  // color con certeza solo con el texto. Se aplican dos señales que SÍ
-  // están disponibles:
+  // roja) del icono original se pierde al extraer solo texto plano — pero
+  // cuando el acta viene de un PDF, _extraerTextoActaDesdePDF() ya detecta
+  // el color REAL del icono (es una imagen diminuta incrustada, no un
+  // simple carácter de texto — ver _actaPdfDetectarIconosRojos) y, si es
+  // rojo, inyecta la palabra "roja" pegada al nombre en el texto
+  // reconstruido — así que aquí solo hace falta buscarla, igual que si
+  // viniera escrita a mano en el texto pegado. Se combinan dos señales:
   //   1) Si el mismo jugador aparece más de una vez en la lista de
   //      tarjetas de su equipo, la 2ª (y siguientes) SOLO puede ser una
   //      segunda amarilla — no se pueden mostrar 2 amarillas sueltas sin
-  //      que la 2ª sea expulsión, es una regla del reglamento — así que
-  //      se marca como 'segunda_amarilla' (cuenta como amarilla Y como
-  //      roja al sincronizar, ver _tallyGolesJugadores).
-  //   2) Si por lo que sea el texto SÍ trae la palabra "roja" cerca (otras
-  //      federaciones a veces sí la escriben), se respeta como roja
-  //      directa.
-  // El resto se deja como 'amarilla' por defecto, pero SIEMPRE editable a
-  // mano en la vista previa (ver _apActaTipoTarjetaSelectHTML) porque una
-  // roja directa (sin que haya habido antes una amarilla) es indetectable
-  // desde este texto — el admin la corrige ahí mismo antes de confirmar.
+  //      que la 2ª sea expulsión, es una regla del reglamento (así lo
+  //      pinta también la propia federación: la 2ª va con icono rojo) —
+  //      esto tiene prioridad sobre el color detectado, porque para las
+  //      estadísticas del jugador una segunda amarilla cuenta como
+  //      amarilla Y como roja a la vez (ver _tallyGolesJugadores), no
+  //      solo como roja.
+  //   2) Si no es una repetición pero el texto SÍ trae "roja" cerca (por
+  //      el icono detectado en el PDF, o porque el texto pegado a mano ya
+  //      lo decía), se marca como roja directa.
+  // El resto se deja como 'amarilla' por defecto (ni segunda amarilla, ni
+  // icono rojo detectado) — pero SIEMPRE editable a mano en la vista
+  // previa (ver _apActaTipoTarjetaSelectHTML), por si el color no se pudo
+  // detectar (texto pegado a mano sin icono) o el admin necesita corregir
+  // algo.
   const roster=[...titularesRaw,...suplentesRaw];
   const tarjetasRe=new RegExp('\\((\\d{1,3})\'(?:\\+\\d+)?\\)\\s*\\n?\\s*('+_ACTA_RE_NOMBRE+')','g');
   const tarjetas=[]; let mT;
   const vecesVistoPorNombre={};
   while((mT=tarjetasRe.exec(zonaTarjetas))){
     const nombre=mT[2].replace(/\s+/g,' ').trim();
-    const cerca=zonaTarjetas.slice(Math.max(0,mT.index-10),mT.index+nombre.length+60);
+    // "cerca" se acota a la MISMA línea del acta que esta tarjeta —  sin
+    // esto, con varias tarjetas seguidas y poco espacio entre ellas (como
+    // pasa en el texto reconstruido de un PDF), la búsqueda de "roja" se
+    // colaba a la línea siguiente y podía marcar como roja una tarjeta
+    // que no lo era (por ejemplo el icono rojo de una 2ª amarilla se
+    // pinta en SU propia línea, pegado a SU nombre — no debe alcanzar la
+    // línea anterior del mismo jugador, ni la de otro jugador distinto).
+    const inicioLinea=zonaTarjetas.lastIndexOf('\n',mT.index)+1;
+    let finLinea=zonaTarjetas.indexOf('\n',mT.index);
+    if(finLinea<0) finLinea=zonaTarjetas.length;
+    const cerca=zonaTarjetas.slice(Math.max(inicioLinea,mT.index-10),Math.min(finLinea,mT.index+nombre.length+60));
     const enRoster=roster.find(j=>_normalizarBusqueda(j.nombre)===_normalizarBusqueda(nombre));
     const clave=_normalizarBusqueda(nombre);
     vecesVistoPorNombre[clave]=(vecesVistoPorNombre[clave]||0)+1;
     let tipo='amarilla';
-    if(/roja/i.test(cerca)) tipo='roja';
-    else if(vecesVistoPorNombre[clave]>=2) tipo='segunda_amarilla';
+    if(vecesVistoPorNombre[clave]>=2) tipo='segunda_amarilla';
+    else if(/roja/i.test(cerca)) tipo='roja';
     tarjetas.push({dorsal:enRoster?enRoster.dorsal:null,nombre,minuto:+mT[1],tipo});
   }
 
