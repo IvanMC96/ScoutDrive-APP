@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-16-4">
+<meta name="app-version" content="2026-09-16-5">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -12807,13 +12807,29 @@ function _tallyGolesJugadores(){
     if(!p.alineacion) return;
     ['local','visitante'].forEach(lado=>{
       const bloque=p.alineacion[lado]; if(!bloque) return;
+      // Minuto de expulsión de cada jugador de este bloque (roja directa
+      // o 2ª amarilla) — un jugador expulsado deja de jugar EN ESE
+      // MOMENTO, no en el 90' ni en los minutos que le tocaran si hubiera
+      // seguido en el campo: sus minutos jugados tienen que cortar ahí.
+      // Si por lo que sea aparece más de una tarjeta roja/2ª amarilla
+      // para el mismo jugador (dato mal metido a mano), se usa la más
+      // temprana — no puede haber jugado después de la primera expulsión.
+      const expulsionPorJugador={};
+      (bloque.tarjetas||[]).forEach(f=>{
+        if(!f.jugadorId || (f.tipo!=='roja' && f.tipo!=='segunda_amarilla')) return;
+        if(expulsionPorJugador[f.jugadorId]==null || f.minuto<expulsionPorJugador[f.jugadorId]) expulsionPorJugador[f.jugadorId]=f.minuto;
+      });
       (bloque.titulares||[]).forEach(f=>{
-        const minutos=f.minutoSalida!=null?f.minutoSalida:90;
+        let minutos=f.minutoSalida!=null?f.minutoSalida:90;
+        const exp=f.jugadorId!=null?expulsionPorJugador[f.jugadorId]:null;
+        if(exp!=null) minutos=Math.min(minutos,exp);
         sumarAlineacion(f.jugadorId,p.temp,'pt',minutos);
       });
       (bloque.suplentes||[]).forEach(f=>{
         if(!f.entro) return;
-        const minutos=f.minutoEntrada!=null?(90-f.minutoEntrada):0;
+        let minutos=f.minutoEntrada!=null?(90-f.minutoEntrada):0;
+        const exp=f.jugadorId!=null?expulsionPorJugador[f.jugadorId]:null;
+        if(exp!=null && f.minutoEntrada!=null) minutos=Math.max(0,Math.min(minutos,exp-f.minutoEntrada));
         sumarAlineacion(f.jugadorId,p.temp,'ps',minutos);
       });
       // Tarjetas amarillas/rojas del acta importada — cada una emparejada
