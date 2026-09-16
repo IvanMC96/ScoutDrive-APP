@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-16-3">
+<meta name="app-version" content="2026-09-16-4">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -558,8 +558,8 @@ input[type=range]{flex:1;accent-color:var(--azul);}
 .inicio-row{display:flex;align-items:center;justify-content:space-between;
   padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;}
 .inicio-row:last-child{border-bottom:none;}
-.inicio-row-l{color:var(--gris);}
-.inicio-row-r{font-weight:700;color:var(--blanco);}
+.inicio-row-l{color:var(--gris);min-width:0;}
+.inicio-row-r{font-weight:700;color:var(--blanco);flex-shrink:0;margin-left:6px;}
 .inicio-empty{color:var(--gris2);font-size:11px;padding:10px 0;text-align:center;}
 
 /* Publicidad */
@@ -667,7 +667,7 @@ body.ad-banner-activo .partidos-wrap{padding-bottom:64px;}
 
 /* Cómo se marcan los goles — donut + leyenda */
 .inicio-origen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;}
-.inicio-origen-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;}
+.inicio-origen-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:14px;overflow:hidden;min-width:0;}
 .inicio-origen-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap;}
 .inicio-donut-wrap{flex-shrink:0;}
 .inicio-origen-legend{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px;}
@@ -1514,7 +1514,7 @@ body.solo-lectura .ed-panel-form {
 
   <div class="inicio-card" id="inicio-podios-card">
     <div class="inicio-card-tit">🏆 Podio por tipo de acción</div>
-    <div style="font-size:10px;color:var(--gris2);margin:-8px 0 12px">Los 3 equipos que más goles hacen y más encajan por cada vía táctica — con los goles ya registrados en Partidos/Jugadores/Equipos.</div>
+    <div style="font-size:10px;color:var(--gris2);margin:-8px 0 12px">Los 3 equipos que más goles hacen y más encajan por cada vía táctica — con los goles ya registrados en Partidos/Jugadores/Equipos. Una sola liga a la vez, para no mezclar competiciones distintas.</div>
     <div id="inicio-podios-origen"></div>
   </div>
 
@@ -2112,6 +2112,9 @@ body.solo-lectura .ed-panel-form {
 
     <div class="partidos-filters">
       <input type="search" id="goles-buscar" name="goles-buscar" autocomplete="off" placeholder="🔍 Buscar jugador o equipo..." oninput="renderGolesViewDebounced()" style="flex:1;min-width:140px">
+      <select id="goles-fil-liga" onchange="initGolesView()" style="min-width:170px">
+        <option value="">Todas las ligas</option>
+      </select>
       <select id="goles-fil-equipo" onchange="renderGolesView()" style="min-width:150px">
         <option value="">Todos los equipos</option>
       </select>
@@ -3686,9 +3689,14 @@ const _PODIO_ORIGEN_COLOR={
  *  "🎯 Cómo se marcan los goles" de arriba, que usa el "Análisis de
  *  origen" que se rellena a mano en cada equipo). "En contra" se lee del
  *  campo "rival" de cada gol: el mismo origen con el que un equipo
- *  marca es, visto desde el equipo rival, un gol encajado por esa vía. */
-function calcularPodiosPorOrigen(){
-  const goles=calcularTodosLosGoles();
+ *  marca es, visto desde el equipo rival, un gol encajado por esa vía.
+ *  `liga`, si se pasa, restringe el cálculo a los goles de esa liga (por
+ *  el equipo que marca) — así el podio nunca mezcla equipos de
+ *  competiciones distintas en el mismo ranking (ver
+ *  renderPodiosOrigenInicio, que siempre pasa una liga concreta). */
+function calcularPodiosPorOrigen(liga){
+  const todos=calcularTodosLosGoles();
+  const goles=liga?todos.filter(g=>(ligaDeEquipoPorNombre(g.equipo)||'Sin liga asignada')===liga):todos;
   const porOrigen={};
   ORIGENES.forEach(o=>{ porOrigen[o]={favor:{},contra:{}}; });
   goles.forEach(g=>{
@@ -3712,29 +3720,51 @@ const _PODIO_MEDALLAS=['🥇','🥈','🥉'];
 function _podioListaHTML(lista){
   if(!lista.length) return '<div class="inicio-empty" style="padding:4px 0">Sin datos todavía</div>';
   return lista.map((it,i)=>{
-    const escH=it.escudo?`<img src="${eH(it.escudo)}" class="inicio-escudo">`:`<div class="inicio-escudo inicio-escudo-fallback"></div>`;
+    const escH=it.escudo?`<img src="${eH(it.escudo)}" class="inicio-escudo" style="flex-shrink:0">`:`<div class="inicio-escudo inicio-escudo-fallback" style="flex-shrink:0"></div>`;
     return `<div class="inicio-row clicable" onclick="irAEquipoPorNombre('${eH(it.equipo).replace(/'/g,"\\'")}')">
-      <span class="inicio-row-l" style="display:flex;align-items:center;gap:6px;min-width:0">
-        <span>${_PODIO_MEDALLAS[i]||''}</span>${escH}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${eH(it.equipo)}</span>
+      <span class="inicio-row-l" style="display:flex;align-items:center;gap:6px;min-width:0;flex:1">
+        <span style="flex-shrink:0">${_PODIO_MEDALLAS[i]||''}</span>${escH}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1" title="${eH(it.equipo)}">${eH(it.equipo)}</span>
       </span>
       <span class="inicio-row-r">${it.valor}</span>
     </div>`;
   }).join('');
 }
+// Recuerda qué liga se ha elegido en el podio de Inicio entre un render y
+// el siguiente (el desplegable se reconstruye cada vez, así que el valor
+// no lo guarda el DOM por sí solo).
+let _inicioPodioLigaSel=null;
+function _inicioPodiosCambiarLiga(valor){
+  _inicioPodioLigaSel=valor||null;
+  renderPodiosOrigenInicio();
+}
 function renderPodiosOrigenInicio(){
   const cont=document.getElementById('inicio-podios-origen');
   if(!cont) return;
-  const datos=calcularPodiosPorOrigen();
-  if(!datos.length){ cont.innerHTML='<div class="inicio-empty">Todavía no hay goles con taxonomía registrada</div>'; return; }
-  cont.innerHTML=`<div class="inicio-origen-grid">${datos.map(o=>`
+  const todos=calcularTodosLosGoles();
+  if(!todos.length){ cont.innerHTML='<div class="inicio-empty">Todavía no hay goles registrados</div>'; return; }
+  // Ligas disponibles (ya limitadas a las que la cuenta puede ver, porque
+  // calcularTodosLosGoles() ya aplica usuarioPuedeVerLiga) — nunca se
+  // ofrece una opción "todas mezcladas": si solo hay una liga, el
+  // desplegable sale con una única opción y el podio de esa liga se
+  // muestra directamente.
+  const ligas=[...new Set(todos.map(g=>ligaDeEquipoPorNombre(g.equipo)||'Sin liga asignada'))].sort((a,b)=>a.localeCompare(b,'es'));
+  if(!_inicioPodioLigaSel || !ligas.includes(_inicioPodioLigaSel)) _inicioPodioLigaSel=ligas[0];
+  const selectorHTML=`<div style="margin-bottom:14px">
+    <select id="inicio-podios-liga-sel" onchange="_inicioPodiosCambiarLiga(this.value)" style="min-width:220px;max-width:100%">
+      ${ligas.map(l=>`<option value="${eH(l)}"${l===_inicioPodioLigaSel?' selected':''}>🏆 ${eH(l)}</option>`).join('')}
+    </select>
+  </div>`;
+  const datos=calcularPodiosPorOrigen(_inicioPodioLigaSel);
+  if(!datos.length){ cont.innerHTML=selectorHTML+'<div class="inicio-empty">Todavía no hay goles con taxonomía registrada en esta liga</div>'; return; }
+  cont.innerHTML=selectorHTML+`<div class="inicio-origen-grid">${datos.map(o=>`
     <div class="inicio-origen-card">
       <div class="inicio-liga-tit" style="color:${o.color}">${eH(o.origen)}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-        <div>
+        <div style="min-width:0">
           <div style="font-size:9px;font-weight:800;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">⚽ A favor</div>
           ${_podioListaHTML(o.favor)}
         </div>
-        <div>
+        <div style="min-width:0">
           <div style="font-size:9px;font-weight:800;color:var(--gris2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🥅 En contra</div>
           ${_podioListaHTML(o.contra)}
         </div>
@@ -13754,9 +13784,26 @@ function guardarGolNuevo(){
 
 function initGolesView(){
   const golesAll=calcularTodosLosGoles();
+  const clipsAll=calcularTodosLosClips();
 
-  const equipos=[...new Set([...golesAll.map(g=>g.equipo),...calcularTodosLosClips().map(c=>c.equipo)].filter(e=>e&&e!=='—'))].sort();
-  const jugadores=[...new Set([...golesAll.map(g=>g.jugador),...calcularTodosLosClips().map(c=>c.jugador)].filter(j=>j&&j!=='—'))].sort();
+  // Liga/categoría/grupo — el campo "liga" de cada equipo ya combina
+  // ambas cosas (p.ej. "3ª RFEF · Grupo XIV"), así que un solo
+  // desplegable cubre lo pedido ("filtro de ligas o categoría y
+  // grupo"). Se reconstruye con las ligas que realmente tienen algún
+  // gol o clip visible para esta cuenta (calcularTodosLosGoles()/
+  // calcularTodosLosClips() ya filtran por usuarioPuedeVerLiga).
+  const ligaDe=nombre=>ligaDeEquipoPorNombre(nombre)||'Sin liga asignada';
+  const ligas=[...new Set([...golesAll.map(g=>ligaDe(g.equipo)),...clipsAll.map(c=>ligaDe(c.equipo))])].sort((a,b)=>a.localeCompare(b,'es'));
+  const selL=document.getElementById('goles-fil-liga');
+  const ligaSel=selL?selL.value:'';
+  if(selL) selL.innerHTML='<option value="">Todas las ligas</option>'+ligas.map(l=>`<option value="${eH(l)}"${l===ligaSel?' selected':''}>${eH(l)}</option>`).join('');
+
+  // El resto de desplegables (equipo/jugador) se limitan a la liga
+  // elegida, para no tener que buscar entre equipos de otras
+  // competiciones una vez ya se ha restringido por liga.
+  const enLiga=nombre=>!ligaSel || ligaDe(nombre)===ligaSel;
+  const equipos=[...new Set([...golesAll.map(g=>g.equipo),...clipsAll.map(c=>c.equipo)].filter(e=>e&&e!=='—'&&enLiga(e)))].sort();
+  const jugadores=[...new Set([...golesAll.filter(g=>enLiga(g.equipo)).map(g=>g.jugador),...clipsAll.filter(c=>enLiga(c.equipo)).map(c=>c.jugador)].filter(j=>j&&j!=='—'))].sort();
 
   const selE=document.getElementById('goles-fil-equipo');
   const selJ=document.getElementById('goles-fil-jugador');
@@ -13773,11 +13820,13 @@ function initGolesView(){
 function _golesFiltrados(){
   const golesAll=calcularTodosLosGoles();
   const q=(document.getElementById('goles-buscar')?.value||'').toLowerCase();
+  const filLiga=document.getElementById('goles-fil-liga')?.value||'';
   const filE=document.getElementById('goles-fil-equipo')?.value||'';
   const filJ=document.getElementById('goles-fil-jugador')?.value||'';
   const filO=document.getElementById('goles-fil-origen')?.value||'';
   return golesAll.filter(g=>{
     if(q && !(`${g.jugador} ${g.equipo} ${g.rival}`.toLowerCase().includes(q))) return false;
+    if(filLiga && (ligaDeEquipoPorNombre(g.equipo)||'Sin liga asignada')!==filLiga) return false;
     if(filE && g.equipo!==filE) return false;
     if(filJ && g.jugador!==filJ) return false;
     if(filO && g.origen!==filO) return false;
@@ -13906,11 +13955,13 @@ function calcularTodosLosClips(){
 function _clipsFiltrados(){
   const clipsAll=calcularTodosLosClips();
   const q=(document.getElementById('goles-buscar')?.value||'').toLowerCase();
+  const filLiga=document.getElementById('goles-fil-liga')?.value||'';
   const filE=document.getElementById('goles-fil-equipo')?.value||'';
   const filJ=document.getElementById('goles-fil-jugador')?.value||'';
   const filO=document.getElementById('goles-fil-origen')?.value||'';
   return clipsAll.filter(c=>{
     if(q && !(`${c.jugador} ${c.equipo} ${c.rival||''} ${c.titulo||''}`.toLowerCase().includes(q))) return false;
+    if(filLiga && (ligaDeEquipoPorNombre(c.equipo)||'Sin liga asignada')!==filLiga) return false;
     if(filE && c.equipo!==filE) return false;
     if(filJ && c.jugador!==filJ) return false;
     if(filO && c.tipo!==filO) return false;
