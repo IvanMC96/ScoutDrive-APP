@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-16-5">
+<meta name="app-version" content="2026-09-17-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11175,6 +11175,24 @@ function _apJugadoresDeEquipo(nom){
   return [...candidatos].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')))
     .map(j=>(j.nom+' '+j.ape).trim());
 }
+/** Lista de nombres para elegir el "🧤 Portero rival batido" de un gol —
+ *  igual que _apJugadoresDeEquipo(), pero si ese equipo YA tiene
+ *  posiciones registradas en su plantilla (al menos un jugador con
+ *  "Posición" rellena en su ficha), se limita a los que son "Portero":
+ *  normalmente solo hay 1 o 2 en toda la plantilla, así que buscarlo
+ *  entre todos los jugadores del equipo (defensas, delanteros...) era
+ *  incómodo. Si el equipo no tiene NINGUNA posición registrada todavía
+ *  (esa ficha nunca se ha rellenado con ese detalle), se sigue
+ *  ofreciendo la plantilla completa, como hasta ahora, para no dejar el
+ *  desplegable vacío. */
+function _apPorterosDeEquipo(nom){
+  const val=(nom||'').trim().toLowerCase();
+  const candidatos=(val?jDB.filter(j=>(j.club||'').toLowerCase().includes(val)):jDB).filter(j=>!j._bajaPlantilla);
+  const tienePosiciones=candidatos.some(j=>(j.pos||'').trim());
+  const lista=tienePosiciones?candidatos.filter(j=>j.pos==='Portero'):candidatos;
+  return [...lista].sort((a,b)=>((a.nom||'')+(a.ape||'')).localeCompare((b.nom||'')+(b.ape||'')))
+    .map(j=>(j.nom+' '+j.ape).trim());
+}
 function _apPoblarJugadorDatalists(nomLocal,nomVisit,jugadoresLocal,jugadoresVisit){
   const dlL=document.getElementById('ap-jugador-list-local'); if(dlL) dlL.innerHTML=jugadoresLocal.map(n=>`<option value="${eH(n)}">`).join('');
   const dlV=document.getElementById('ap-jugador-list-visitante'); if(dlV) dlV.innerHTML=jugadoresVisit.map(n=>`<option value="${eH(n)}">`).join('');
@@ -11211,8 +11229,12 @@ function buildApGoles(){
     const nombresEquipo=esVisit?jugadoresVisit:jugadoresLocal;
     const nomEquipoActual=esVisit?nomVisit:nomLocal;
     // El "portero rival batido" es del equipo CONTRARIO al que marca —
-    // si marca el visitante, el portero batido es del local, y viceversa.
-    const nombresRival=esVisit?jugadoresLocal:jugadoresVisit;
+    // si marca el visitante, el portero batido es del local, y
+    // viceversa. Se limita a quien tenga la posición "Portero" en su
+    // ficha (normalmente 1 o 2 de toda la plantilla) si ese equipo ya
+    // tiene posiciones registradas — si no, se sigue ofreciendo la
+    // plantilla completa, como hasta ahora (ver _apPorterosDeEquipo).
+    const nombresRival=_apPorterosDeEquipo(esVisit?nomLocal:nomVisit);
     const nomRival=esVisit?nomLocal:nomVisit;
     const tieneClip=!!(g.clip && (g.clip.src || g.clip.blobURL || g.clip.portada));
     const detalleAbierto=!!g._abierto;
@@ -11639,15 +11661,19 @@ function _cargarPdfJs(){
 }
 function _actaPdfNorm(s){ return _normalizarBusqueda(s).toUpperCase(); }
 
-/** Agrupa los items de UNA columna (ya filtrados por pertenecer al
- *  equipo local o al visitante) en "filas" por cercanía vertical —
- *  dorsal y nombre no siempre comparten exactamente la misma Y dentro de
- *  la celda de la tabla del PDF, así que se tolera un pequeño margen — y
- *  reparte cada fila en su zona (titulares/suplentes/sustituciones/
- *  tarjetas) según entre qué cabeceras de sección cae, con la misma
- *  prioridad de cierre de zona que ya usa _parsearBloqueEquipoActa(). */
-function _actaPdfAcumularColumna(items,zonas){
-  if(!items.length) return;
+/** Agrupa una lista de items (ya de UNA columna: local o visitante, de
+ *  una sola página) en "filas" por cercanía vertical — dorsal y nombre
+ *  no siempre comparten exactamente la misma Y dentro de la celda de la
+ *  tabla del PDF, así que se tolera un pequeño margen. Todavía NO decide
+ *  a qué zona (titulares/suplentes/sustituciones/tarjetas) pertenece
+ *  cada fila — eso lo hace _actaPdfSegmentarZonas() aparte, sobre la
+ *  lista de filas de TODAS las páginas ya juntas (ver
+ *  _extraerTextoActaDesdePDF): si se decidiera página por página, una
+ *  lista de tarjetas larga que continúa en la página siguiente sin
+ *  repetir la cabecera "Tarjetas" se perdía sin más, porque en esa
+ *  página no había ninguna cabecera a la que engancharla. */
+function _actaPdfAgruparFilas(items){
+  if(!items.length) return [];
   const filas=[];
   items.slice().sort((a,b)=>b.y-a.y).forEach(it=>{
     let fila=filas.find(f=>Math.abs(f.y-it.y)<=3);
@@ -11656,20 +11682,37 @@ function _actaPdfAcumularColumna(items,zonas){
   });
   filas.sort((a,b)=>b.y-a.y);
   filas.forEach(f=>f.items.sort((a,b)=>a.x-b.x));
+  return filas;
+}
+/** Reparte una lista de "filas" (de _actaPdfAgruparFilas(), de una sola
+ *  página o de varias páginas ya concatenadas EN ORDEN de lectura) en
+ *  sus zonas (titulares/suplentes/sustituciones/tarjetas) según entre
+ *  qué cabeceras de sección cae cada una, con la misma prioridad de
+ *  cierre de zona que ya usa _parsearBloqueEquipoActa(). Al operar sobre
+ *  las filas de TODAS las páginas juntas (y no página por página), una
+ *  lista de tarjetas (o de sustituciones) que ocupa más de una página
+ *  sin repetir su cabecera sigue perteneciendo a la última zona
+ *  abierta, en vez de perderse. "INCIDENCIAS" (si la ficha trae esa
+ *  sección después de "Tarjetas", como pasa en fichas con muchas
+ *  tarjetas) también cierra la zona de tarjetas, para no arrastrar como
+ *  si fueran tarjetas líneas que ya no lo son. */
+function _actaPdfSegmentarZonas(filas){
+  const zonas={tit:[],sup:[],sus:[],tar:[]};
   const esCabecera=(fila,nombre)=>fila.items.length===1 && _actaPdfNorm(fila.items[0].str)===nombre;
   const idx=nombre=>filas.findIndex(f=>esCabecera(f,nombre));
-  const idxTit=idx('TITULARES'), idxSup=idx('SUPLENTES'), idxCt=idx('CUERPO TECNICO'), idxSus=idx('SUSTITUCIONES'), idxTar=idx('TARJETAS');
+  const idxTit=idx('TITULARES'), idxSup=idx('SUPLENTES'), idxCt=idx('CUERPO TECNICO'), idxSus=idx('SUSTITUCIONES'), idxTar=idx('TARJETAS'), idxInc=idx('INCIDENCIAS');
   const rango=(desde,hasta)=>desde<0?[]:filas.slice(desde+1, hasta<0?filas.length:hasta);
   if(idxTit>=0){
-    const finTit=idxSup>=0?idxSup:(idxSus>=0?idxSus:(idxTar>=0?idxTar:-1));
+    const finTit=idxSup>=0?idxSup:(idxSus>=0?idxSus:(idxTar>=0?idxTar:(idxInc>=0?idxInc:-1)));
     zonas.tit.push(...rango(idxTit,finTit));
   }
   if(idxSup>=0){
-    const finSup=idxCt>=0?idxCt:(idxSus>=0?idxSus:(idxTar>=0?idxTar:-1));
+    const finSup=idxCt>=0?idxCt:(idxSus>=0?idxSus:(idxTar>=0?idxTar:(idxInc>=0?idxInc:-1)));
     zonas.sup.push(...rango(idxSup,finSup));
   }
-  if(idxSus>=0) zonas.sus.push(...rango(idxSus, idxTar>=0?idxTar:-1));
-  if(idxTar>=0) zonas.tar.push(...rango(idxTar,-1));
+  if(idxSus>=0) zonas.sus.push(...rango(idxSus, idxTar>=0?idxTar:(idxInc>=0?idxInc:-1)));
+  if(idxTar>=0) zonas.tar.push(...rango(idxTar, idxInc>=0?idxInc:-1));
+  return zonas;
 }
 /** Convierte una fila (dorsal + nombre, o solo nombre) en su línea de
  *  texto. En el PDF el minuto de un cambio o una tarjeta va PEGADO al
@@ -11830,9 +11873,16 @@ async function _extraerTextoActaDesdePDF(file){
   const buf=await file.arrayBuffer();
   const doc=await pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
   const MAX_DIST=80; // pt — de sobra para dorsal+nombre de cada columna, no tanto como para alcanzar la franja central
-  const zonasIzq={tit:[],sup:[],sus:[],tar:[]};
-  const zonasDer={tit:[],sup:[],sus:[],tar:[]};
+  const filasIzq=[], filasDer=[];
   const cabeceraAcumulada=[];
+  // Anclas de columna (posición X de "Titulares" de cada equipo) de la
+  // primera página que las traiga — una ficha con muchas tarjetas puede
+  // continuar la lista en una 2ª página SIN repetir "Titulares", pero la
+  // plantilla/maquetación (y por tanto las columnas) sigue siendo la
+  // misma que en la 1ª, así que reutilizar esas anclas en vez de partir
+  // esa página a ciegas por la mitad reparte mejor sus filas entre local
+  // y visitante.
+  let anclasFijas=null;
   for(let n=1;n<=doc.numPages;n++){
     const page=await doc.getPage(n);
     const viewport=page.getViewport({scale:1});
@@ -11850,7 +11900,9 @@ async function _extraerTextoActaDesdePDF(file){
     let iconosRojos=[];
     try{ iconosRojos=await _actaPdfDetectarIconosRojos(page,pdfjsLib); }catch(e){ iconosRojos=[]; }
     iconosRojos.forEach(ic=>limpio.push({str:'[ROJA]', x:ic.x, y:ic.y}));
-    const anclas=_actaPdfAnclasColumnas(limpio);
+    const anclasPagina=_actaPdfAnclasColumnas(limpio);
+    if(anclasPagina) anclasFijas=anclasPagina;
+    const anclas=anclasPagina||anclasFijas;
     if(anclas){
       const [ax,bx]=anclas;
       const izq=[], der=[], centro=[];
@@ -11861,19 +11913,29 @@ async function _extraerTextoActaDesdePDF(file){
       });
       const centroTxt=_actaPdfExtraerCentro(centro);
       if(centroTxt) cabeceraAcumulada.push(centroTxt);
-      _actaPdfAcumularColumna(izq,zonasIzq);
-      _actaPdfAcumularColumna(der,zonasDer);
+      filasIzq.push(..._actaPdfAgruparFilas(izq));
+      filasDer.push(..._actaPdfAgruparFilas(der));
     } else {
       // Red de seguridad si no se encuentran las dos cabeceras
-      // "Titulares" (formato inesperado): vuelve al corte por la mitad.
-      // Sin anclas no se puede aislar con garantías la franja central
-      // (Goles incluido) sin arriesgarse a colar jugadores por error, así
-      // que aquí se renuncia a los goles de esta página.
+      // "Titulares" NI EN ESTA NI EN NINGUNA PÁGINA ANTERIOR (formato
+      // inesperado desde la primera página): vuelve al corte por la
+      // mitad. Sin ninguna ancla no se puede aislar con garantías la
+      // franja central (Goles incluido) sin arriesgarse a colar
+      // jugadores por error, así que aquí se renuncia a los goles de
+      // esta página.
       const mitad=viewport.width/2;
-      _actaPdfAcumularColumna(limpio.filter(it=>it.x<mitad),zonasIzq);
-      _actaPdfAcumularColumna(limpio.filter(it=>it.x>=mitad),zonasDer);
+      filasIzq.push(..._actaPdfAgruparFilas(limpio.filter(it=>it.x<mitad)));
+      filasDer.push(..._actaPdfAgruparFilas(limpio.filter(it=>it.x>=mitad)));
     }
   }
+  // La segmentación en zonas (titulares/suplentes/sustituciones/
+  // tarjetas) se hace UNA sola vez sobre las filas de TODAS las páginas
+  // ya juntas, en el mismo orden en que se leyeron — así una lista de
+  // tarjetas (o de sustituciones) que continúa en la página siguiente
+  // sin repetir su cabecera sigue enganchada a la zona que ya estaba
+  // abierta, en vez de perderse (ver _actaPdfSegmentarZonas).
+  const zonasIzq=_actaPdfSegmentarZonas(filasIzq);
+  const zonasDer=_actaPdfSegmentarZonas(filasDer);
   const colTexto=z=>[
     'Titulares', ...z.tit.map(_actaPdfFilaATexto),
     'Suplentes', ...z.sup.map(_actaPdfFilaATexto),
@@ -12434,18 +12496,80 @@ function _apActaCambiarTipoTarjeta(lado,idx,valor){
   fila.tipo=valor;
   _renderApActaPreview();
 }
+/** El minuto de una tarjeta detectada del acta viene fijo (lo trae el
+ *  propio texto/PDF), pero conviene poder corregirlo a mano — sobre
+ *  todo para una tarjeta AÑADIDA a mano (ver _apActaAnadirTarjetaManual),
+ *  que no tiene ningún minuto de origen y hay que escribirlo. Se guarda
+ *  directamente en la fila sin volver a pintar toda la vista previa
+ *  (no hace falta: nada más depende de este valor mientras se edita). */
+function _apActaCambiarMinutoTarjeta(lado,idx,valor){
+  if(!_apActaPreviewPendiente) return;
+  const fila=_apActaPreviewPendiente[lado].tarjetas[idx]; if(!fila) return;
+  const n=parseInt(valor,10);
+  fila.minuto=Number.isFinite(n)?Math.max(0,n):0;
+}
+/** Quita una tarjeta de la vista previa — para borrar una añadida a
+ *  mano por error, o una detectada del acta que en realidad no
+ *  corresponde (falso positivo). Solo afecta a tarjetas: titulares y
+ *  suplentes vienen directamente de la plantilla del acta y no se
+ *  pueden quitar desde aquí. */
+function _apActaQuitarTarjeta(lado,idx){
+  if(!_apActaPreviewPendiente) return;
+  const d=_apActaPreviewPendiente[lado]; if(!d || !d.tarjetas[idx]) return;
+  d.tarjetas.splice(idx,1);
+  _renderApActaPreview();
+}
+/** Candidatos para el desplegable "Jugador" de una tarjeta nueva —
+ *  reutiliza la misma lista (_opciones, la plantilla completa del club)
+ *  que ya comparten titulares/suplentes/tarjetas de ese lado si hay
+ *  alguna fila de la que copiarla; si el acta de ese lado está
+ *  completamente vacía (nada detectado todavía), se calcula al vuelo a
+ *  partir del nombre de equipo puesto en el formulario. */
+function _apActaOpcionesDeLado(lado){
+  const d=_apActaPreviewPendiente[lado];
+  const existentes=(d.titulares[0]||d.suplentes[0]||d.tarjetas[0]||{})._opciones;
+  if(existentes && existentes.length) return existentes;
+  const nombreClub=(document.getElementById(lado==='local'?'ap-local':'ap-visitante')?.value||'').trim();
+  const clubNorm=_normalizarBusqueda(nombreClub);
+  return jDB.filter(j=>_normalizarBusqueda(j.club)===clubNorm && !j._bajaPlantilla);
+}
+/** Añade una tarjeta "a mano" a la vista previa — para el caso reportado
+ *  de que el acta (sobre todo si tiene varias páginas) no recoja todas
+ *  las tarjetas, o para apuntar una que el propio admin ha visto en el
+ *  partido y que no viene en ningún acta. Se añade "sin emparejar" (el
+ *  admin elige el jugador del desplegable, igual que corrige cualquier
+ *  otro emparejamiento) con minuto 0 por defecto, editable igual que las
+ *  demás — ver _apActaCambiarMinutoTarjeta. */
+function _apActaAnadirTarjetaManual(lado){
+  if(!_apActaPreviewPendiente) return;
+  const d=_apActaPreviewPendiente[lado]; if(!d) return;
+  if(!Array.isArray(d.tarjetas)) d.tarjetas=[];
+  d.tarjetas.push({
+    dorsal:null,
+    nombre:'(tarjeta añadida a mano)',
+    minuto:0,
+    tipo:'amarilla',
+    jugadorId:null,
+    jugadorNom:null,
+    confianza:'sin_match',
+    _opciones:_apActaOpcionesDeLado(lado),
+  });
+  _renderApActaPreview();
+}
 function _apActaFilaHTML(lado,tipo,idx,fila,mostrarMinuto){
+  const esTarjeta=tipo==='tarjetas';
   const min = tipo==='titulares' ? (fila.minutoSalida!=null?`hasta m.${fila.minutoSalida}`:'90\'')
             : tipo==='suplentes' ? (fila.entro?`entra m.${fila.minutoEntrada}`:'no entró')
-            : tipo==='tarjetas' ? `m.${fila.minuto}`
+            : esTarjeta ? `<input type="number" min="0" max="130" value="${fila.minuto??0}" style="width:48px;font-size:10px;padding:2px 4px" onchange="_apActaCambiarMinutoTarjeta('${lado}',${idx},this.value)">`
             : '';
   return `<tr>
     <td class="tmin">${fila.dorsal?'#'+eH(fila.dorsal):'—'}</td>
     <td style="font-size:10px">${eH(fila.nombre)}</td>
     <td>${_apActaSelectHTML(lado,tipo,idx,fila)}</td>
     <td>${_apActaBadgeConfianza(fila.confianza)}</td>
-    ${tipo==='tarjetas'?`<td>${_apActaTipoTarjetaSelectHTML(lado,idx,fila)}</td>`:''}
+    ${esTarjeta?`<td>${_apActaTipoTarjetaSelectHTML(lado,idx,fila)}</td>`:''}
     ${mostrarMinuto?`<td style="font-size:9px;color:var(--gris2)">${min}</td>`:''}
+    ${esTarjeta?`<td><button type="button" class="brm2" title="Quitar esta tarjeta" onclick="_apActaQuitarTarjeta('${lado}',${idx})">✕</button></td>`:''}
   </tr>`;
 }
 function _apActaTablaHTML(lado,titulo){
@@ -12453,17 +12577,19 @@ function _apActaTablaHTML(lado,titulo){
   const tabla=(tipo,mostrarMinuto)=>{
     const filas=d[tipo];
     if(!filas.length) return '<p style="font-size:9px;color:var(--gris)">Ninguno detectado</p>';
-    return `<table class="tgj"><thead><tr><th>#</th><th>Nombre (acta)</th><th>Jugador</th><th></th>${tipo==='tarjetas'?'<th>Tipo</th>':''}${mostrarMinuto?'<th>Minutos</th>':''}</tr></thead><tbody>
+    return `<table class="tgj"><thead><tr><th>#</th><th>Nombre (acta)</th><th>Jugador</th><th></th>${tipo==='tarjetas'?'<th>Tipo</th>':''}${mostrarMinuto?'<th>Minutos</th>':''}${tipo==='tarjetas'?'<th></th>':''}</tr></thead><tbody>
       ${filas.map((f,i)=>_apActaFilaHTML(lado,tipo,i,f,mostrarMinuto)).join('')}
     </tbody></table>`;
   };
   // Las tarjetas también se emparejan con un jugador (para poder sumarle
   // sus amarillas/rojas de la temporada) — igual que titulares/suplentes,
   // con su propio desplegable por si el emparejamiento automático se
-  // equivoca, revisable antes de confirmar.
-  const tarjetasH=d.tarjetas.length
-    ?`<p style="font-size:9px;color:var(--gris2);margin:8px 0 4px">🟨 Tarjetas</p>${tabla('tarjetas',true)}`
-    :'';
+  // equivoca, revisable antes de confirmar. El botón de añadir a mano
+  // sale SIEMPRE (aunque no se haya detectado ninguna), para poder
+  // apuntar una tarjeta que el acta no recogiera — ver
+  // _apActaAnadirTarjetaManual.
+  const tarjetasH=`<p style="font-size:9px;color:var(--gris2);margin:8px 0 4px">🟨 Tarjetas</p>${tabla('tarjetas',true)}
+    <button type="button" class="btn b-ghost b-sm" style="font-size:10px;padding:3px 8px;margin-top:4px" onclick="_apActaAnadirTarjetaManual('${lado}')">➕ Añadir tarjeta a mano</button>`;
   return `<div style="flex:1;min-width:260px">
     <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">${eH(titulo)}</p>
     <p style="font-size:9px;color:var(--gris2);margin:0 0 4px">Titulares</p>${tabla('titulares',true)}
