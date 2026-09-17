@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-17-2">
+<meta name="app-version" content="2026-09-17-3">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1380,6 +1380,7 @@ body.solo-lectura .ed-panel-form {
     <button class="nav-tab" id="tab-equipos" onclick="navTo('equipos-db')">🏟️ Equipos</button>
     <button class="nav-tab" id="tab-partidos" onclick="navTo('partidos')">🎬 Partidos</button>
     <button class="nav-tab" id="tab-goles" onclick="navTo('goles')">⚽ Goles</button>
+    <button class="nav-tab" id="tab-scouting" onclick="navTo('scouting')" style="display:none">🔭 Scouting</button>
     <button class="nav-tab" id="tab-config" onclick="navTo('config')">⚙️ Config.</button>
     <button class="nav-tab" id="tab-admin" onclick="navTo('admin')" style="display:none;color:var(--naranja-cl)">🛡️ Admin</button>
   </div>
@@ -2293,6 +2294,84 @@ body.solo-lectura .ed-panel-form {
   </div>
 </div>
 
+<!-- ══ SCOUTING — listas de seguimiento (dirección deportiva) ══════ -->
+<div class="vista db-page" id="v-scouting">
+  <div class="db-hdr">
+    <div><div class="db-tit">🔭 Scouting</div><div class="db-sub">Base de datos de jugadores para dirección deportiva — tus listas de seguimiento son privadas, solo las ves tú</div></div>
+    <div class="db-stats">
+      <div class="stat-box"><div class="stat-n" id="scout-st-jug">0</div><div class="stat-l">Jugadores</div></div>
+      <div class="stat-box"><div class="stat-n" id="scout-st-listas">0</div><div class="stat-l">Mis listas</div></div>
+    </div>
+  </div>
+
+  <div class="mu-acceso-toggle" style="max-width:420px;margin-bottom:14px">
+    <button type="button" class="mu-acceso-opt" id="scout-tab-buscador" onclick="scoutCambiarSubvista('buscador')">
+      🔍 Buscar jugadores<span>Filtra la base de datos</span>
+    </button>
+    <button type="button" class="mu-acceso-opt" id="scout-tab-listas" onclick="scoutCambiarSubvista('listas')">
+      📋 Mis listas<span>Tus listas de seguimiento</span>
+    </button>
+  </div>
+
+  <!-- ── BUSCADOR ── -->
+  <div id="scout-panel-buscador">
+    <div class="db-bar">
+      <input type="search" id="scout-q" placeholder="🔍 Buscar jugador..." oninput="renderScoutingBuscador()">
+      <select id="scout-fil-equipo" onchange="renderScoutingBuscador()" style="width:170px;padding:7px 10px;font-size:12px"><option value="">Todos los equipos</option></select>
+      <select id="scout-fil-liga" onchange="renderScoutingBuscador()" style="width:160px;padding:7px 10px;font-size:12px"><option value="">Todas las ligas</option></select>
+      <select id="scout-fil-pos" onchange="renderScoutingBuscador()" style="width:170px;padding:7px 10px;font-size:12px"><option value="">Todas las posiciones</option></select>
+      <input type="number" id="scout-fil-edad-min" placeholder="Edad mín." style="width:90px;padding:7px 10px;font-size:12px" oninput="renderScoutingBuscador()">
+      <input type="number" id="scout-fil-edad-max" placeholder="Edad máx." style="width:90px;padding:7px 10px;font-size:12px" oninput="renderScoutingBuscador()">
+    </div>
+    <div class="cards-grid" id="scout-buscador-grid"></div>
+  </div>
+
+  <!-- ── MIS LISTAS (índice) ── -->
+  <div id="scout-panel-listas" style="display:none">
+    <div class="db-bar">
+      <input id="scout-lista-nueva-nombre" placeholder="Nombre de la nueva lista (ej: Extremos LNFS sub-23)" style="flex:1">
+      <button class="btn b-verde b-sm" onclick="scoutCrearLista()">➕ Nueva lista</button>
+    </div>
+    <div class="cards-grid" id="scout-listas-grid"></div>
+  </div>
+
+  <!-- ── DETALLE DE UNA LISTA ── -->
+  <div id="scout-panel-detalle" style="display:none">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+      <button class="btn b-ghost b-sm" onclick="scoutCambiarSubvista('listas')">← Volver a mis listas</button>
+      <input id="scout-detalle-nombre" style="flex:1;min-width:180px;font-weight:800" onchange="scoutRenombrarListaActual(this.value)">
+      <button class="btn b-rojo b-sm" onclick="scoutBorrarListaActual()">🗑 Borrar lista</button>
+    </div>
+    <div class="mu-acceso-toggle" style="max-width:420px;margin-bottom:14px">
+      <button type="button" class="mu-acceso-opt" id="scout-tab-jugadores-lista" onclick="scoutDetalleSubvista('jugadores')">
+        👤 Jugadores<span>Orden = prioridad por posición</span>
+      </button>
+      <button type="button" class="mu-acceso-opt" id="scout-tab-campograma-lista" onclick="scoutDetalleSubvista('campograma')">
+        🏟️ Campograma<span>Colocados según prioridad</span>
+      </button>
+    </div>
+    <div id="scout-detalle-jugadores"></div>
+    <div id="scout-detalle-campograma" style="display:none">
+      <div class="campo-toolbar">
+        <div class="fg campo-sist-fg">
+          <label style="font-size:9px">Sistema</label>
+          <select id="scout-campo-sist-sel" onchange="scoutCampogramaCambiarSistema(this.value)">
+            <option value="4-3-3">1-4-3-3</option><option value="4-4-2">1-4-4-2</option>
+            <option value="4-4-2 (rombo)">1-4-4-2 (rombo)</option>
+            <option value="4-2-3-1">1-4-2-3-1</option>
+            <option value="3-5-2">1-3-5-2</option><option value="3-4-3">1-3-4-3</option>
+            <option value="5-3-2">1-5-3-2</option><option value="5-4-1">1-5-4-1</option>
+            <option value="4-1-4-1">1-4-1-4-1</option>
+          </select>
+        </div>
+        <button class="btn b-ghost b-sm" onclick="campogramaToggleOrientacion();renderScoutingCampograma()" title="Cambiar orientación">↔️ Horizontal / Vertical</button>
+      </div>
+      <div id="scout-campograma-container"></div>
+      <p style="font-size:10px;color:var(--gris);padding:12px 0 24px;text-align:center">El jugador con más prioridad de cada posición ocupa el hueco titular; el resto de esa misma posición aparece junto a él, por orden. Cambia el orden en la pestaña "Jugadores" con las flechas ▲▼.</p>
+    </div>
+  </div>
+</div>
+
 <!-- ══ CONFIGURACIÓN ═════════════════════════════════════════════ -->
 <div class="vista db-page cfg-page" id="v-config">
   <div class="db-tit">⚙️ Configuración de la Plataforma</div>
@@ -2639,6 +2718,15 @@ body.solo-lectura .ed-panel-form {
             <button class="btn b-ghost b-sm" type="button" onclick="agregarLigaNueva()">+ Añadir</button>
           </div>
         </div>
+      </div>
+      <div class="apf" id="mu-scouting-wrap">
+        <label>🔭 Acceso a Scouting (listas de seguimiento)</label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--blanco);cursor:pointer">
+          <input type="checkbox" id="mu-scouting" style="width:auto">
+          Puede entrar en la sección Scouting y crear sus propias listas de seguimiento
+        </label>
+        <p style="font-size:9px;color:var(--gris2);margin:4px 0 0">Sus listas son privadas: nadie más las ve, ni siquiera otro administrador. Solo el super admin puede conceder o quitar este acceso.</p>
+        <p id="mu-scouting-bloqueado-aviso" style="display:none;font-size:9px;color:var(--dorado,#c99a2e);margin:4px 0 0">🔒 Solo el super admin puede cambiar esto.</p>
       </div>
       <input type="hidden" id="mu-edit-id">
     </div>
@@ -3994,7 +4082,7 @@ function cerrarBannerAds(){
 }
 
 let currentSection='inicio';
-const VISTAS=['inicio','jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','goles','config','admin'];
+const VISTAS=['inicio','jugadores-db','jugador-ed','equipos-db','equipo-ed','partidos','goles','scouting','config','admin'];
 
 let _navHistory=['inicio'];
 function navTo(sec,_esVolver){
@@ -4012,6 +4100,7 @@ function navTo(sec,_esVolver){
   document.getElementById('tab-config').classList.toggle('on',sec==='config');
   document.getElementById('tab-partidos').classList.toggle('on',sec==='partidos');
   document.getElementById('tab-goles').classList.toggle('on',sec==='goles');
+  document.getElementById('tab-scouting').classList.toggle('on',sec==='scouting');
   document.getElementById('tab-admin').classList.toggle('on',sec==='admin');
   const isEd=sec.endsWith('-ed');
   document.getElementById('top-right-db').style.display=isEd?'none':'';
@@ -4034,6 +4123,7 @@ function navTo(sec,_esVolver){
   if(sec==='config') initCfgForm();
   if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
   if(sec==='goles'){ loadPDB(); setTimeout(initGolesView, 50); }
+  if(sec==='scouting'){ renderScouting(); }
   if(sec==='admin'){ cargarUsuariosAdmin(); cargarAlmacenamientoAdmin(); }
   // Las barras de comparar (jugadores/equipos) viven fuera de sus vistas
   // para poder quedar fijas abajo del todo — si se navega a una sección
@@ -4084,6 +4174,7 @@ function renderDrawerSecciones(){
     {sec:'goles',ic:'⚽',lbl:'Goles'},
     {sec:'config',ic:'⚙️',lbl:'Config.'},
   ];
+  if(typeof puedeVerScoutingActual==='function' && puedeVerScoutingActual()) secciones.push({sec:'scouting',ic:'🔭',lbl:'Scouting'});
   if(typeof esAdminActual==='function' && esAdminActual()) secciones.push({sec:'admin',ic:'🛡️',lbl:'Admin'});
   wrap.innerHTML=secciones.map(s=>{
     const activo=currentSection===s.sec || (s.sec==='jugadores-db'&&currentSection.startsWith('jugador')) || (s.sec==='equipos-db'&&currentSection.startsWith('equipo'));
@@ -8914,6 +9005,12 @@ function _migrarResincronizarJugadoresDeActas(){
 // Se ejecuta SOLO después de un login correcto.
 function _scoutCargarDatosYAbrirApp(){
   loadAll();loadPDB();recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
+  // Listas de seguimiento (Scouting) cacheadas en ESTE dispositivo para
+  // este usuario — se leen ya en el arranque (antes de que termine
+  // cualquier sync con la nube) para poder verlas incluso sin conexión;
+  // scoutCargarListasSeguimiento (sync-bridge.js) las refresca después
+  // contra el Sheet, si hay red.
+  if(typeof _scoutCargarListasLocal==='function') _scoutCargarListasLocal();
   _migrarLimpiarOpcionesActaPDB();
   _migrarResincronizarJugadoresDeActas();
   buildJForma();buildJGoles();buildJRadar();buildJClips();
@@ -14401,6 +14498,13 @@ function actualizarPanelAdmin() {
   // ignoraba esa restricción sin más, por serlo). Ver usuarioPuedeVerLiga().
   window._esSuperAdmin = _esSuperAdminProtegido(sesion.email);
   window._ligasPermitidas = window._esSuperAdmin ? [] : (sesion.ligasPermitidas || []);
+  // Acceso a la sección Scouting (listas de seguimiento) — restringido
+  // por defecto, lo concede el super admin cuenta por cuenta desde
+  // Admin > Cuentas (ver mu-scouting-wrap/guardarUsuario). El super admin
+  // siempre la ve, la tenga marcada o no (igual que con las ligas).
+  window._puedeVerScouting = window._esSuperAdmin || !!sesion.puedeVerScouting;
+  const tabScouting = document.getElementById('tab-scouting');
+  if (tabScouting) tabScouting.style.display = window._puedeVerScouting ? '' : 'none';
 
   // Aplicar clase solo-lectura al body para ocultar botones de edición
   // via CSS sin necesidad de tocar cada render individualmente
@@ -14410,6 +14514,14 @@ function actualizarPanelAdmin() {
   // Si está en config y no es admin, redirigir a jugadores
   if (!esAdmin && (typeof currentSection !== 'undefined') &&
       (currentSection === 'config' || currentSection === 'admin')) {
+    navTo('jugadores-db');
+  }
+  // Igual que arriba, pero para Scouting: si a este usuario le han
+  // quitado el acceso (o nunca lo tuvo) y de algún modo se queda en esa
+  // sección (p.ej. el super admin le revoca el acceso a un admin que la
+  // tenía abierta en otra pestaña y esta función se vuelve a llamar),
+  // se le saca de ahí igual que del resto de secciones restringidas.
+  if (!window._puedeVerScouting && (typeof currentSection !== 'undefined') && currentSection === 'scouting') {
     navTo('jugadores-db');
   }
 
@@ -14453,6 +14565,14 @@ function esSuperAdminActual() {
   return window._esSuperAdmin === true;
 }
 
+/** true si el usuario actual puede entrar en la sección Scouting (listas
+ *  de seguimiento) — ver actualizarPanelAdmin(), donde se calcula, y el
+ *  toggle "Acceso a Scouting" del modal de usuario (solo lo puede tocar
+ *  el super admin, ver mu-scouting-wrap). */
+function puedeVerScoutingActual() {
+  return window._puedeVerScouting === true;
+}
+
 /** true si el usuario actual puede ver (y, si es admin, editar) contenido
  *  de esa liga/grupo. El super admin siempre ve/edita todo. Cualquier
  *  otra cuenta (admin incluido) sin restricción (array vacío) también ve
@@ -14469,6 +14589,427 @@ function usuarioPuedeVerLiga(liga){
   if(!permitidas || !permitidas.length) return true;
   if(!liga) return false;
   return permitidas.includes(liga.trim());
+}
+
+// ══════════════════════════════════════════════════════════════════
+// SCOUTING — listas de seguimiento para dirección deportiva
+//
+// Petición del usuario: una sección nueva con la base de datos de
+// jugadores (sincronizada desde Partidos/Jugadores, como el resto de la
+// app) filtrable por jugador/equipo/liga/edad/posición, donde cada
+// usuario pueda crear SUS PROPIAS listas de seguimiento (privadas: solo
+// las ve él — ver ListasSeguimiento en Code.gs, la única tabla de este
+// backend con filtrado real por usuario), reordenar la prioridad entre
+// jugadores de una misma posición dentro de cada lista, y generar un
+// campograma con esa lista colocando a cada jugador en su puesto (el de
+// más prioridad de cada posición como titular, el resto junto a él como
+// alternativas — ver renderScoutingCampograma). El acceso a la sección
+// entera lo concede el super admin cuenta por cuenta desde Admin, igual
+// que ya existe para las ligas (ver mu-scouting-wrap más abajo).
+// ══════════════════════════════════════════════════════════════════
+var scoutListas=[]; // listas del usuario logueado (window.scoutListas — sync-bridge.js las lee/escribe con ese nombre)
+let _scoutSubvista='buscador';       // 'buscador' | 'listas' | 'detalle'
+let _scoutListaAbiertaId=null;
+let _scoutDetalleSubvista='jugadores'; // 'jugadores' | 'campograma'
+
+/** Clave de localStorage para el CACHÉ LOCAL de las listas — incluye el
+ *  email para que, en un dispositivo compartido por varias cuentas,
+ *  nadie vea ni de refilón las listas cacheadas de otro usuario que
+ *  inició sesión antes que él en ese mismo aparato (a diferencia de
+ *  jDB/eDB, que sí son datos compartidos y no necesitan esto). */
+function _scoutListasStorageKey(){
+  const email=(window._scoutSession&&window._scoutSession.email||'').trim().toLowerCase();
+  return 'scout_listas_v1__'+email;
+}
+function _scoutCargarListasLocal(){
+  try{ scoutListas=JSON.parse(localStorage.getItem(_scoutListasStorageKey())||'[]'); }
+  catch(e){ scoutListas=[]; }
+}
+function _scoutGuardarListasLocal(){
+  try{ localStorage.setItem(_scoutListasStorageKey(),JSON.stringify(scoutListas)); }catch(e){}
+}
+/** Guarda (crea o actualiza) una lista: local al instante + sube al
+ *  Sheet en segundo plano (con cola de reintento offline si no hay
+ *  conexión, ver scoutSincronizarListaSeguimiento en sync-bridge.js). */
+async function _scoutGuardarListaCambios(lista){
+  lista.fechaActualizacion=new Date().toISOString();
+  const idx=scoutListas.findIndex(l=>l.id===lista.id);
+  if(idx>=0) scoutListas[idx]=lista; else scoutListas.push(lista);
+  _scoutGuardarListasLocal();
+  if(typeof scoutSincronizarListaSeguimiento==='function'){
+    await scoutSincronizarListaSeguimiento(lista);
+  }
+}
+function _scoutListaActual(){
+  return scoutListas.find(l=>l.id===_scoutListaAbiertaId)||null;
+}
+function _scoutEdadDeJugador(j){
+  const n=parseInt(j&&j.edad,10);
+  return Number.isFinite(n)?n:null;
+}
+
+/** Punto de entrada: llamado por navTo() al entrar en la sección. */
+async function renderScouting(){
+  if(!puedeVerScoutingActual()) return;
+  const jDBVisible=jDB.filter(j=>!j._bajaPlantilla && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
+  const elJug=document.getElementById('scout-st-jug'); if(elJug) elJug.textContent=jDBVisible.length;
+  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+  _scoutPoblarFiltros();
+  // Las listas se piden al Sheet solo una vez por sesión — cada cambio
+  // posterior ya se sincroniza al momento (_scoutGuardarListaCambios),
+  // así que no hace falta volver a pedirlas cada vez que se entra aquí.
+  if(!window._scoutListasCargadasUnaVez && typeof scoutCargarListasSeguimiento==='function'){
+    window._scoutListasCargadasUnaVez=true;
+    await scoutCargarListasSeguimiento();
+    if(elListas) elListas.textContent=scoutListas.length;
+  }
+  scoutCambiarSubvista(_scoutSubvista);
+}
+
+function _scoutPoblarFiltros(){
+  const jDBVisible=jDB.filter(j=>!j._bajaPlantilla && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
+  const selEquipo=document.getElementById('scout-fil-equipo');
+  if(selEquipo){
+    const actual=selEquipo.value;
+    const equipos=[...new Set(jDBVisible.map(j=>(j.club||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+    selEquipo.innerHTML='<option value="">Todos los equipos</option>'+equipos.map(e=>`<option value="${eH(e)}"${e===actual?' selected':''}>${eH(e)}</option>`).join('');
+  }
+  const selLiga=document.getElementById('scout-fil-liga');
+  if(selLiga){
+    const actual=selLiga.value;
+    const ligas=_ligasDisponibles().filter(usuarioPuedeVerLiga);
+    selLiga.innerHTML='<option value="">Todas las ligas</option>'+ligas.map(l=>`<option value="${eH(l)}"${l===actual?' selected':''}>${eH(l)}</option>`).join('');
+  }
+  const selPos=document.getElementById('scout-fil-pos');
+  if(selPos){
+    const actual=selPos.value;
+    const posiciones=[...new Set(jDBVisible.map(j=>j.pos).filter(Boolean))].sort((a,b)=>(POS_ORDEN_LISTA[a]??3)-(POS_ORDEN_LISTA[b]??3));
+    selPos.innerHTML='<option value="">Todas las posiciones</option>'+posiciones.map(p=>`<option value="${eH(p)}"${p===actual?' selected':''}>${eH(p)}</option>`).join('');
+  }
+}
+
+/** Cambia entre "🔍 Buscar jugadores" y "📋 Mis listas" (o el detalle de
+ *  una lista abierta, que comparte pestaña activa con "Mis listas"). */
+function scoutCambiarSubvista(v){
+  _scoutSubvista=v;
+  const panelBuscador=document.getElementById('scout-panel-buscador');
+  const panelListas=document.getElementById('scout-panel-listas');
+  const panelDetalle=document.getElementById('scout-panel-detalle');
+  if(panelBuscador) panelBuscador.style.display=v==='buscador'?'':'none';
+  if(panelListas) panelListas.style.display=v==='listas'?'':'none';
+  if(panelDetalle) panelDetalle.style.display=v==='detalle'?'':'none';
+  const tabBuscador=document.getElementById('scout-tab-buscador');
+  const tabListas=document.getElementById('scout-tab-listas');
+  if(tabBuscador) tabBuscador.classList.toggle('activa',v==='buscador');
+  if(tabListas) tabListas.classList.toggle('activa',v==='listas'||v==='detalle');
+  if(v==='buscador') renderScoutingBuscador();
+  else if(v==='listas') renderScoutingListas();
+  else if(v==='detalle') scoutDetalleSubvista(_scoutDetalleSubvista);
+}
+
+// ── Buscador ──────────────────────────────────────────────────────
+function renderScoutingBuscador(){
+  const jDBVisible=jDB.filter(j=>!j._bajaPlantilla && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
+  const q=(document.getElementById('scout-q')?.value||'').toLowerCase();
+  const fEquipo=document.getElementById('scout-fil-equipo')?.value||'';
+  const fLiga=document.getElementById('scout-fil-liga')?.value||'';
+  const fPos=document.getElementById('scout-fil-pos')?.value||'';
+  const edadMinEl=document.getElementById('scout-fil-edad-min'),edadMaxEl=document.getElementById('scout-fil-edad-max');
+  const edadMin=edadMinEl&&edadMinEl.value!==''?parseInt(edadMinEl.value,10):null;
+  const edadMax=edadMaxEl&&edadMaxEl.value!==''?parseInt(edadMaxEl.value,10):null;
+  let lst=jDBVisible;
+  if(q) lst=lst.filter(j=>_fuzzyMatch(j.nom+' '+j.ape+' '+j.pos+' '+j.club,q));
+  if(fEquipo) lst=lst.filter(j=>(j.club||'').trim()===fEquipo);
+  if(fLiga) lst=lst.filter(j=>(ligaDeEquipoPorNombre(j.club)||'').trim()===fLiga);
+  if(fPos) lst=lst.filter(j=>j.pos===fPos);
+  if(edadMin!=null) lst=lst.filter(j=>{const e=_scoutEdadDeJugador(j);return e!=null&&e>=edadMin;});
+  if(edadMax!=null) lst=lst.filter(j=>{const e=_scoutEdadDeJugador(j);return e!=null&&e<=edadMax;});
+  lst=[...lst].sort((a,b)=>{
+    const ca=(a.club||'').trim().toLowerCase(),cb=(b.club||'').trim().toLowerCase();
+    if(ca!==cb) return ca.localeCompare(cb,'es');
+    const pa=POS_ORDEN_LISTA[a.pos]??3,pb=POS_ORDEN_LISTA[b.pos]??3;
+    if(pa!==pb) return pa-pb;
+    return ((a.nom||'')+(a.ape||'')).trim().toLowerCase().localeCompare(((b.nom||'')+(b.ape||'')).trim().toLowerCase(),'es');
+  });
+  const grid=document.getElementById('scout-buscador-grid');
+  if(!grid) return;
+  if(!lst.length){ grid.innerHTML=`<div class="empty"><div class="empty-ic">🔭</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div></div>`; return; }
+  grid.innerHTML=lst.map(j=>_scoutTarjetaBuscadorHTML(j)).join('');
+}
+function _scoutTarjetaBuscadorHTML(j){
+  const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+  const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img loading="lazy" src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+  const escudoJCard=escudoDeEquipoPorNombre(j.club);
+  const avBadge=escudoJCard?`<div class="card-av-badge"><img loading="lazy" src="${eH(escudoJCard)}"></div>`:'';
+  const edad=_scoutEdadDeJugador(j);
+  const s=j.stats||{};
+  const selectorListas=scoutListas.length
+    ?`<select onchange="scoutAnadirAListaDesdeBuscador('${eH(j.id)}',this.value);this.value=''">
+        <option value="">➕ Añadir a lista...</option>
+        ${scoutListas.map(l=>`<option value="${eH(l.id)}">${eH(l.nombre)}</option>`).join('')}
+      </select>`
+    :`<button type="button" class="btn b-ghost b-sm" onclick="scoutCambiarSubvista('listas')">📋 Crea una lista primero</button>`;
+  return `<div class="card">
+    <div class="card-hdr">
+      <div class="card-av-wrap">${av}${avBadge}</div>
+      <div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${eH(j.dor||'—')} · ${eH(j.pos||'—')} · ${eH(j.club||'—')}${edad!=null?' · '+edad+' años':''}</div></div>
+    </div>
+    <div class="card-kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
+      <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
+    </div>
+    <div class="card-act">${selectorListas}</div>
+  </div>`;
+}
+async function scoutAnadirAListaDesdeBuscador(jugadorId,listaId){
+  if(!listaId) return;
+  const lista=scoutListas.find(l=>l.id===listaId); if(!lista) return;
+  if(!Array.isArray(lista.jugadores)) lista.jugadores=[];
+  if(lista.jugadores.some(e=>e.jugadorId===jugadorId)){ toast('Ese jugador ya está en "'+lista.nombre+'"',true); return; }
+  lista.jugadores.push({jugadorId});
+  await _scoutGuardarListaCambios(lista);
+  toast('✅ Añadido a "'+lista.nombre+'"');
+}
+
+// ── Mis listas (índice) ──────────────────────────────────────────
+async function scoutCrearLista(){
+  const input=document.getElementById('scout-lista-nueva-nombre');
+  const nombre=(input&&input.value||'').trim();
+  if(!nombre){ toast('Ponle un nombre a la lista',true); return; }
+  const sesion=window._scoutSession;
+  if(!sesion||!sesion.email){ toast('Inicia sesión primero',true); return; }
+  const ahora=new Date().toISOString();
+  const lista={
+    id:'watch_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+    ownerEmail:sesion.email,
+    nombre,
+    sistema:'4-3-3',
+    jugadores:[],
+    fechaCreacion:ahora,
+    fechaActualizacion:ahora,
+  };
+  await _scoutGuardarListaCambios(lista);
+  if(input) input.value='';
+  renderScoutingListas();
+  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+  toast('✅ Lista creada: '+nombre);
+}
+function renderScoutingListas(){
+  const grid=document.getElementById('scout-listas-grid');
+  if(!grid) return;
+  if(!scoutListas.length){
+    grid.innerHTML='<div class="empty"><div class="empty-ic">📋</div><div style="font-size:14px">Aún no tienes ninguna lista de seguimiento</div><div style="font-size:11px;opacity:.7">Ponle un nombre arriba y pulsa "➕ Nueva lista"</div></div>';
+    return;
+  }
+  const listas=[...scoutListas].sort((a,b)=>(b.fechaActualizacion||'').localeCompare(a.fechaActualizacion||''));
+  grid.innerHTML=listas.map(l=>{
+    const n=(l.jugadores||[]).length;
+    const fecha=l.fechaActualizacion?new Date(l.fechaActualizacion).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}):'—';
+    return `<div class="card">
+      <div class="card-hdr"><div class="card-hdr-info"><div class="card-nm">${eH(l.nombre||'Sin nombre')}</div><div class="card-mt">${n} jugador${n===1?'':'es'} · actualizada ${fecha}</div></div></div>
+      <div class="card-act">
+        <button class="btn b-azul b-sm" onclick="scoutAbrirLista('${eH(l.id)}')">📂 Abrir</button>
+        <button class="btn b-rojo b-sm" onclick="scoutBorrarLista('${eH(l.id)}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function scoutAbrirLista(id){
+  _scoutListaAbiertaId=id;
+  _scoutDetalleSubvista='jugadores';
+  scoutCambiarSubvista('detalle');
+}
+function scoutBorrarLista(id){
+  const lista=scoutListas.find(l=>l.id===id); if(!lista) return;
+  askDel(`¿Borrar la lista "${lista.nombre}"? Esta acción no se puede deshacer.`,async()=>{
+    scoutListas=scoutListas.filter(l=>l.id!==id);
+    _scoutGuardarListasLocal();
+    if(typeof scoutEliminarListaSeguimientoRemota==='function') await scoutEliminarListaSeguimientoRemota(id);
+    if(_scoutListaAbiertaId===id){ _scoutListaAbiertaId=null; scoutCambiarSubvista('listas'); }
+    else renderScoutingListas();
+    const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+    toast('🗑 Lista borrada');
+  });
+}
+
+// ── Detalle de una lista ─────────────────────────────────────────
+function scoutRenombrarListaActual(nuevoNombre){
+  const lista=_scoutListaActual(); if(!lista) return;
+  const nombre=(nuevoNombre||'').trim();
+  if(!nombre) return;
+  lista.nombre=nombre;
+  _scoutGuardarListaCambios(lista);
+}
+function scoutBorrarListaActual(){
+  if(_scoutListaAbiertaId) scoutBorrarLista(_scoutListaAbiertaId);
+}
+function scoutDetalleSubvista(v){
+  _scoutDetalleSubvista=v;
+  const panelJug=document.getElementById('scout-detalle-jugadores');
+  const panelCampo=document.getElementById('scout-detalle-campograma');
+  if(panelJug) panelJug.style.display=v==='jugadores'?'':'none';
+  if(panelCampo) panelCampo.style.display=v==='campograma'?'':'none';
+  const tabJug=document.getElementById('scout-tab-jugadores-lista');
+  const tabCampo=document.getElementById('scout-tab-campograma-lista');
+  if(tabJug) tabJug.classList.toggle('activa',v==='jugadores');
+  if(tabCampo) tabCampo.classList.toggle('activa',v==='campograma');
+  if(v==='jugadores') renderScoutingListaDetalle();
+  else renderScoutingCampograma();
+}
+// Etiqueta de grupo (para agrupar visualmente) a partir de
+// POS_ORDEN_LISTA (0..5, ver arriba, junto a renderJDB) — mismo criterio
+// "de atrás hacia adelante" que ya ordena la pestaña Jugadores.
+const _SCOUT_ETIQUETA_ORDEN={0:'🧤 Porteros',1:'🛡️ Centrales',2:'↔️ Laterales',3:'⚙️ Mediocentros',4:'🏃 Extremos',5:'🎯 Delanteros'};
+function renderScoutingListaDetalle(){
+  const lista=_scoutListaActual();
+  const nombreInput=document.getElementById('scout-detalle-nombre');
+  if(nombreInput) nombreInput.value=lista?lista.nombre||'':'';
+  const cont=document.getElementById('scout-detalle-jugadores');
+  if(!cont||!lista) return;
+  if(!lista.jugadores||!lista.jugadores.length){
+    cont.innerHTML='<div class="empty"><div class="empty-ic">🔭</div><div style="font-size:14px">Lista vacía</div><div style="font-size:11px;opacity:.7">Añade jugadores desde "🔍 Buscar jugadores"</div></div>';
+    return;
+  }
+  const grupos={0:[],1:[],2:[],3:[],4:[],5:[]};
+  const faltantes=[];
+  lista.jugadores.forEach(entry=>{
+    const j=jDB.find(x=>x.id===entry.jugadorId);
+    if(!j){ faltantes.push(entry); return; }
+    const orden=POS_ORDEN_LISTA[j.pos]??3;
+    grupos[orden].push(j);
+  });
+  cont.innerHTML=[0,1,2,3,4,5].filter(k=>grupos[k].length).map(k=>`
+    <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:14px 0 6px">${_SCOUT_ETIQUETA_ORDEN[k]} (${grupos[k].length})</p>
+    <div class="cards-grid">${grupos[k].map((j,i)=>_scoutFilaJugadorListaHTML(j,i,grupos[k].length)).join('')}</div>
+  `).join('') + (faltantes.length?`<p style="font-size:10px;color:var(--gris);margin-top:14px">⚠️ ${faltantes.length} jugador(es) de esta lista ya no existen en la base de datos.</p>`:'');
+}
+function _scoutFilaJugadorListaHTML(j,i,total){
+  const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
+  const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img loading="lazy" src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+  return `<div class="card">
+    <div class="card-hdr">
+      <div class="card-av-wrap">${av}</div>
+      <div class="card-hdr-info"><div class="card-nm">${i+1}º · ${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${eH(j.dor||'—')} · ${eH(j.pos||'—')} · ${eH(j.club||'—')}</div></div>
+    </div>
+    <div class="card-act">
+      <button class="btn b-ghost b-sm" ${i===0?'disabled':''} onclick="scoutSubirPrioridad('${eH(j.id)}')" title="Más prioridad">▲</button>
+      <button class="btn b-ghost b-sm" ${i===total-1?'disabled':''} onclick="scoutBajarPrioridad('${eH(j.id)}')" title="Menos prioridad">▼</button>
+      <button class="btn b-rojo b-sm" onclick="scoutQuitarJugadorDeLista('${eH(j.id)}')">✕ Quitar</button>
+    </div>
+  </div>`;
+}
+function _scoutOrdenPosDe(jugadorId){
+  const j=jDB.find(x=>x.id===jugadorId);
+  return j?(POS_ORDEN_LISTA[j.pos]??3):3;
+}
+/** Sube/baja la prioridad de un jugador DENTRO de su grupo de posición:
+ *  busca el vecino más cercano en la MISMA posición (en la dirección
+ *  pedida) dentro del array plano lista.jugadores (cuyo ORDEN es la
+ *  prioridad) y los intercambia — así el resto de jugadores de otras
+ *  posiciones no se ven afectados. */
+async function _scoutMoverPrioridad(jugadorId,direccion){
+  const lista=_scoutListaActual(); if(!lista) return;
+  const idx=lista.jugadores.findIndex(e=>e.jugadorId===jugadorId); if(idx<0) return;
+  const miPos=_scoutOrdenPosDe(jugadorId);
+  let i=idx+direccion;
+  while(i>=0 && i<lista.jugadores.length && _scoutOrdenPosDe(lista.jugadores[i].jugadorId)!==miPos) i+=direccion;
+  if(i<0||i>=lista.jugadores.length) return;
+  const tmp=lista.jugadores[idx]; lista.jugadores[idx]=lista.jugadores[i]; lista.jugadores[i]=tmp;
+  await _scoutGuardarListaCambios(lista);
+  renderScoutingListaDetalle();
+}
+function scoutSubirPrioridad(jugadorId){ return _scoutMoverPrioridad(jugadorId,-1); }
+function scoutBajarPrioridad(jugadorId){ return _scoutMoverPrioridad(jugadorId,1); }
+async function scoutQuitarJugadorDeLista(jugadorId){
+  const lista=_scoutListaActual(); if(!lista) return;
+  lista.jugadores=(lista.jugadores||[]).filter(e=>e.jugadorId!==jugadorId);
+  await _scoutGuardarListaCambios(lista);
+  renderScoutingListaDetalle();
+}
+
+// ── Campograma de la lista ───────────────────────────────────────
+async function scoutCampogramaCambiarSistema(nuevoSist){
+  const lista=_scoutListaActual(); if(!lista) return;
+  lista.sistema=nuevoSist;
+  await _scoutGuardarListaCambios(lista);
+  renderScoutingCampograma();
+}
+/** Coloca a los jugadores de la lista en el campograma según su
+ *  posición, reutilizando _campogramaAsignarJugadores (misma función
+ *  que usa la ficha de equipo) — pero reordenando cada grupo por la
+ *  PRIORIDAD de la lista (el orden en lista.jugadores) en vez de por
+ *  dorsal, que es lo que hace esa función por defecto (pensada para la
+ *  plantilla de un equipo, no para un ranking de scouting). El de más
+ *  prioridad de cada posición sale como chip individual (titular); si
+ *  hay más de uno en la misma posición, se agrupan en una tarjeta con
+ *  todos listados en ese mismo orden de prioridad. */
+function renderScoutingCampograma(){
+  const lista=_scoutListaActual();
+  const cont=document.getElementById('scout-campograma-container');
+  if(!lista||!cont) return;
+  const sistSel=document.getElementById('scout-campo-sist-sel');
+  if(sistSel){ const valores=[...sistSel.options].map(o=>o.value); sistSel.value=valores.includes(lista.sistema)?lista.sistema:'4-3-3'; }
+  const jugadores=(lista.jugadores||[]).map(e=>jDB.find(j=>j.id===e.jugadorId)).filter(Boolean);
+  if(!jugadores.length){
+    cont.innerHTML='<div class="empty" style="margin:20px 0"><div class="empty-ic">🏟️</div><div style="font-size:14px">Añade jugadores a esta lista para ver el campograma</div></div>';
+    return;
+  }
+  const {colocados,suplentesSinHueco}=_campogramaAsignarJugadores(jugadores,lista.sistema||'4-3-3');
+  const ordenPrioridad=new Map((lista.jugadores||[]).map((e,i)=>[e.jugadorId,i]));
+  colocados.forEach(c=>c.jugadores.sort((a,b)=>(ordenPrioridad.get(a.id)??999)-(ordenPrioridad.get(b.id)??999)));
+  const horiz=_campogramaEsHoriz();
+  const chipsH=colocados.map(c=>c.jugadores.length===1
+    ?_campogramaChipPosHTML(null,c.jugadores[0],c.slot,false,horiz,{},'')
+    :_campogramaChipGrupoHTML(null,c.jugadores,c.slot,false,horiz,{},'')
+  ).join('');
+  const banquilloH=suplentesSinHueco.length?`
+    <div class="campo-banquillo">
+      <div class="campo-banquillo-tit">🪑 Sin hueco en el sistema (${suplentesSinHueco.length})</div>
+      <div class="campo-banquillo-jugs">${suplentesSinHueco.map(j=>_campogramaBanquilloChipHTML(j)).join('')}</div>
+    </div>`:'';
+  const marcasH=horiz?`
+        <svg class="campo-marcas" viewBox="0 0 140 100" preserveAspectRatio="none">
+          <rect x="2" y="2" width="136" height="96" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <line x1="71" y1="2" x2="71" y2="98" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="71" cy="50" r="12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="71" cy="50" r="0.8" fill="rgba(255,255,255,.55)"/>
+          <rect x="2" y="25" width="20" height="50" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="2" y="38" width="8" height="24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 22 38 A 12 12 0 0 1 22 62" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="118" y="25" width="20" height="50" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="130" y="38" width="8" height="24" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 118 38 A 12 12 0 0 0 118 62" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+        </svg>`:`
+        <svg class="campo-marcas" viewBox="0 0 100 140" preserveAspectRatio="none">
+          <rect x="2" y="2" width="96" height="136" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <line x1="2" y1="71" x2="98" y2="71" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="50" cy="71" r="12" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <circle cx="50" cy="71" r="0.8" fill="rgba(255,255,255,.55)"/>
+          <rect x="25" y="2" width="50" height="20" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="38" y="2" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 38 22 A 12 12 0 0 0 62 22" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="25" y="118" width="50" height="20" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <rect x="38" y="130" width="24" height="8" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+          <path d="M 38 118 A 12 12 0 0 1 62 118" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="0.6"/>
+        </svg>`;
+  cont.innerHTML=`
+    <div class="campo-wrap${horiz?' horiz':''}">
+      <div class="campo-hdr" style="background:linear-gradient(120deg,#1c2f4a,#233b5c)">
+        <div class="campo-hdr-badge">🔭</div>
+        <div class="campo-hdr-txt">
+          <div class="campo-hdr-nom">${eH(lista.nombre||'Lista de seguimiento')}</div>
+          <div class="campo-hdr-sub">SCOUTING · ${jugadores.length} JUGADOR${jugadores.length===1?'':'ES'} · 1-${eH(lista.sistema||'4-3-3')}</div>
+        </div>
+      </div>
+      <div class="campo-pitch-scroll">
+        <div class="campo-pitch-abs${horiz?' horiz':''}" style="background:repeating-linear-gradient(${horiz?90:180}deg,#2c6e3f 0,#2c6e3f 48px,#2a6a3c 48px,#2a6a3c 96px)">
+          ${marcasH}
+          ${chipsH}
+        </div>
+      </div>
+      ${banquilloH}
+    </div>`;
 }
 
 /** Comprueba el permiso de liga de un PARTIDO probando todas las
@@ -14560,7 +15101,7 @@ async function cargarUsuariosAdmin() {
   <table class="admin-tabla">
     <thead>
       <tr>
-        <th>Email</th><th>Nombre</th><th>Equipo</th><th>Rol</th><th>Estado</th>
+        <th>Email</th><th>Nombre</th><th>Equipo</th><th>Rol</th><th>Estado</th><th>🔭 Scouting</th>
         <th>Último acceso</th><th>Acciones</th>
       </tr>
     </thead>
@@ -14580,6 +15121,7 @@ async function cargarUsuariosAdmin() {
           <td data-label="Equipo">${u.equipo||'—'}</td>
           <td data-label="Rol"><span class="admin-rol-badge admin-rol-${u.rol}">${u.rol==='admin'?'🛡️ Admin':'👤 Usuario'}</span></td>
           <td data-label="Estado"><span class="admin-estado-badge ${u.activo?'activo':'inactivo'}">${u.activo?'✅ Activo':'🚫 Desactivado'}</span></td>
+          <td data-label="Scouting">${(esSuperAdmin||u.puedeVerScouting)?'🔭 Sí':'—'}</td>
           <td data-label="Último acceso" style="font-size:10px;color:var(--gris)">${fechaAcceso}</td>
           <td data-label="Acciones" class="admin-acciones">
             <button class="btn b-ghost admin-btn-accion" onclick="editarUsuarioAdmin('${u.id}')">✏️ Editar</button>
@@ -14772,6 +15314,12 @@ function abrirModalNuevoUsuario() {
   document.getElementById('mu-ver-todo').checked = true;
   renderMuLigasCheckboxes([]);
   toggleMuLigas();
+  // Acceso a Scouting: solo el super admin puede marcarlo, y solo él lo
+  // ve editable — el resto de admins lo ven desmarcado y bloqueado (un
+  // usuario nuevo nunca nace con acceso a Scouting).
+  document.getElementById('mu-scouting').checked = false;
+  document.getElementById('mu-scouting').disabled = !esSuperAdminActual();
+  document.getElementById('mu-scouting-bloqueado-aviso').style.display = esSuperAdminActual() ? 'none' : '';
   document.getElementById('modal-usuario-titulo').textContent = '➕ Nuevo usuario';
   document.getElementById('modal-usuario').classList.add('open');
 }
@@ -14809,6 +15357,13 @@ async function editarUsuarioAdmin(id) {
   document.getElementById('mu-ver-todo').checked = !ligas.length;
   renderMuLigasCheckboxes(ligas);
   toggleMuLigas();
+  // Acceso a Scouting: el super admin siempre lo tiene (aunque su fila
+  // no lo tenga marcado, ver login_/listarUsuarios_ en Code.gs) y no se
+  // puede editar para su propia cuenta; para el resto, solo el super
+  // admin logueado puede tocar esta casilla.
+  document.getElementById('mu-scouting').checked = esSuperAdmin || !!u.puedeVerScouting;
+  document.getElementById('mu-scouting').disabled = esSuperAdmin || !esSuperAdminActual();
+  document.getElementById('mu-scouting-bloqueado-aviso').style.display = (!esSuperAdmin && !esSuperAdminActual()) ? '' : 'none';
   document.getElementById('modal-usuario-titulo').textContent = '✏️ Editar usuario';
   document.getElementById('modal-usuario').classList.add('open');
 }
@@ -14828,6 +15383,12 @@ async function guardarUsuario() {
   let   activo  = document.getElementById('mu-activo').value === 'true';
   const verTodo = document.getElementById('mu-ver-todo').checked;
   const ligasPermitidas = verTodo ? [] : _ligasSeleccionadasMu();
+  // Se manda siempre (aunque el checkbox esté deshabilitado por no ser
+  // super admin) — el backend es quien de verdad decide si se aplica o
+  // se ignora (ver editarUsuario_/crearUsuario_ en Code.gs), así que
+  // mandarlo sin más nunca concede nada que el servidor no vaya a
+  // permitir igualmente.
+  const puedeVerScouting = document.getElementById('mu-scouting').checked;
 
   if (!email) { toast('El email es obligatorio', true); return; }
   if (!verTodo && !ligasPermitidas.length) { toast('Marca al menos una liga, o activa "Ver todo"', true); return; }
@@ -14856,7 +15417,7 @@ async function guardarUsuario() {
   let resultado;
   if (editId) {
     // Editar usuario existente
-    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas, equipo } });
+    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas, equipo, puedeVerScouting } });
     // Cambiar contraseña si se proporcionó
     if (resultado.ok && hashPass) {
       await _apiAdmin('cambiarPassword', { id: editId, hashPassNuevo: hashPass });
@@ -14864,7 +15425,7 @@ async function guardarUsuario() {
   } else {
     // Crear nuevo usuario
     if (!pass) { toast('La contraseña es obligatoria para nuevos usuarios', true); return; }
-    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol, ligasPermitidas, equipo } });
+    resultado = await _apiAdmin('crearUsuario', { datos: { email, nombre, hashPass, rol, ligasPermitidas, equipo, puedeVerScouting } });
   }
 
   if (resultado && resultado.ok) {
