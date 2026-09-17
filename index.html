@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-17-1">
+<meta name="app-version" content="2026-09-17-2">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -4748,6 +4748,21 @@ function poblarFiltrosJugadores(lista){
   }
 }
 
+// Orden de la lista de Jugadores dentro de cada equipo: porteros,
+// defensas centrales, laterales, mediocentros (incluye defensivo,
+// interior, ofensivo y mediapunta), extremos y delanteros — el mismo
+// criterio "de atrás hacia adelante" que se usa para leer una
+// alineación. Una posición sin registrar (o que no encaje con ninguna
+// de las de arriba) cae en el grupo de mediocentros, el bloque
+// intermedio, para no descolocar del todo la tarjeta.
+const POS_ORDEN_LISTA={
+  'Portero':0,
+  'Central':1,
+  'Lateral derecho':2,'Lateral izquierdo':2,
+  'Mediocentro defensivo':3,'Mediocentro':3,'Mediocentro ofensivo':3,'Mediapunta':3,
+  'Extremo derecho':4,'Extremo izquierdo':4,
+  'Delantero centro':5,'Segunda punta':5
+};
 // ── DB ────────────────────────────────────────────────────────────
 function renderJDB(){
   let _huboReparoJ=false;
@@ -4798,6 +4813,10 @@ function renderJDB(){
     const va=_jVistaParaFiltro(a,fTemp,fCat,fGrupo,fEquipo),vb=_jVistaParaFiltro(b,fTemp,fCat,fGrupo,fEquipo);
     const ca=(va.club||a.club||'').trim().toLowerCase(),cb=(vb.club||b.club||'').trim().toLowerCase();
     if(ca!==cb) return ca.localeCompare(cb,'es');
+    // Dentro del mismo equipo: porteros > centrales > laterales >
+    // mediocentros > extremos > delanteros (ver POS_ORDEN_LISTA).
+    const pa=POS_ORDEN_LISTA[va.pos||a.pos]??3,pb=POS_ORDEN_LISTA[vb.pos||b.pos]??3;
+    if(pa!==pb) return pa-pb;
     const na=(a.nom+' '+a.ape).trim().toLowerCase(),nb=(b.nom+' '+b.ape).trim().toLowerCase();
     return na.localeCompare(nb,'es');
   });
