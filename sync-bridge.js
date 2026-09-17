@@ -99,6 +99,31 @@ async function scoutApiGet(params) {
   }
 }
 
+// Igual que scoutApiPost, pero añade "solicitanteEmail" (de la sesión
+// actual) al cuerpo de la petición — lo necesitan las acciones que el
+// backend filtra por usuario (listar/eliminar listas de seguimiento de
+// Scouting, ver Code.gs). guardarListaSeguimiento NO usa esto (manda el
+// email DENTRO de "datos", como datos.ownerEmail) para poder reutilizar
+// scoutApiPost + scoutEncolar tal cual, sin tocar la cola offline
+// genérica de más abajo.
+async function scoutApiPostAuth(accion, datos) {
+  if (!SCOUT_SYNC_ENABLED) return { ok: false, offline: true, motivo: 'Sync desactivada' };
+  const sesion = window._scoutSession;
+  if (!sesion || !sesion.email) return { ok: false, offline: false, motivo: 'sin_sesion' };
+  try {
+    const res = await fetch(SCOUT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ accion, solicitanteEmail: sesion.email, ...datos }),
+    });
+    if (!res.ok) return { ok: false, offline: false, motivo: `HTTP ${res.status}` };
+    const data = await res.json();
+    return data.resultado || data;
+  } catch (err) {
+    return { ok: false, offline: true, motivo: String(err) };
+  }
+}
+
 // ════════════════════════════════════════════════════════════════
 //  COLA OFFLINE — reintento automático
 // ════════════════════════════════════════════════════════════════
@@ -336,6 +361,58 @@ async function scoutSincronizarEquipo(eq) {
     console.warn('[Scoutdrive sync] Error al sincronizar equipo:', detalle);
     _scoutToast('⚠️ No se pudo subir el equipo al Sheet: ' + detalle, true);
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  SCOUTING — listas de seguimiento (privadas por usuario)
+// ════════════════════════════════════════════════════════════════
+// Sube (crea o actualiza) una lista de seguimiento. "lista" ya debe
+// traer lista.ownerEmail puesto (ver guardarListaSeguimientoLocal en
+// index.html) — es lo que el backend usa para saber de quién es, en vez
+// de solicitanteEmail aparte, así esta función encaja en la misma cola
+// de reintento offline (scoutEncolar) que ya usan jugadores/equipos.
+async function scoutSincronizarListaSeguimiento(lista) {
+  const resultado = await scoutApiPost('guardarListaSeguimiento', lista);
+  if (!resultado.ok && resultado.offline) {
+    scoutEncolar('guardarListaSeguimiento', lista);
+  } else if (resultado.ok !== false) {
+    _scoutToast('☁️ Lista de seguimiento sincronizada');
+  } else {
+    const detalle = resultado.motivo || resultado.error || 'error desconocido';
+    console.warn('[Scoutdrive sync] Error al sincronizar lista de seguimiento:', detalle);
+    _scoutToast('⚠️ No se pudo sincronizar la lista: ' + detalle, true);
+  }
+}
+
+// Trae del Sheet TODAS las listas de seguimiento del usuario logueado
+// (el backend ya filtra por email, ver listarListasSeguimiento_) y las
+// deja en window.scoutListas — se llama al terminar el login (ver
+// scoutSyncInicial más abajo) y también se puede llamar a mano para
+// refrescar (p.ej. tras entrar en la sección Scouting).
+async function scoutCargarListasSeguimiento() {
+  const sesion = window._scoutSession;
+  if (!sesion || !sesion.email) return [];
+  const resultado = await scoutApiPostAuth('listarListasSeguimiento', {});
+  if (!resultado.ok) {
+    console.warn('[Scoutdrive sync] No se pudieron cargar las listas de seguimiento:', resultado.motivo || resultado.error);
+    return window.scoutListas || [];
+  }
+  window.scoutListas = resultado.listas || [];
+  // _scoutGuardarListasLocal (index.html) guarda con una clave por email
+  // (scout_listas_v1__<email>) — así, en un dispositivo compartido, un
+  // usuario nunca ve ni de refilón las listas cacheadas de otro que
+  // inició sesión antes que él en el mismo aparato.
+  if (typeof _scoutGuardarListasLocal === 'function') _scoutGuardarListasLocal();
+  if (typeof renderScouting === 'function' && typeof currentSection !== 'undefined' && currentSection === 'scouting') renderScouting();
+  return window.scoutListas;
+}
+
+// Borra en el Sheet una lista de seguimiento (solo su propio dueño puede
+// — el backend lo comprueba igual, ver eliminarListaSeguimiento_). No
+// pasa por la cola offline: es una acción puntual e interactiva, igual
+// que eliminarUsuarioAdmin.
+async function scoutEliminarListaSeguimientoRemota(id) {
+  return await scoutApiPostAuth('eliminarListaSeguimiento', { id });
 }
 
 async function scoutSincronizarPartidoVideo(p) {
@@ -1076,4 +1153,12 @@ window.scoutSyncInicial = async function scoutSyncInicial() {
     await scoutSyncCompleto(true);
   }
   await scoutProcesarCola();
+  // Listas de seguimiento de Scouting (privadas del usuario logueado) —
+  // van aparte de scoutSyncCompleto porque esa función trae SOLO datos
+  // compartidos (jugadores/equipos/partidos/anuncios); estas son de un
+  // único usuario y el backend las filtra por su email (ver
+  // scoutCargarListasSeguimiento).
+  if (window._scoutSession && window._scoutSession.puedeVerScouting) {
+    await scoutCargarListasSeguimiento();
+  }
 };
