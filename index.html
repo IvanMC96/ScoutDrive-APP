@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-23-1">
+<meta name="app-version" content="2026-09-23-2">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1551,9 +1551,24 @@ body.solo-lectura .ed-panel-form {
       <option value="">Todas las temporadas</option>
     </select>
     <button class="btn b-ghost b-sm" onclick="xBDJExcel()">📊 Exportar BD</button>
+    <button class="btn b-ghost b-sm" onclick="abrirModalDuplicados()" title="Busca fichas de jugador que probablemente sean la misma persona duplicada (mismo club y dorsal, o nombre casi idéntico) y deja fusionarlas en una sola, sin perder su historial">🔀 Duplicados</button>
     <button class="btn b-rojo b-sm" onclick="askDelAll('j')">🗑 Borrar todo</button>
   </div>
   <div class="cards-grid" id="j-grid"></div>
+</div>
+
+<!-- ── MODAL "DETECTAR Y FUSIONAR DUPLICADOS" (Jugadores) ── -->
+<div class="add-partido-modal" id="modal-duplicados" onclick="if(event.target===this)cerrarModalDuplicados()">
+  <div class="add-partido-box" style="max-width:640px">
+    <div class="add-partido-hdr">
+      <span>🔀 Jugadores duplicados</span>
+      <button style="background:none;border:none;color:var(--gris);cursor:pointer;font-size:18px" onclick="cerrarModalDuplicados()">✕</button>
+    </div>
+    <div class="add-partido-body">
+      <p style="font-size:11px;color:var(--gris);margin:0 0 10px">Fichas que probablemente sean la MISMA persona metida dos veces (mismo club y dorsal, o un nombre casi idéntico). Elige cuál de las dos se queda — la otra se borra y todo su historial de partidos (PJ/PT/PS/tarjetas) pasa a la que se queda, sin perder nada.</p>
+      <div id="duplicados-lista"></div>
+    </div>
+  </div>
 </div>
 
 <div class="compare-bar" id="compare-bar" style="display:none">
@@ -12365,6 +12380,67 @@ function _actaPuntuacionNombre(nombreActa,jugador){
   palActa.forEach(pa=>{ if(palJug.some(pj=>_palabraParecida(pa,pj))) coincidencias++; });
   return coincidencias/Math.max(palActa.length,palJug.length);
 }
+/** ¿Es el mismo dorsal? Compara como texto primero (caso normal) y, si
+ *  ambos son puramente numéricos, también como número — así "01" y "1"
+ *  cuentan como el mismo dorsal (una ficha puede traerlo con cero a la
+ *  izquierda y la otra no) sin por eso tratar como iguales dos dorsales
+ *  de verdad distintos que tengan alguna letra u otro carácter. */
+function _actaMismoDorsal(a,b){
+  const sa=String(a==null?'':a).trim(), sb=String(b==null?'':b).trim();
+  if(!sa||!sb) return false;
+  if(sa===sb) return true;
+  if(/^\d+$/.test(sa) && /^\d+$/.test(sb)) return parseInt(sa,10)===parseInt(sb,10);
+  return false;
+}
+/** Puntuación 0..1 de cuánto se parece el nombre de un club a otro — por
+ *  PALABRAS, tolerando tildes/mayúsculas (vía _normalizarBusqueda) y
+ *  puntuación distinta ("C.F." vs "CF"), y con el mismo comparador
+ *  difuso de palabra suelta que ya usa _actaPuntuacionNombre — así
+ *  "At. Sanluqueño" y "Atlético Sanluqueño C.F." puntúan alto aunque no
+ *  coincidan carácter a carácter. Se usa SOLO como red de seguridad
+ *  extra para no duplicar jugadores entre jornadas (ver
+ *  _actaBuscarPorClubParecido) — el emparejamiento normal sigue
+ *  exigiendo el nombre de club EXACTO (normalizado) como primer filtro,
+ *  por precisión.*/
+function _actaPuntuacionClub(clubA,clubB){
+  const norm=s=>_normalizarBusqueda(s).replace(/[.,]/g,' ').split(/\s+/).filter(Boolean);
+  const palA=norm(clubA), palB=norm(clubB);
+  if(!palA.length||!palB.length) return 0;
+  let coincidencias=0;
+  palA.forEach(pa=>{ if(palB.some(pb=>_palabraParecida(pa,pb))) coincidencias++; });
+  return coincidencias/Math.max(palA.length,palB.length);
+}
+/** Última red de seguridad de _actaEmparejarLista(): cuando NINGÚN
+ *  jugador del club escrito EXACTO igual esta vez encaja (ni por dorsal
+ *  ni por nombre), busca en TODA la plantilla (jDB) a alguien cuyo club
+ *  se PAREZCA mucho (no necesariamente idéntico carácter a carácter —
+ *  una tilde, una abreviatura, un espacio de más entre jornadas) y que
+ *  además encaje por dorsal o por un nombre MUY parecido. Sin esto, una
+ *  jornada en la que el nombre del club se ha escrito de forma
+ *  ligeramente distinta a como ya estaba guardado hacía que el jugador
+ *  no se encontrara y se creara una ficha duplicada suya desde cero
+ *  (petición del usuario: usar dorsal+nombre para "sincronizar" en vez
+ *  de duplicar). Exige más rigor que el emparejamiento normal
+ *  precisamente porque aquí el filtro de club ya no es exacto: sin
+ *  dorsal hace falta un nombre MUY parecido (≥0.8), y con dorsal basta
+ *  algún parecido de nombre (≥0.3) para no fusionar por pura
+ *  casualidad de dorsal a dos jugadores de clubes de verdad distintos. */
+function _actaBuscarPorClubParecido(pa,clubNombre,temporada){
+  let mejor=null,mejorPuntos=0;
+  jDB.forEach(j=>{
+    if(j._bajaPlantilla) return;
+    if(temporada && j.temp && _normalizarBusqueda(j.temp)!==_normalizarBusqueda(temporada)) return;
+    const scoreClub=_actaPuntuacionClub(j.club,clubNombre);
+    if(scoreClub<0.5) return;
+    const scoreNombre=_actaPuntuacionNombre(pa.nombre,j);
+    const porDorsal=pa.dorsal!=null && _actaMismoDorsal(j.dor,pa.dorsal);
+    if(!porDorsal && scoreNombre<0.8) return;
+    if(porDorsal && scoreNombre<0.3) return;
+    const puntos=scoreClub*0.3+scoreNombre*0.6+(porDorsal?0.3:0);
+    if(puntos>mejorPuntos){ mejorPuntos=puntos; mejor=j; }
+  });
+  return mejor;
+}
 
 /** Cruza una lista de jugadores del acta ([{dorsal,nombre,...}]) con la
  *  plantilla de un club: primero por dorsal exacto, y si no hay ningún
@@ -12381,8 +12457,9 @@ function _actaEmparejarLista(lista,clubNombre,temporada){
   const pool=conTemp.length?conTemp:candidatos;
   return lista.map(pa=>{
     let jugador=null,score=0,confianza='sin_match';
+    let opciones=pool;
     if(pa.dorsal!=null){
-      const porDorsal=pool.find(j=>String(j.dor||'').trim()!=='' && String(j.dor).trim()===String(pa.dorsal).trim());
+      const porDorsal=pool.find(j=>_actaMismoDorsal(j.dor,pa.dorsal));
       if(porDorsal){ jugador=porDorsal; score=_actaPuntuacionNombre(pa.nombre,porDorsal); confianza='dorsal'; }
     }
     if(!jugador){
@@ -12390,7 +12467,25 @@ function _actaEmparejarLista(lista,clubNombre,temporada){
       confianza = jugador && score>=0.6 ? 'nombre' : 'sin_match';
       if(confianza==='sin_match') jugador=null;
     }
-    return {...pa, jugadorId:jugador?jugador.id:null, jugadorNom:jugador?(jugador.nom+' '+jugador.ape).trim():null, confianza, score:Math.round(score*100), _opciones:pool};
+    // Red de seguridad anti-duplicados (ver _actaBuscarPorClubParecido):
+    // si nadie del club EXACTO tecleado esta vez encaja, prueba una vez
+    // más contra TODA la plantilla permitiendo que el nombre del club
+    // varíe un poco entre jornadas — para que ese jugador ya existente
+    // se encuentre y se reutilice en vez de crearse de nuevo (lo haría
+    // _actaAutoAltaJugadoresFaltantes si esto se queda sin match). El
+    // jugador encontrado así se añade a las opciones de ESTA fila (sin
+    // tocar la pool compartida de las demás) para que el desplegable de
+    // la vista previa también lo muestre ya emparejado.
+    if(!jugador){
+      const porClubParecido=_actaBuscarPorClubParecido(pa,clubNombre,temporada);
+      if(porClubParecido){
+        jugador=porClubParecido;
+        score=_actaPuntuacionNombre(pa.nombre,jugador);
+        confianza='nombre';
+        if(!pool.includes(jugador)) opciones=[...pool,jugador];
+      }
+    }
+    return {...pa, jugadorId:jugador?jugador.id:null, jugadorNom:jugador?(jugador.nom+' '+jugador.ape).trim():null, confianza, score:Math.round(score*100), _opciones:opciones};
   });
 }
 
@@ -12407,13 +12502,13 @@ function _actaEmparejarTarjetas(tarjetas,titulares,suplentes){
   const opciones=(titulares[0]||suplentes[0]||{})._opciones||[];
   return tarjetas.map(t=>{
     let fila=null;
-    if(t.dorsal!=null) fila=roster.find(r=>String(r.dorsal||'').trim()!=='' && String(r.dorsal).trim()===String(t.dorsal).trim());
+    if(t.dorsal!=null) fila=roster.find(r=>_actaMismoDorsal(r.dorsal,t.dorsal));
     if(!fila){
       let score=0;
       roster.forEach(r=>{ const s=_actaPuntuacionNombre(t.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; } });
       if(score<0.6) fila=null;
     }
-    const confianza = fila ? ((t.dorsal!=null && String(fila.dorsal||'').trim()===String(t.dorsal).trim()) ? 'dorsal' : 'nombre') : 'sin_match';
+    const confianza = fila ? ((t.dorsal!=null && _actaMismoDorsal(fila.dorsal,t.dorsal)) ? 'dorsal' : 'nombre') : 'sin_match';
     return {...t, jugadorId:fila?fila.jugadorId:null, jugadorNom:fila?fila.jugadorNom:null, confianza, _opciones:opciones};
   });
 }
@@ -12562,7 +12657,7 @@ function _actaReemparejarTarjetasSinMatch(tarjetas,titulares,suplentes){
   (tarjetas||[]).forEach(t=>{
     if(t.jugadorId) return;
     let fila=null;
-    if(t.dorsal!=null) fila=roster.find(r=>String(r.dorsal||'').trim()!=='' && String(r.dorsal).trim()===String(t.dorsal).trim());
+    if(t.dorsal!=null) fila=roster.find(r=>_actaMismoDorsal(r.dorsal,t.dorsal));
     if(!fila){
       let score=0;
       roster.forEach(r=>{ const s=_actaPuntuacionNombre(t.nombre,{nom:r.nombre,ape:''}); if(s>score){ score=s; fila=r; } });
@@ -12570,7 +12665,7 @@ function _actaReemparejarTarjetasSinMatch(tarjetas,titulares,suplentes){
     }
     if(fila){
       t.jugadorId=fila.jugadorId; t.jugadorNom=fila.jugadorNom;
-      t.confianza=(t.dorsal!=null && String(fila.dorsal||'').trim()===String(t.dorsal).trim())?'dorsal':'nombre';
+      t.confianza=(t.dorsal!=null && _actaMismoDorsal(fila.dorsal,t.dorsal))?'dorsal':'nombre';
     }
   });
 }
@@ -12592,6 +12687,146 @@ function _actaReemparejarGolesSinMatch(goles,titLocal,supLocal,titVisit,supVisit
     }
     if(fila){ g.jugadorId=fila.jugadorId; g.jugadorNom=fila.jugadorNom; g.equipo=equipo; g.confianza='nombre'; }
   });
+}
+
+// ══ DETECTAR Y FUSIONAR JUGADORES DUPLICADOS ═══════════════════════════
+// Aunque _actaEmparejarLista() ya tiene una red de seguridad para no
+// CREAR duplicados nuevos al importar una acta (ver
+// _actaBuscarPorClubParecido más arriba), puede que ya existan de antes
+// — de una jornada importada antes de que existiera esa red de
+// seguridad, o de una ficha metida a mano dos veces por error. Esta
+// herramienta (Jugadores → "🔀 Duplicados") los detecta comparando
+// dorsal y nombre (y club, con tolerancia) y deja fusionarlos en un
+// único jugador con un clic, sin perder ni un partido de su historial.
+/** Busca pares de jugadores que probablemente sean la MISMA persona
+ *  duplicada. Dos pasadas, para no tener que comparar los 835×835
+ *  jugadores entre sí:
+ *   1) Agrupados por club EXACTO (normalizado) — el caso más habitual,
+ *      el mismo que se ve en el filtro "Equipo" de Jugadores mostrando
+ *      la misma ficha dos veces.
+ *   2) Agrupados por primer apellido (normalizado) — para pillar
+ *      también el caso de un club escrito de forma ligeramente distinta
+ *      entre fichas (acota la comparación a quienes ya comparten
+ *      apellido, así no hace falta comparar contra TODA la plantilla).
+ *  Devuelve [{a,b,motivo,score}], score 0..1, ordenado de más a menos
+ *  parecido. No toca nada — solo informa, la fusión la decide el admin
+ *  a mano en el modal (ver _abrirModalDuplicados). */
+function _detectarJugadoresDuplicados(){
+  const pares=[]; const vistos=new Set();
+  const agregar=(a,b,motivo,score)=>{
+    const clave=[a.id,b.id].sort().join('|');
+    if(vistos.has(clave)) return;
+    vistos.add(clave);
+    pares.push({a,b,motivo,score});
+  };
+  const mismaTemp=(a,b)=>!a.temp||!b.temp||_normalizarBusqueda(a.temp)===_normalizarBusqueda(b.temp);
+
+  const porClub={};
+  jDB.forEach(j=>{ if(j._bajaPlantilla) return; const k=_normalizarBusqueda(j.club); (porClub[k]=porClub[k]||[]).push(j); });
+  Object.values(porClub).forEach(grupo=>{
+    for(let i=0;i<grupo.length;i++) for(let k=i+1;k<grupo.length;k++){
+      const a=grupo[i], b=grupo[k];
+      if(!mismaTemp(a,b)) continue;
+      const mismoDorsal=_actaMismoDorsal(a.dor,b.dor);
+      const scoreNombre=_actaPuntuacionNombre(((a.nom||'')+' '+(a.ape||'')),b);
+      if(mismoDorsal && scoreNombre>=0.5) agregar(a,b,'mismo club y dorsal',scoreNombre);
+      else if(scoreNombre>=0.85) agregar(a,b,'mismo club, nombre casi idéntico',scoreNombre);
+    }
+  });
+
+  const porApellido={};
+  jDB.forEach(j=>{ if(j._bajaPlantilla) return; const primerApe=_normalizarBusqueda(j.ape).split(/\s+/)[0]||''; if(!primerApe) return; (porApellido[primerApe]=porApellido[primerApe]||[]).push(j); });
+  Object.values(porApellido).forEach(grupo=>{
+    if(grupo.length<2) return;
+    for(let i=0;i<grupo.length;i++) for(let k=i+1;k<grupo.length;k++){
+      const a=grupo[i], b=grupo[k];
+      if(_normalizarBusqueda(a.club)===_normalizarBusqueda(b.club)) continue; // ya visto arriba
+      if(!mismaTemp(a,b)) continue;
+      const scoreClub=_actaPuntuacionClub(a.club,b.club);
+      if(scoreClub<0.6) continue;
+      const mismoDorsal=_actaMismoDorsal(a.dor,b.dor);
+      const scoreNombre=_actaPuntuacionNombre(((a.nom||'')+' '+(a.ape||'')),b);
+      if(mismoDorsal && scoreNombre>=0.5) agregar(a,b,'club parecido y mismo dorsal',scoreNombre);
+      else if(scoreNombre>=0.9) agregar(a,b,'club parecido, nombre casi idéntico',scoreNombre);
+    }
+  });
+
+  pares.sort((x,y)=>y.score-x.score);
+  return pares;
+}
+/** Fusiona `idDuplicado` dentro de `idSuperviviente`: reescribe TODAS las
+ *  referencias a `idDuplicado` guardadas en las alineaciones de acta de
+ *  Partidos (titulares/suplentes/tarjetas) y en las listas de
+ *  seguimiento de Scouting de este dispositivo, suma su base manual de
+ *  estadísticas y su histórico de temporadas archivadas al
+ *  superviviente (para no perder nada), borra la ficha duplicada y
+ *  recalcula estadísticas. No toca eq.partidos ni los goles/asistencias
+ *  de "⚽ Partidos" (esos se resuelven por NOMBRE, no por id — ver
+ *  jugadorIdPorNombre — así que, en cuanto el duplicado desaparece de
+ *  jDB, automáticamente vuelven a apuntar sin ambigüedad al
+ *  superviviente, siempre que compartan el mismo nombre, que es el caso
+ *  normal de un duplicado real). Devuelve {partidosTocados} o null si
+ *  algo no cuadra. */
+function _fusionarJugadores(idSuperviviente,idDuplicado){
+  if(!idSuperviviente||!idDuplicado||idSuperviviente===idDuplicado) return null;
+  const superviviente=jDB.find(j=>j.id===idSuperviviente);
+  const duplicado=jDB.find(j=>j.id===idDuplicado);
+  if(!superviviente||!duplicado) return null;
+
+  const partidosTocados=[];
+  pDB.forEach(p=>{
+    if(!p.alineacion) return;
+    let tocado=false;
+    ['local','visitante'].forEach(lado=>{
+      const bloque=p.alineacion[lado]; if(!bloque) return;
+      ['titulares','suplentes','tarjetas'].forEach(tipo=>{
+        (bloque[tipo]||[]).forEach(f=>{
+          if(f && f.jugadorId===idDuplicado){
+            f.jugadorId=idSuperviviente;
+            f.jugadorNom=(superviviente.nom+' '+superviviente.ape).trim();
+            tocado=true;
+          }
+        });
+      });
+    });
+    if(tocado) partidosTocados.push(p);
+  });
+
+  // Listas de seguimiento de Scouting cacheadas en ESTE dispositivo (las
+  // de otras cuentas son privadas de cada usuario y no se pueden tocar
+  // desde aquí — si el duplicado desaparece de jDB, esas listas ajenas
+  // simplemente dejan de mostrar esa fila, sin romper nada, ver
+  // scoutListaConDetalle/scoutRenderCampograma que ya filtran con
+  // .filter(Boolean)).
+  if(typeof scoutListas!=='undefined' && Array.isArray(scoutListas)){
+    scoutListas.forEach(lista=>{
+      (lista.jugadores||[]).forEach(e=>{ if(e.jugadorId===idDuplicado) e.jugadorId=idSuperviviente; });
+    });
+    if(typeof _scoutGuardarListasLocal==='function') _scoutGuardarListasLocal();
+  }
+
+  if(duplicado.statsManualBase){
+    superviviente.statsManualBase=superviviente.statsManualBase||{};
+    Object.keys(duplicado.statsManualBase).forEach(k=>{
+      superviviente.statsManualBase[k]=(superviviente.statsManualBase[k]||0)+(duplicado.statsManualBase[k]||0);
+    });
+  }
+  if(Array.isArray(duplicado.temporadas) && duplicado.temporadas.length){
+    superviviente.temporadas=[...(superviviente.temporadas||[]),...duplicado.temporadas];
+  }
+
+  jDB=jDB.filter(j=>j.id!==idDuplicado);
+  saveJDB();
+  if(partidosTocados.length) savePDB();
+  recalcularStatsDesdePartidos();
+
+  if(typeof _apiAdmin==='function') _apiAdmin('eliminarJugador',{id:idDuplicado}).catch(()=>{});
+  if(typeof scoutSincronizarJugador==='function') scoutSincronizarJugador(superviviente).catch(e=>console.warn('No se pudo resincronizar tras fusionar',e));
+  if(typeof scoutSincronizarPartidoVideo==='function'){
+    partidosTocados.forEach(p=>{ scoutSincronizarPartidoVideo(p).catch(e=>console.warn('No se pudo resincronizar partido tras fusionar',p.id,e)); });
+  }
+
+  return {partidosTocados:partidosTocados.length};
 }
 
 function _apActaBadgeConfianza(c){
@@ -15756,6 +15991,75 @@ function borrarJugadorDefinitivo(btn){
   });
 }
 
+// ── MODAL "DETECTAR Y FUSIONAR DUPLICADOS" ──────────────────────────
+function abrirModalDuplicados(){
+  if(!esAdminActual()){toast('Solo los administradores pueden fusionar jugadores',true);return;}
+  _renderDuplicadosLista();
+  document.getElementById('modal-duplicados').classList.add('open');
+}
+function cerrarModalDuplicados(){
+  document.getElementById('modal-duplicados').classList.remove('open');
+}
+function _dupJugCardHTML(j){
+  const nom=((j.nom||'')+' '+(j.ape||'')).trim()||'(sin nombre)';
+  const pj=(j.stats&&j.stats.p)||0, g=(j.stats&&j.stats.g)||0;
+  return `<div style="flex:1;min-width:0;background:var(--bg3);border-radius:8px;padding:8px 10px">
+    <div style="font-weight:700;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${eH(nom)}</div>
+    <div style="font-size:10px;color:var(--gris);margin-top:2px">#${eH(j.dor||'—')} · ${eH(j.club||'—')} · ${eH(j.temp||'—')}</div>
+    <div style="font-size:10px;color:var(--gris2);margin-top:2px">${pj} PJ · ${g} goles</div>
+  </div>`;
+}
+function _duplicadosSinIgnorados(){
+  return _detectarJugadoresDuplicados().filter(par=>!_duplicadosIgnorados.includes([par.a.id,par.b.id].sort().join('|')));
+}
+function _renderDuplicadosLista(){
+  const cont=document.getElementById('duplicados-lista');
+  const pares=_duplicadosSinIgnorados();
+  if(!pares.length){ cont.innerHTML='<p style="font-size:12px;color:var(--gris);text-align:center;padding:20px 0">✅ No se ha encontrado ningún par que parezca duplicado.</p>'; return; }
+  cont.innerHTML=pares.map((par,idx)=>`
+    <div style="border:1px solid var(--border);border-radius:10px;padding:10px;margin-bottom:8px">
+      <div style="font-size:10px;color:var(--gris2);margin-bottom:6px">🔎 ${eH(par.motivo)} (${Math.round(par.score*100)}% parecido)</div>
+      <div style="display:flex;gap:8px;align-items:stretch">
+        ${_dupJugCardHTML(par.a)}
+        ${_dupJugCardHTML(par.b)}
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn b-verde b-sm" style="flex:1" onclick="_fusionarDesdeModal('${eH(par.a.id)}','${eH(par.b.id)}',${idx})">⬅ Fusionar en el 1º</button>
+        <button class="btn b-verde b-sm" style="flex:1" onclick="_fusionarDesdeModal('${eH(par.b.id)}','${eH(par.a.id)}',${idx})">Fusionar en el 2º ➡</button>
+        <button class="btn b-ghost b-sm" onclick="_ignorarDuplicado(${idx})" title="No son la misma persona — no volver a sugerir este par en esta sesión">✕ No son el mismo</button>
+      </div>
+    </div>
+  `).join('');
+}
+// Pares descartados por el admin en esta sesión (no son la misma
+// persona) — solo en memoria, para no volver a ofrecerlos mientras
+// sigue repasando la lista; no se guarda entre sesiones a propósito
+// (si vuelve a aparecer en otra sesión, sigue siendo responsabilidad del
+// admin decidir de nuevo, en vez de esconderlo para siempre sin más).
+let _duplicadosIgnorados=[];
+function _ignorarDuplicado(idx){
+  const pares=_duplicadosSinIgnorados();
+  const par=pares[idx]; if(!par) return;
+  _duplicadosIgnorados.push([par.a.id,par.b.id].sort().join('|'));
+  _renderDuplicadosLista();
+}
+function _fusionarDesdeModal(idSuperviviente,idDuplicado,idx){
+  const superviviente=jDB.find(j=>j.id===idSuperviviente);
+  const duplicado=jDB.find(j=>j.id===idDuplicado);
+  if(!superviviente||!duplicado) return;
+  const nomS=((superviviente.nom||'')+' '+(superviviente.ape||'')).trim();
+  const nomD=((duplicado.nom||'')+' '+(duplicado.ape||'')).trim();
+  askDel(`¿Fusionar "${nomD}" dentro de "${nomS}"? Se borrará la ficha de "${nomD}" y todo su historial de partidos pasará a "${nomS}". No se puede deshacer.`,
+    ()=>{
+      const resultado=_fusionarJugadores(idSuperviviente,idDuplicado);
+      if(!resultado){ toast('No se ha podido fusionar',true); return; }
+      toast(`🔀 Fusionado — ${resultado.partidosTocados} partido(s) actualizado(s)`);
+      renderJDB();
+      _renderDuplicadosLista();
+    },
+    {titulo:'Fusionar jugadores',okTexto:'🔀 Fusionar',okClase:'b-verde'}
+  );
+}
 
 function edTabSwitch(tipo, tab) {
   const prefix = tipo === 'j' ? 'j' : 'e';
