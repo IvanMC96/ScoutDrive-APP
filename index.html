@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-17-3">
+<meta name="app-version" content="2026-09-23-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11776,6 +11776,25 @@ function _cargarPdfJs(){
   return _pdfJsCargando;
 }
 function _actaPdfNorm(s){ return _normalizarBusqueda(s).toUpperCase(); }
+/** Corre `promesa` con un plazo máximo: si no resuelve/rechaza en `ms`,
+ *  se resuelve con `valorSiExpira` en su lugar (sin cancelar la promesa
+ *  original, que sigue viva de fondo pero ya no bloquea a nadie). Sirve
+ *  de red de seguridad genérica para que un PDF "largo" con más páginas/
+ *  imágenes nunca deje la importación de acta colgada sin más — ver
+ *  _actaPdfDetectarIconosRojos e importarActaDesdePDF. */
+function _conTimeout(promesa,ms,valorSiExpira){
+  return new Promise((resolve,reject)=>{
+    let listo=false;
+    const acabarOk=v=>{ if(listo) return; listo=true; resolve(v); };
+    const acabarError=e=>{ if(listo) return; listo=true; reject(e); };
+    // Un rechazo REAL de la promesa original (un error de verdad) se
+    // propaga tal cual — solo se usa `valorSiExpira` cuando se agota el
+    // plazo sin que la promesa haya ni resuelto ni rechazado todavía, no
+    // como cajón de sastre para cualquier fallo.
+    promesa.then(acabarOk, acabarError);
+    setTimeout(()=>acabarOk(valorSiExpira), ms);
+  });
+}
 
 /** Agrupa una lista de items (ya de UNA columna: local o visitante, de
  *  una sola página) en "filas" por cercanía vertical — dorsal y nombre
@@ -11941,9 +11960,22 @@ async function _actaPdfDetectarIconosRojos(page,pdfjsLib){
   if(!posiciones.length) return [];
   const nombres=[...new Set(posiciones.map(p=>p.name))];
   const imagenes={};
+  // page.objs.get(nombre, callback) SOLO llama al callback cuando pdf.js
+  // consigue resolver esa imagen — si una ficha "larga" trae más fotos/
+  // escudos que una normal (más páginas, más jugadores, más iconos) y
+  // aunque sea UNA sola imagen la que pdf.js no llega a decodificar (un
+  // formato no soportado, un XObject corrupto, etc.), esa promesa se
+  // queda colgada PARA SIEMPRE y con ella todo Promise.all — que es
+  // justo el síntoma reportado ("se queda en Leyendo el PDF...' sin
+  // avanzar ni dar error). Cada imagen tiene aquí su propio plazo: si no
+  // resuelve a tiempo se la da por no-encontrada (mejor perder el color
+  // de UN icono que colgar la importación entera).
   await Promise.all(nombres.map(nombre=>new Promise(resolve=>{
-    try{ page.objs.get(nombre, img=>{ imagenes[nombre]=img; resolve(); }); }
-    catch(e){ resolve(); }
+    let listo=false;
+    const acabar=img=>{ if(listo) return; listo=true; if(img) imagenes[nombre]=img; resolve(); };
+    try{ page.objs.get(nombre, acabar); }
+    catch(e){ acabar(null); return; }
+    setTimeout(()=>acabar(null), 4000);
   })));
   let lienzo=null, ctxLienzo=null;
   const colorMedio=img=>{
@@ -12014,7 +12046,12 @@ async function _extraerTextoActaDesdePDF(file){
     // los detecta con la misma búsqueda de texto "roja" que ya usaba
     // para el texto pegado a mano (ver _actaPdfDetectarIconosRojos).
     let iconosRojos=[];
-    try{ iconosRojos=await _actaPdfDetectarIconosRojos(page,pdfjsLib); }catch(e){ iconosRojos=[]; }
+    // Plazo extra por página (además del que ya tiene cada imagen dentro
+    // de _actaPdfDetectarIconosRojos): una ficha larga con muchas páginas
+    // no debe poder colgar la lectura entera aunque, por lo que sea, una
+    // página entera tarde de más — mejor perder el color de las tarjetas
+    // de ESA página que dejar la importación sin terminar nunca.
+    try{ iconosRojos=await _conTimeout(_actaPdfDetectarIconosRojos(page,pdfjsLib),6000,[]); }catch(e){ iconosRojos=[]; }
     iconosRojos.forEach(ic=>limpio.push({str:'[ROJA]', x:ic.x, y:ic.y}));
     const anclasPagina=_actaPdfAnclasColumnas(limpio);
     if(anclasPagina) anclasFijas=anclasPagina;
@@ -12071,7 +12108,15 @@ async function importarActaDesdePDF(event){
   estado.textContent='⏳ Leyendo el PDF...';
   document.getElementById('ap-acta-preview').innerHTML='';
   let texto;
-  try{ texto=await _extraerTextoActaDesdePDF(file); }
+  try{
+    // Red de seguridad final: por muchas páginas/imágenes que traiga una
+    // ficha "larga", la lectura del PDF nunca debe quedarse colgada sin
+    // más en "Leyendo el PDF..." — a los 30s se corta y se avisa, en vez
+    // de dejar al usuario esperando indefinidamente sin ningún error.
+    const TIMEOUT='__acta_pdf_timeout__';
+    texto=await _conTimeout(_extraerTextoActaDesdePDF(file),30000,TIMEOUT);
+    if(texto===TIMEOUT) throw new Error('la lectura ha tardado demasiado (¿PDF muy largo o pesado?)');
+  }
   catch(e){
     estado.innerHTML='❌ No se pudo leer ese PDF ('+eH(String(e&&e.message||e))+'). Prueba a pegar el enlace de la ficha o su texto a mano, más abajo.';
     event.target.value='';
