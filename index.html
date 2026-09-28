@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-23-2">
+<meta name="app-version" content="2026-09-28-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -11367,6 +11367,15 @@ function buildApGoles(){
     // plantilla completa, como hasta ahora (ver _apPorterosDeEquipo).
     const nombresRival=_apPorterosDeEquipo(esVisit?nomLocal:nomVisit);
     const nomRival=esVisit?nomLocal:nomVisit;
+    // Si es un gol EN PROPIA PUERTA, quien lo marca pertenece al equipo
+    // CONTRARIO al que se le atribuye el gol (el que lo encaja, no el
+    // que se beneficia) — así que su desplegable/autocompletado de
+    // "Jugador (quién marca)" tiene que salir de la plantilla contraria,
+    // no de nombresEquipo/listaJug (que siguen siendo los del equipo al
+    // que cuenta el gol, usados tal cual para la Asistencia).
+    const nombresQuienMarca=g.propia?(esVisit?jugadoresLocal:jugadoresVisit):nombresEquipo;
+    const listaJugQuienMarca=g.propia?(esVisit?'ap-jugador-list-local':'ap-jugador-list-visitante'):listaJug;
+    const nomEquipoQuienMarca=g.propia?(esVisit?nomLocal:nomVisit):nomEquipoActual;
     const tieneClip=!!(g.clip && (g.clip.src || g.clip.blobURL || g.clip.portada));
     const detalleAbierto=!!g._abierto;
     return `
@@ -11379,10 +11388,11 @@ function buildApGoles(){
         </select>
         <button class="brm2" type="button" onclick="_apQuitarGol(${i})">✕</button>
       </div>
+      ${g.propia?`<p style="font-size:9px;color:var(--naranja-cl);margin:2px 0 0">🥅 En propia puerta — cuenta para ${eH(nomEquipoActual)}, pero quien lo mete es de ${eH(nomEquipoQuienMarca)}</p>`:''}
       <div class="g2">
         <div class="fg">
-          ${_apSelectRapidoHTML(nombresEquipo,`apGoles[${i}].jugador=this.value;buildApGoles()`,'— Sin jugadores en '+nomEquipoActual+' —')}
-          <input type="text" placeholder="Jugador (quién marca)" list="${listaJug}" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value" style="margin-top:4px">
+          ${_apSelectRapidoHTML(nombresQuienMarca,`apGoles[${i}].jugador=this.value;buildApGoles()`,'— Sin jugadores en '+nomEquipoQuienMarca+' —')}
+          <input type="text" placeholder="Jugador (quién marca)" list="${listaJugQuienMarca}" value="${eH(g.jugador||'')}" oninput="apGoles[${i}].jugador=this.value" style="margin-top:4px">
         </div>
         <div class="fg">
           ${_apSelectRapidoHTML(nombresEquipo,`apGoles[${i}].asistencia=this.value;buildApGoles()`,'— Sin jugadores en '+nomEquipoActual+' —')}
@@ -11401,10 +11411,15 @@ function buildApGoles(){
           </select>
         </div>
       </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);cursor:pointer">
-          <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
-        </label>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:12px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);cursor:pointer">
+            <input type="checkbox" style="width:auto" ${g.penalti?'checked':''} onchange="apGoles[${i}].penalti=this.checked"> De penalti
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--gris);cursor:pointer" title="El jugador que lo mete pertenece al equipo contrario al que se le atribuye el gol">
+            <input type="checkbox" style="width:auto" ${g.propia?'checked':''} onchange="apGolTogglePropia(${i},this.checked)"> 🥅 En propia puerta
+          </label>
+        </div>
         <button type="button" class="btn b-ghost b-sm" style="font-size:10px;padding:3px 8px" onclick="apGoles[${i}]._abierto=!apGoles[${i}]._abierto;buildApGoles()">
           ${detalleAbierto?'▾':'▸'} Más detalles${tieneClip?' 🎬':''}
         </button>
@@ -11469,7 +11484,21 @@ function _apDetalleGolHTML(g,i,nombresRival,nomRival){
 }
 
 function addApGol(){
-  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
+  apGoles.push({equipo:'local',minuto:null,jugador:'',asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,propia:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
+  buildApGoles();
+}
+/** Marca/desmarca a mano un gol de "Goles del partido" como en propia
+ *  puerta — igual criterio que _apActaGolTogglePropia() para los
+ *  detectados en el acta: el gol pasa a contar para el marcador del
+ *  equipo CONTRARIO al que tenía puesto (quien lo mete es del equipo que
+ *  lo encaja, no del que se beneficia). Aquí el "jugador" es un campo de
+ *  texto libre (no un id), así que no hay nada que limpiar al cambiar de
+ *  bando — solo cambia de qué plantilla tira el autocompletado/
+ *  desplegable rápido (ver nombresQuienMarca en buildApGoles). */
+function apGolTogglePropia(i,checked){
+  const g=apGoles[i]; if(!g) return;
+  g.propia=checked;
+  g.equipo=(g.equipo==='visitante')?'local':'visitante';
   buildApGoles();
 }
 
@@ -12993,14 +13022,26 @@ function _apActaTablaHTML(lado,titulo){
     ${tarjetasH}
   </div>`;
 }
+/** ¿De qué equipo hay que sacar el desplegable de "Jugador" de una fila
+ *  de gol? Normalmente el mismo al que se le atribuye el gol (g.equipo)
+ *  — pero si es un gol EN PROPIA PUERTA (g.propia), quien lo marca
+ *  pertenece al equipo CONTRARIO (el que lo encaja), no al que se
+ *  beneficia del gol — ver _apActaGolTogglePropia. */
+function _apActaGolRosterJugador(g){
+  const esVisit=g.equipo==='visitante';
+  const deVisitante=g.propia?!esVisit:esVisit;
+  return (deVisitante?g._opcionesVisit:g._opcionesLocal)||[];
+}
 /** Fila de la vista previa de un gol detectado en el acta: minuto,
  *  nombre tal cual sale en la ficha, y dos desplegables para corregir a
  *  mano el equipo y el jugador emparejado (por si el parecido de nombre
- *  se equivoca, o es un gol en propia puerta — el acta no lo distingue
- *  en texto plano, así que se deja siempre revisable). */
+ *  se equivoca), más la casilla "En propia puerta" — el acta nunca trae
+ *  esto en texto plano (no hay ninguna marca en la ficha, solo el
+ *  nombre de quien marca), así que lo tiene que marcar el admin a mano
+ *  si sabe que fue así. */
 function _apActaGolFilaHTML(idx,g,nomLocal,nomVisit){
   const esVisit=g.equipo==='visitante';
-  const opciones=(esVisit?g._opcionesVisit:g._opcionesLocal)||[];
+  const opciones=_apActaGolRosterJugador(g);
   const opcionesHTML=opciones.map(j=>`<option value="${eH(j.id)}"${j.id===g.jugadorId?' selected':''}>#${eH(j.dor||'—')} ${eH((j.nom+' '+j.ape).trim())}</option>`).join('');
   return `<tr>
     <td class="tmin">m.${eH(String(g.minuto??'—'))}</td>
@@ -13017,6 +13058,11 @@ function _apActaGolFilaHTML(idx,g,nomLocal,nomVisit){
       </select>
     </td>
     <td>${_apActaBadgeConfianza(g.confianza)}</td>
+    <td>
+      <label style="display:flex;align-items:center;gap:4px;font-size:9px;color:var(--gris);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" style="width:auto" ${g.propia?'checked':''} onchange="_apActaGolTogglePropia(${idx},this.checked)"> 🥅 Propia
+      </label>
+    </td>
   </tr>`;
 }
 function _apActaGolesTablaHTML(nomLocal,nomVisit){
@@ -13024,8 +13070,8 @@ function _apActaGolesTablaHTML(nomLocal,nomVisit){
   if(!goles.length) return '';
   return `<div style="margin-top:10px">
     <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">⚽ Goles detectados en el acta</p>
-    <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Al confirmar se añaden a "Goles del partido" (más abajo) con el minuto y el jugador — revisa aquí a quién se le ha emparejado cada uno. La forma del gol, la asistencia, si fue de penalti y el vídeo/miniatura se siguen añadiendo a mano, como hasta ahora.</p>
-    <table class="tgj"><thead><tr><th>Min.</th><th>Nombre (acta)</th><th>Equipo</th><th>Jugador</th><th></th></tr></thead><tbody>
+    <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Al confirmar se añaden a "Goles del partido" (más abajo) con el minuto y el jugador — revisa aquí a quién se le ha emparejado cada uno. Si fue en propia puerta, márcalo con "🥅 Propia": el gol pasará a contar para el equipo contrario y el jugador se elige de la plantilla de quien lo metió, no de quien se beneficia. La forma del gol, la asistencia, si fue de penalti y el vídeo/miniatura se siguen añadiendo a mano, como hasta ahora.</p>
+    <table class="tgj"><thead><tr><th>Min.</th><th>Nombre (acta)</th><th>Equipo</th><th>Jugador</th><th></th><th></th></tr></thead><tbody>
       ${goles.map((g,i)=>_apActaGolFilaHTML(i,g,nomLocal,nomVisit)).join('')}
     </tbody></table>
   </div>`;
@@ -13034,9 +13080,11 @@ function _apActaGolCambiarEquipo(idx,equipo){
   const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
   g.equipo=equipo;
   // Al cambiar de equipo a mano, el jugador emparejado ya no tiene
-  // sentido — se intenta reemparejar por nombre dentro del equipo nuevo,
-  // o se deja sin emparejar si no hay nadie parecido.
-  const roster=(equipo==='visitante'?g._opcionesVisit:g._opcionesLocal)||[];
+  // sentido — se intenta reemparejar por nombre dentro del equipo que le
+  // toca (el mismo si es un gol normal, el CONTRARIO si es en propia
+  // puerta — ver _apActaGolRosterJugador), o se deja sin emparejar si no
+  // hay nadie parecido.
+  const roster=_apActaGolRosterJugador(g);
   let jugador=null,score=0;
   roster.forEach(j=>{ const s=_actaPuntuacionNombre(g.nombreActa,j); if(s>score){ score=s; jugador=j; } });
   if(score<0.6) jugador=null;
@@ -13047,11 +13095,32 @@ function _apActaGolCambiarEquipo(idx,equipo){
 }
 function _apActaGolCambiarMatch(idx,jugadorId){
   const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
-  const roster=(g.equipo==='visitante'?g._opcionesVisit:g._opcionesLocal)||[];
+  const roster=_apActaGolRosterJugador(g);
   const j=roster.find(x=>x.id===jugadorId)||jDB.find(x=>x.id===jugadorId);
   g.jugadorId=jugadorId||null;
   g.jugadorNom=j?(j.nom+' '+j.ape).trim():null;
   g.confianza=jugadorId?'manual':'sin_match';
+}
+/** Marca/desmarca un gol de la vista previa como "en propia puerta": el
+ *  gol pasa a contar para el marcador del equipo CONTRARIO al que
+ *  encontró _actaEmparejarGoles() (quien mete un gol en propia juega en
+ *  el equipo que lo ENCAJA, no en el que se beneficia), sin perder el
+ *  jugador ya emparejado — normal en este caso concreto, porque el acta
+ *  sí trae su nombre real y el emparejamiento automático ya lo había
+ *  encontrado bien en SU equipo (ver _actaEmparejarGoles), solo que en
+ *  el bando equivocado para el marcador. Si el jugador emparejado ya no
+ *  pertenece al equipo que le toca tras el cambio (p.ej. si no había
+ *  ninguno emparejado todavía), se deja sin emparejar para elegirlo a
+ *  mano entre las opciones ya correctas. */
+function _apActaGolTogglePropia(idx,checked){
+  const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
+  g.propia=checked;
+  g.equipo=(g.equipo==='visitante')?'local':'visitante';
+  const rosterCorrecto=_apActaGolRosterJugador(g);
+  if(!g.jugadorId || !rosterCorrecto.some(j=>j.id===g.jugadorId)){
+    g.jugadorId=null; g.jugadorNom=null; g.confianza='sin_match';
+  }
+  _renderApActaPreview();
 }
 function _renderApActaPreview(){
   const cont=document.getElementById('ap-acta-preview'); if(!cont || !_apActaPreviewPendiente) return;
@@ -13174,7 +13243,7 @@ function _apActaAnadirGolesDetectados(goles){
       if(g.jugadorId && existente.jugador!==nombre) existente.jugador=nombre;
       return;
     }
-    apGoles.push({equipo,minuto:g.minuto??null,jugador:nombre,asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
+    apGoles.push({equipo,minuto:g.minuto??null,jugador:nombre,asistencia:'',origen:'Ataque Organizado',subtipo:'',penalti:false,propia:!!g.propia,zona:ZONAS[0]||'',cuerpo:CUERPOS[0]||'',portero:'',desc:'',clip:null,_abierto:false});
     anadidos++;
   });
   buildApGoles();
@@ -13272,11 +13341,16 @@ function _tallyGolesJugadores(){
   // Fuente 1: goles registrados en Partidos (videoteca) — jugador/asistencia
   pDB.forEach(p=>{
     (p.goles||[]).forEach(g=>{
-      if(g.jugador) sumarSiTemporadaOk(g.jugador,'g',p.temp);
-      if(g.asistencia) sumarSiTemporadaOk(g.asistencia,'a',p.temp);
+      // Un gol EN PROPIA PUERTA (g.propia) no se le apunta como "gol
+      // marcado" a quien lo mete — cuenta para el marcador del equipo
+      // contrario (eso ya lo resuelve g.equipo, ver _apActaGolTogglePropia/
+      // apGolTogglePropia), pero no es un gol a su favor en su ficha
+      // personal. Tampoco tiene sentido una asistencia de un gol así.
+      if(g.jugador && !g.propia) sumarSiTemporadaOk(g.jugador,'g',p.temp);
+      if(g.asistencia && !g.propia) sumarSiTemporadaOk(g.asistencia,'a',p.temp);
       // "ABP goles" — mismo origen táctico que ya se elige por cada gol
       // en "Editar partido" (Más detalles → Origen), sin pedir nada nuevo.
-      if(g.jugador && g.origen==='ABP Ofensiva') sumarSiTemporadaOk(g.jugador,'ab',p.temp);
+      if(g.jugador && g.origen==='ABP Ofensiva' && !g.propia) sumarSiTemporadaOk(g.jugador,'ab',p.temp);
     });
     // Portería a cero y goles recibidos: se deducen del marcador — si el
     // rival no marca, el portero de ese equipo suma una portería a cero;
@@ -13639,7 +13713,13 @@ function sincronizarTacticaDesdePartidos(){
       // rápida de gol" — marcado con el mismo srcPartido para poder
       // quitarlo y regenerarlo sin duplicar en el siguiente guardado.
       golesLado.forEach((g,i)=>{
-        if(!g.jugador || !g.origen) return;
+        // Un gol en propia puerta (g.propia) NUNCA se apunta en la ficha
+        // TÁCTICA de quien lo mete — no es un gol suyo a favor de nadie,
+        // es un fallo contra su propio equipo, así que no tiene sentido
+        // guardarlo con "rival: <su propio equipo>" en su taxonomía (ver
+        // _tallyGolesJugadores, que por la misma razón tampoco lo suma a
+        // su contador de goles).
+        if(!g.jugador || !g.origen || g.propia) return;
         const jid=jugadorIdPorNombre(g.jugador);
         if(!jid) return;
         const j=jDB.find(x=>x.id===jid); if(!j) return;
@@ -14060,6 +14140,7 @@ function calcularTodosLosGoles(){
         portero:g.portero||'',
         asistencia:g.asistencia||'',
         penalti:!!g.penalti,
+        propia:!!g.propia,
         fuente:'Partido'
       });
     });
@@ -14376,7 +14457,7 @@ function _golesFiltrados(){
  *  para poder reutilizarla al pintar cada grupo de liga por separado. */
 function _golFilaHTML(g){
   return `<tr>
-      <td style="font-weight:700;color:var(--blanco);cursor:${g.jugadorId?'pointer':'default'}" ${g.jugadorId?`onclick="irAJugador('${g.jugadorId}')"`:''}>${eH(g.jugador)}</td>
+      <td style="font-weight:700;color:var(--blanco);cursor:${g.jugadorId?'pointer':'default'}" ${g.jugadorId?`onclick="irAJugador('${g.jugadorId}')"`:''}>${eH(g.jugador)}${g.propia?' <span class="tbdg to-def" title="En propia puerta — cuenta para el rival, no como gol suyo">🥅 pp</span>':''}</td>
       <td style="cursor:pointer" onclick="irAEquipoPorNombre('${eH(g.equipo).replace(/'/g,"\\'")}')">${eH(g.equipo)}</td>
       <td style="font-size:10px;color:var(--gris2)">${eH(g.rival)}</td>
       <td class="tg-min">${g.minuto!=null?'m.'+g.minuto:'—'}</td>
