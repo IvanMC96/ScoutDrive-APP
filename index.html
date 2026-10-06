@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-09-28-1">
+<meta name="app-version" content="2026-10-06-3">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -1626,7 +1626,7 @@ body.solo-lectura .ed-panel-form {
         </div>
         <div class="fg2">
           <div class="fg"><label>Posición</label>
-            <select id="jpos" onchange="renderJ()">
+            <select id="jpos" onchange="_actualizarOpcionesPerfil();renderJ()">
               <option>Delantero centro</option><option>Segunda punta</option><option>Extremo derecho</option><option>Extremo izquierdo</option>
               <option>Mediapunta</option><option>Mediocentro ofensivo</option><option>Mediocentro</option>
               <option>Mediocentro defensivo</option><option>Lateral derecho</option><option>Lateral izquierdo</option>
@@ -1637,6 +1637,10 @@ body.solo-lectura .ed-panel-form {
             <input id="jtemp" list="jtemp-list" placeholder="ej: 2026-2027" oninput="renderJ()">
             <datalist id="jtemp-list"></datalist>
           </div>
+        </div>
+        <div class="fg">
+          <label>Perfil <span style="color:var(--gris);font-weight:400">(el matiz dentro de la posición — p.ej. "Delantero de rupturas")</span></label>
+          <select id="jperfil" onchange="renderJ()"><option value="">— Sin especificar —</option></select>
         </div>
         <div class="fg2">
           <div class="fg"><label>Club</label>
@@ -2334,9 +2338,13 @@ body.solo-lectura .ed-panel-form {
       <input type="search" id="scout-q" placeholder="🔍 Buscar jugador..." oninput="renderScoutingBuscador()">
       <select id="scout-fil-equipo" onchange="renderScoutingBuscador()" style="width:170px;padding:7px 10px;font-size:12px"><option value="">Todos los equipos</option></select>
       <select id="scout-fil-liga" onchange="renderScoutingBuscador()" style="width:160px;padding:7px 10px;font-size:12px"><option value="">Todas las ligas</option></select>
-      <select id="scout-fil-pos" onchange="renderScoutingBuscador()" style="width:170px;padding:7px 10px;font-size:12px"><option value="">Todas las posiciones</option></select>
+      <select id="scout-fil-pos" onchange="_scoutActualizarFiltroPerfil();renderScoutingBuscador()" style="width:170px;padding:7px 10px;font-size:12px"><option value="">Todas las posiciones</option></select>
+      <select id="scout-fil-perfil" onchange="renderScoutingBuscador()" style="width:210px;padding:7px 10px;font-size:12px"><option value="">Todos los perfiles</option></select>
       <input type="number" id="scout-fil-edad-min" placeholder="Edad mín." style="width:90px;padding:7px 10px;font-size:12px" oninput="renderScoutingBuscador()">
       <input type="number" id="scout-fil-edad-max" placeholder="Edad máx." style="width:90px;padding:7px 10px;font-size:12px" oninput="renderScoutingBuscador()">
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--gris);white-space:nowrap;padding:0 4px">
+        <input type="checkbox" id="scout-fil-descartados" onchange="renderScoutingBuscador()" style="width:auto"> 🚫 Ver descartados
+      </label>
     </div>
     <div class="cards-grid" id="scout-buscador-grid"></div>
   </div>
@@ -3980,7 +3988,7 @@ async function loadImgAnuncio(e){
   const f=e.target.files[0]; if(!f) return;
   // Logo de patrocinador: PNG para conservar transparencia si la lleva.
   const dataUrl = await _comprimirImagenArchivo(f, {maxDim:500, formato:'image/png'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); e.target.value=''; return; }
   _adImgTmp=dataUrl;
   document.getElementById('pv-anuncio').innerHTML=`<img src="${dataUrl}" class="uz-img">`;
   document.getElementById('uz-anuncio').classList.add('has');
@@ -4298,7 +4306,7 @@ let imgStore={};
  *  cual (nunca bloquea la subida por un fallo de compresión). */
 function _comprimirImagenArchivo(file, opts){
   const {maxDim=640, calidad=0.82, formato='image/jpeg'} = opts||{};
-  return new Promise((resolve)=>{
+  const intento = new Promise((resolve)=>{
     const reader=new FileReader();
     reader.onload=(ev)=>{
       const original=ev.target.result;
@@ -4322,6 +4330,17 @@ function _comprimirImagenArchivo(file, opts){
     reader.onerror=()=>resolve(null);
     reader.readAsDataURL(file);
   });
+  // Plazo de seguridad: si el archivo es de un formato que el navegador
+  // no sabe decodificar (p.ej. HEIC, el formato por defecto de muchos
+  // móviles) o viene de una carpeta sincronizada con la nube ("mi
+  // unidad") cuyo archivo todavía es solo un marcador sin descargar del
+  // todo, ni "onload" ni "onerror" llegan a dispararse NUNCA — la subida
+  // se queda pensando para siempre sin ningún aviso, exactamente el
+  // mismo tipo de cuelgue silencioso que ya se arregló para los PDF de
+  // actas largos (ver _conTimeout). Se usa null como señal de "no se
+  // pudo" para que quien llame pueda avisar con un error claro en vez de
+  // quedarse con la rueda girando sin fin.
+  return (typeof _conTimeout==='function') ? _conTimeout(intento, 20000, null) : intento;
 }
 
 async function loadImg(e,key){
@@ -4329,10 +4348,19 @@ async function loadImg(e,key){
   // 'jfoto' es una foto de persona (JPEG); 'jesc'/'eesc' son escudos de
   // club (PNG, para conservar la transparencia del logo).
   const esFoto = key==='jfoto';
+  // Aviso de que se está procesando: comprimir una foto tal cual sale de
+  // un móvil puede tardar unos segundos, y antes no había NINGÚN aviso
+  // mientras tanto — se sentía como que "no pasaba nada" aunque sí
+  // estuviera trabajando.
+  toast('⏳ Procesando imagen...');
   const dataUrl = await _comprimirImagenArchivo(f, esFoto
     ? {maxDim:640, calidad:0.82, formato:'image/jpeg'}
     : {maxDim:500, formato:'image/png'});
-  if(!dataUrl) return;
+  if(!dataUrl){
+    toast('No se pudo procesar esa imagen (puede ser un formato no compatible, como HEIC, o un archivo de una carpeta de la nube aún sin descargar del todo) — prueba con otra foto en JPG o PNG',true);
+    e.target.value='';
+    return;
+  }
   imgStore[key]=dataUrl;uzZone(key,dataUrl);
   if(key.startsWith('j'))renderJ();else if(key.startsWith('e'))renderE();
 }
@@ -4510,7 +4538,7 @@ function buildJHighlight(){
   c.appendChild(div);
   if(h.portada){const pz=div.querySelector('.clip-portada-zona');if(pz)pz.onclick=()=>document.getElementById('jpf-highlight').click();}
 }
-async function loadJHighlightPortada(e){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl)return;jHighlight.portada=dataUrl;buildJHighlight();renderJ();}
+async function loadJHighlightPortada(e){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl){toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true);e.target.value='';return;}jHighlight.portada=dataUrl;buildJHighlight();renderJ();}
 function rmJHighlightPortada(e){e.stopPropagation();jHighlight.portada=null;buildJHighlight();renderJ();}
 function loadJHighlightVideoFile(e){const f=e.target.files[0];if(!f)return;if(jHighlight.blobURL)URL.revokeObjectURL(jHighlight.blobURL);const url=URL.createObjectURL(f);jHighlight.blobURL=url;jHighlight.src=url;jHighlight.srcType='blob';if(!jHighlight.titulo)jHighlight.titulo=f.name.replace(/\.[^.]+$/,'');buildJHighlight();renderJ();toast('🌟 Vídeo destacado cargado');}
 function applyJHighlightURL(){let u=(document.getElementById('jhurl')||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jHighlight.srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jHighlight.srcType='youtube';else jHighlight.srcType='direct';if(jHighlight.blobURL)URL.revokeObjectURL(jHighlight.blobURL);jHighlight.blobURL=null;jHighlight.src=u;buildJHighlight();renderJ();}
@@ -4667,7 +4695,7 @@ function _trayEditarCampo(esActual,idx,campo,valor){
 async function _catLogoSubir(inputEl,categoriaNombre){
   const f=inputEl.files&&inputEl.files[0]; if(!f||!categoriaNombre) return;
   const dataUrl=await _comprimirImagenArchivo(f,{maxDim:300,formato:'image/png'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); inputEl.value=''; return; }
   catLogos[categoriaNombre]=dataUrl;
   saveCatLogos();
   renderJ();
@@ -4869,6 +4897,50 @@ const POS_ORDEN_LISTA={
   'Extremo derecho':4,'Extremo izquierdo':4,
   'Delantero centro':5,'Segunda punta':5
 };
+
+// ── PERFIL TÁCTICO (matiz dentro de la posición) ────────────────────
+// No es "la posición" (eso ya lo dice jpos) sino CÓMO juega esa posición
+// — el mismo matiz que usaría un entrenador/analista al describir a un
+// jugador: no solo "es delantero", sino "es un delantero de rupturas".
+// Un solo set de perfiles por CADA FAMILIA de posición (varias posiciones
+// de jpos pueden compartir familia, p.ej. Mediapunta y Mediocentro
+// ofensivo comparten los perfiles de mediocentro).
+const PERFIL_DELANTERO=['Delantero móvil','Delantero de referencia','Delantero de rupturas'];
+const PERFIL_EXTREMO=['Extremo de 1c1','Extremo centrador','Extremo-interior','Extremo de rupturas'];
+const PERFIL_MEDIOCENTRO=['Mediocentro defensivo','Mediocentro posicional','Mediocentro ofensivo (MCO)','Mediocentro de creación'];
+const PERFIL_LATERAL=['Lateral ofensivo','Lateral defensivo','Carrilero'];
+const PERFIL_CENTRAL=['Central ganador de disputas','Central ganador de duelos','Central defensa de área','Central con buen pie'];
+const PERFIL_PORTERO=['Portero ágil','Portero con buen pie','Portero seguro en el juego aéreo'];
+const PERFILES_POR_POSICION={
+  'Delantero centro':PERFIL_DELANTERO,'Segunda punta':PERFIL_DELANTERO,
+  'Extremo derecho':PERFIL_EXTREMO,'Extremo izquierdo':PERFIL_EXTREMO,
+  'Mediapunta':PERFIL_MEDIOCENTRO,'Mediocentro ofensivo':PERFIL_MEDIOCENTRO,
+  'Mediocentro':PERFIL_MEDIOCENTRO,'Mediocentro defensivo':PERFIL_MEDIOCENTRO,
+  'Lateral derecho':PERFIL_LATERAL,'Lateral izquierdo':PERFIL_LATERAL,
+  'Central':PERFIL_CENTRAL,
+  'Portero':PERFIL_PORTERO,
+};
+/** Todos los perfiles posibles, sin repetir — cada etiqueta ya dice por
+ *  sí sola a qué familia de posición pertenece ("Delantero...",
+ *  "Extremo...", etc.), así que se puede mostrar de golpe sin agrupar
+ *  cuando no hay ninguna posición concreta elegida en el filtro. */
+function _todosLosPerfiles(){
+  return [...new Set(Object.values(PERFILES_POR_POSICION).flat())];
+}
+/** Repuebla el <select id="jperfil"> del formulario de ficha con los
+ *  perfiles que correspondan a la posición actualmente elegida en
+ *  "jpos", conservando el valor ya puesto si sigue siendo válido para
+ *  la nueva posición (y vaciándolo si no, en vez de dejar un valor que
+ *  ya no pega con la posición recién elegida). */
+function _actualizarOpcionesPerfil(){
+  const sel=document.getElementById('jperfil');
+  if(!sel) return;
+  const posActual=document.getElementById('jpos')?.value||'';
+  const actual=sel.value;
+  const opciones=PERFILES_POR_POSICION[posActual]||[];
+  sel.innerHTML='<option value="">— Sin especificar —</option>'+opciones.map(p=>`<option value="${eH(p)}">${eH(p)}</option>`).join('');
+  sel.value=opciones.includes(actual)?actual:'';
+}
 // ── DB ────────────────────────────────────────────────────────────
 function renderJDB(){
   let _huboReparoJ=false;
@@ -5307,10 +5379,34 @@ function _cmpBarraTexto(valor,max,ancho=10){
   return '█'.repeat(Math.min(ancho,llenas))+'░'.repeat(Math.max(0,ancho-llenas));
 }
 
+/** Foto de jugador que no carga (enlace de Drive caído, permiso aún sin
+ *  propagar...) en los sitios donde el <img> no llevaba ningún
+ *  "onerror" — antes se veía el icono de foto rota del navegador, en
+ *  vez del mismo círculo con iniciales que ya se usa cuando el jugador
+ *  directamente no tiene foto puesta. Sustituye el <img> por un <div>
+ *  con las iniciales: si se pasa claseFallback, reutiliza la clase CSS
+ *  que ya pinta ese "sin foto" en ese sitio concreto (mismo tamaño,
+ *  mismo color) — si no, copia el tamaño del propio <img> (estilo en
+ *  línea) y usa el color de avatar que se le pase. */
+function _avatarJugadorError(img, iniciales, claseFallback, color){
+  const div=document.createElement('div');
+  if(claseFallback){
+    div.className=claseFallback;
+  } else {
+    if(img.className) div.className=img.className;
+    div.style.cssText=img.style.cssText;
+    div.style.display='flex';div.style.alignItems='center';div.style.justifyContent='center';
+    div.style.background=color||'var(--azul-dk)';div.style.color='#fff';div.style.fontWeight='800';
+    const anchoRef=parseInt(img.style.width,10)||img.offsetWidth||32;
+    div.style.fontSize=Math.round(anchoRef*.34)+'px';
+  }
+  div.textContent=iniciales||'?';
+  img.replaceWith(div);
+}
 function _cmpJugadorAvatarHTML(j,sz){
   const avColor=j.avColor||colorDeEquipoPorNombre(j.club)||'#2f81f7';
   return j.imgJug
-    ? `<img src="${eH(j.imgJug)}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover">`
+    ? `<img src="${eH(j.imgJug)}" style="width:${sz}px;height:${sz}px;border-radius:50%;object-fit:cover" onerror="_avatarJugadorError(this,'${eH(ini(j.nom,j.ape)||'?')}',null,'${eH(avColor)}')">`
     : `<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${eH(avColor)};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:${Math.round(sz*.34)}px">${eH(ini(j.nom,j.ape)||'?')}</div>`;
 }
 
@@ -5461,6 +5557,8 @@ function nuevoJ(){
   poblarSelectClubJugador();
   document.getElementById('jtemp').value=_valoresUnicos(jDB,'temp').slice(-1)[0]||'2025-26';
   document.getElementById('jdor').value='9';
+  _actualizarOpcionesPerfil();
+  document.getElementById('jperfil').value='';
   document.getElementById('javcolor').value='#2f81f7';
   document.getElementById('javcolor-hex').value='';
   jForma=Array(10).fill('nada');jGoles=[];jClips=[];jClipsGC=[];jRadar=Array(jRadarEjes.length).fill(50);jGK=Array(jGKEjes.length).fill(50);
@@ -5479,6 +5577,7 @@ function editJ(id){
   poblarDatalistTemporadasJugador();
   poblarSelectClubJugador();
   S('jnom',j.nom);S('jape',j.ape);S('jdor',j.dor);S('jpos',j.pos);S('jtemp',j.temp);
+  _actualizarOpcionesPerfil();S('jperfil',j.perfil);
   S('jclub',j.club);S('jnac',j.nac);S('jedad',j.edad);S('jpie',j.pie);
   S('kg',j.stats?.g);S('ka',j.stats?.a);S('kp',j.stats?.p);S('kpt',j.stats?.pt);S('kps',j.stats?.ps);S('kab',j.stats?.ab);S('kpz',j.stats?.pz);S('kgr',j.stats?.gr);S('kmj',j.stats?.min);S('kta',j.stats?.ta);S('ktr',j.stats?.tr);
   S('kf',pctMinutosJugados(j.stats?.min,j.stats?.p));
@@ -5539,7 +5638,7 @@ function guardarJ(){
   const golesEncSincronizados=(jPrevio?.golesEncajados||[]).filter(g=>g.srcPartido);
   const clipsGCSincronizados=(jPrevio?.clipsGC||[]).filter(c=>c.srcPartido);
   const golesEncManualGuardar=jGolesEncajados.filter(g=>!g.srcPartido);
-  const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
+  const j={id,nom,ape:G('jape'),dor:G('jdor'),pos:G('jpos'),perfil:G('jperfil')||'',temp:G('jtemp'),club:G('jclub'),nac:G('jnac'),edad:G('jedad'),pie:G('jpie'),
     avColor:G('javcolor-hex').trim()||'',
     stats:{g:GN('kg'),a:GN('ka'),p:GN('kp'),pt:GN('kpt'),ps:GN('kps'),m:0,ab:GN('kab'),f:pctMinutosJugados(GN('kmj'),GN('kp')),pz:GN('kpz'),gr:GN('kgr'),min:GN('kmj'),ta:GN('kta'),tr:GN('ktr')},
     orig:{atq:GN('oatq'),abp:GN('oabp'),cl:GN('ocl'),jd:GN('ojd'),ffr:GN('offr'),trn:GN('otrn')},
@@ -5732,7 +5831,7 @@ function buildJClips(){
 }
 function addJClip(){jClips.push({id:jClipCnt++,titulo:'',rival:'',tipo:'Ataque Organizado',srcType:'',src:'',portada:null,blobURL:null});buildJClips();renderJ();}
 function removeJClip(id){const c=jClips.find(x=>x.id===id);if(c?.blobURL){URL.revokeObjectURL(c.blobURL);delete _clipBlobRegistro()[id];}jClips=jClips.filter(x=>x.id!==id);buildJClips();renderJ();}
-async function loadJPortada(e,cid){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl)return;const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=dataUrl;buildJClips();renderJ();}}
+async function loadJPortada(e,cid){const f=e.target.files[0];if(!f)return;const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});if(!dataUrl){toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true);e.target.value='';return;}const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=dataUrl;buildJClips();renderJ();}}
 function rmJPortada(cid,e){e.stopPropagation();const idx=jClips.findIndex(c=>c.id===cid);if(idx>=0){jClips[idx].portada=null;buildJClips();renderJ();}}
 function loadJVideoFile(e,i){const f=e.target.files[0];if(!f)return;if(jClips[i]?.blobURL){URL.revokeObjectURL(jClips[i].blobURL);delete _clipBlobRegistro()[jClips[i].id];}const url=URL.createObjectURL(f);jClips[i].blobURL=url;jClips[i].src=url;jClips[i].srcType='blob';_clipBlobRegistro()[jClips[i].id]=url;if(!jClips[i].titulo)jClips[i].titulo=f.name.replace(/\.[^.]+$/,'');buildJClips();renderJ();toast('🎬 Vídeo cargado — ya puedes reproducirlo abajo');}
 function applyJURL(i){let u=(document.getElementById('jcurl-'+jClips[i].id)||{}).value?.trim();if(!u)return;const gd=u.match(/\/d\/([a-zA-Z0-9_-]+)/);if(gd){u=`https://drive.google.com/file/d/${gd[1]}/preview`;jClips[i].srcType='gdrive';}else if(/youtube\.com|youtu\.be/.test(u))jClips[i].srcType='youtube';else jClips[i].srcType='direct';if(jClips[i].blobURL){URL.revokeObjectURL(jClips[i].blobURL);delete _clipBlobRegistro()[jClips[i].id];}jClips[i].blobURL=null;jClips[i].src=u;buildJClips();renderJ();}
@@ -8367,7 +8466,7 @@ function renderE(){
         // ── Destacados de la plantilla (se recalculan solos cada vez) ──
         const destacado=(tit,j,valorTxt,color,icono)=>{
           if(!j) return `<div class="feq-plant-hl"><div class="feq-plant-hl-tit">${icono} ${tit}</div><div class="feq-plant-hl-empty">Sin datos todavía</div></div>`;
-          const av=j.imgJug?`<img src="${eH(j.imgJug)}" class="feq-plant-hl-av">`:`<div class="feq-plant-hl-av feq-plant-hl-av-fb">${eH(ini(j.nom,j.ape)||'?')}</div>`;
+          const av=j.imgJug?`<img src="${eH(j.imgJug)}" class="feq-plant-hl-av" onerror="_avatarJugadorError(this,'${eH(ini(j.nom,j.ape)||'?')}','feq-plant-hl-av feq-plant-hl-av-fb')">`:`<div class="feq-plant-hl-av feq-plant-hl-av-fb">${eH(ini(j.nom,j.ape)||'?')}</div>`;
           return `<div class="feq-plant-hl">
             <div class="feq-plant-hl-tit">${icono} ${tit}</div>
             <div class="feq-plant-hl-row">
@@ -8401,7 +8500,7 @@ function renderE(){
             <div class="feq-plantilla-col-tit" style="color:${col};border-color:${col}44">${grupo} <span style="color:var(--gris);font-weight:600">(${lista.length})</span></div>
             ${lista.map(j=>{
               const av=j.imgJug
-                ?`<img loading="lazy" src="${eH(j.imgJug)}" class="feq-plant-av">`
+                ?`<img loading="lazy" src="${eH(j.imgJug)}" class="feq-plant-av" onerror="_avatarJugadorError(this,'${eH(ini(j.nom,j.ape)||'?')}','feq-plant-av feq-plant-av-fb')">`
                 :`<div class="feq-plant-av feq-plant-av-fb">${eH(ini(j.nom,j.ape)||'?')}</div>`;
               return `<div class="feq-plant-row">
                 ${av}
@@ -8678,7 +8777,7 @@ async function loadImgCfg(e){
   const f=e.target.files[0];if(!f)return;
   // Logo de la plataforma: PNG para conservar transparencia si la lleva.
   const dataUrl = await _comprimirImagenArchivo(f, {maxDim:400, formato:'image/png'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); e.target.value=''; return; }
   cfg.logo=dataUrl;cfgPreview();initCfgForm();
 }
 function loadLogoURL(){
@@ -9278,7 +9377,7 @@ function buildEClips(){
 async function loadEPortada(event,cid){
   const file=event.target.files[0]; if(!file) return;
   const dataUrl = await _comprimirImagenArchivo(file, {maxDim:480, calidad:0.8, formato:'image/jpeg'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); event.target.value=''; return; }
   const idx=eClips.findIndex(c=>c.id===cid);
   if(idx>=0){ eClips[idx].portada=dataUrl; buildEClips(); renderE(); }
 }
@@ -11146,6 +11245,32 @@ function renderPartidos(){
   wrap.innerHTML = html;
 }
 
+/** Portada de un partido que no carga (ver _cardPartido): algunas son
+ *  enlaces de miniatura de Google Drive (https://drive.google.com/
+ *  thumbnail?id=...), que a veces fallan la primera vez por un permiso
+ *  recién compartido que todavía no se ha propagado del todo, o por un
+ *  corte puntual de red — antes se ocultaba la imagen sin más y se veía
+ *  un hueco negro vacío donde sí había portada puesta. Ahora se
+ *  reintenta una vez (con un pequeño parámetro para evitar que el
+ *  propio navegador sirva el mismo fallo cacheado) y, si sigue sin
+ *  cargar, se cae al icono ⚽ por defecto para que quede claro que es
+ *  "sin portada", no "algo roto". Los enlaces base64 (portada subida a
+ *  mano) no se reintentan — si fallan es porque el dato está mal, no
+ *  por la red, así que se va directo al icono. */
+function _thumbPartidoError(img){
+  const original = img.dataset.srcOrig || img.currentSrc || img.src;
+  if(!img.dataset.srcOrig) img.dataset.srcOrig = original;
+  if(!img.dataset.reintentado && !original.startsWith('data:')){
+    img.dataset.reintentado = '1';
+    setTimeout(() => {
+      img.src = original + (original.includes('?') ? '&' : '?') + '_r=' + Date.now();
+    }, 1200);
+    return;
+  }
+  img.style.display = 'none';
+  if(img.nextElementSibling && img.nextElementSibling.classList.contains('partido-thumb-ph')) return;
+  img.insertAdjacentHTML('afterend', '<div class="partido-thumb-default partido-thumb-ph"><span>⚽</span></div>');
+}
 function _cardPartido(p){
   const gf = p.gf ?? '', gc = p.gc ?? '';
   const resultado = (gf!==''&&gc!=='') ? `${gf} - ${gc}` : 'vs';
@@ -11153,7 +11278,7 @@ function _cardPartido(p){
   const urlDescarga = tieneVideo && _tipoVideo(p.urlNorm)==='drive' ? _urlDescargaDrivePartido(p) : null;
   const fecha = p.fecha ? new Date(p.fecha).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}) : '';
   const thumbH = p.thumb
-    ? `<img loading="lazy" src="${p.thumb}" onerror="this.style.display='none'">`
+    ? `<img loading="lazy" src="${p.thumb}" onerror="_thumbPartidoError(this)">`
     : `<div class="partido-thumb-default"><span>⚽</span></div>`;
 
   return `<div class="partido-card" onclick="verPartido('${p.id}')">
@@ -11571,7 +11696,7 @@ async function _apLoadPortada(i,e){
   const f=e.target.files[0]; if(!f) return;
   const g=apGoles[i]; if(!g) return;
   const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); e.target.value=''; return; }
   if(!g.clip) g.clip={};
   g.clip.portada=dataUrl;
   _apRefrescarPortadaPreview(i);
@@ -12252,7 +12377,14 @@ function _actaExtraerGolesCrudo(texto){
   return out;
 }
 
-const _ACTA_RE_NOMBRE='[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45},\\s*[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .\'\\-]{1,45}';
+// Algunas actas de la federación escriben el nombre de un jugador
+// concreto en minúsculas/capitalizado ("Menudo Dominguez, Juan Carlos")
+// en vez de en mayúsculas como el resto de la ficha (visto en un gol de
+// tiempo de descuento, 90'+6, que por eso no se estaba detectando: el
+// patrón exigía TODO en mayúsculas). Se permite minúscula en el cuerpo
+// de cada parte del nombre, pero cada parte sigue teniendo que empezar
+// por mayúscula, para no confundir con texto normal de la ficha.
+const _ACTA_RE_NOMBRE='[A-ZÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜáéíóúñü .\'\\-]{1,45},\\s*[A-ZÁÉÍÓÚÑÜ][A-Za-zÁÉÍÓÚÑÜáéíóúñü .\'\\-]{1,45}';
 /** Extrae todas las apariciones de "dorsal + NOMBRE, Apellidos" de un
  *  trozo de texto (sin importar si dorsal y nombre están en la misma
  *  línea o en dos seguidas), como [{dorsal,nombre,indice}]. */
@@ -13261,8 +13393,17 @@ function _resetThumbPreview(){
 async function cargarThumbPartido(e){
   const file = e.target.files[0];
   if(!file) return;
+  // Mismo aviso que en loadImg(): procesar la foto puede tardar unos
+  // segundos y, sin este mensaje, la zona de "Subir portada" se queda
+  // en silencio todo ese rato — parece que "se ha quedado ahí" aunque
+  // esté trabajando.
+  toast('⏳ Procesando portada...');
   const dataUrl = await _comprimirImagenArchivo(file, {maxDim:640, calidad:0.82, formato:'image/jpeg'});
-  if(!dataUrl) return;
+  if(!dataUrl){
+    toast('No se pudo procesar esa imagen (puede ser un formato no compatible, como HEIC, o un archivo de una carpeta de la nube aún sin descargar del todo) — prueba con otra foto en JPG o PNG',true);
+    e.target.value='';
+    return;
+  }
   window._thumbBase64 = dataUrl;
   document.getElementById('ap-thumb-img').src = dataUrl;
   document.getElementById('ap-thumb-preview').style.display = 'block';
@@ -14237,7 +14378,7 @@ function _agApplyVideoURL(){
 async function _agLoadPortada(e){
   const f=e.target.files[0]; if(!f) return;
   const dataUrl=await _comprimirImagenArchivo(f,{maxDim:480,calidad:0.8,formato:'image/jpeg'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); e.target.value=''; return; }
   _agClipTmp.portada=dataUrl;
   _agRefrescarPortadaPreview();
 }
@@ -14785,7 +14926,7 @@ function rmGCPortada(i,e){e.stopPropagation();if(eClipsGC[i]){eClipsGC[i].portad
 async function loadGCPortada(e,i){
   const f=e.target.files[0]; if(!f) return;
   const dataUrl = await _comprimirImagenArchivo(f, {maxDim:480, calidad:0.8, formato:'image/jpeg'});
-  if(!dataUrl) return;
+  if(!dataUrl){ toast('No se pudo procesar esa imagen — prueba con otra foto o formato (JPG/PNG)',true); e.target.value=''; return; }
   eClipsGC[i].portada=dataUrl;
   document.getElementById('gcpz-'+i).innerHTML=
     `<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:5px">`;
@@ -15004,6 +15145,58 @@ async function _scoutGuardarListaCambios(lista){
 function _scoutListaActual(){
   return scoutListas.find(l=>l.id===_scoutListaAbiertaId)||null;
 }
+
+// ── Descartar jugadores del buscador de Scouting ─────────────────
+// "Descartar" se guarda como una lista de seguimiento más (reutiliza
+// TODA la infraestructura ya hecha para "Mis listas": guardado local +
+// sincronización con el Sheet, cola de reintento offline...), con un id
+// fijo y propio de cada usuario (nunca al azar, para poder encontrarla
+// otra vez sin guardar su id en ningún otro sitio) y marcada como
+// "especial" para que NUNCA se enseñe en "Mis listas" ni en el
+// selector "➕ Añadir a lista..." de cada tarjeta — es un mecanismo
+// aparte, no una lista de seguimiento normal. Es privada por usuario,
+// igual que el resto de listas: cada scout decide por su cuenta a quién
+// descarta, sin pisar el criterio de otro admin que use la misma app.
+function _scoutIdListaDescartados(){
+  const email=(window._scoutSession&&window._scoutSession.email||'').trim().toLowerCase();
+  return 'descartados__'+email.replace(/[^a-z0-9]+/g,'_');
+}
+function _scoutListaDescartados(){
+  return scoutListas.find(l=>l.id===_scoutIdListaDescartados())||null;
+}
+/** Todas las listas MENOS la de descartados — es lo que "Mis listas",
+ *  el contador de listas y el selector "➕ Añadir a lista..." deben usar
+ *  siempre, para que la lista de descartados nunca se vea como si fuera
+ *  una lista de seguimiento normal. */
+function _scoutListasVisibles(){
+  const idDescartados=_scoutIdListaDescartados();
+  return scoutListas.filter(l=>l.id!==idDescartados);
+}
+function _scoutEsDescartado(jugadorId){
+  const lista=_scoutListaDescartados();
+  return !!(lista && (lista.jugadores||[]).some(e=>e.jugadorId===jugadorId));
+}
+async function scoutDescartarJugador(jugadorId){
+  const sesion=window._scoutSession;
+  if(!sesion||!sesion.email){ toast('Inicia sesión primero',true); return; }
+  let lista=_scoutListaDescartados();
+  if(!lista){
+    const ahora=new Date().toISOString();
+    lista={ id:_scoutIdListaDescartados(), ownerEmail:sesion.email, nombre:'Descartados', especial:'descartados', sistema:'4-3-3', jugadores:[], fechaCreacion:ahora, fechaActualizacion:ahora };
+  }
+  if(!Array.isArray(lista.jugadores)) lista.jugadores=[];
+  if(!lista.jugadores.some(e=>e.jugadorId===jugadorId)) lista.jugadores.push({jugadorId});
+  await _scoutGuardarListaCambios(lista);
+  renderScoutingBuscador();
+  toast('🚫 Jugador descartado');
+}
+async function scoutRestaurarJugador(jugadorId){
+  const lista=_scoutListaDescartados(); if(!lista) return;
+  lista.jugadores=(lista.jugadores||[]).filter(e=>e.jugadorId!==jugadorId);
+  await _scoutGuardarListaCambios(lista);
+  renderScoutingBuscador();
+  toast('♻️ Jugador restaurado');
+}
 function _scoutEdadDeJugador(j){
   const n=parseInt(j&&j.edad,10);
   return Number.isFinite(n)?n:null;
@@ -15014,7 +15207,7 @@ async function renderScouting(){
   if(!puedeVerScoutingActual()) return;
   const jDBVisible=jDB.filter(j=>!j._bajaPlantilla && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
   const elJug=document.getElementById('scout-st-jug'); if(elJug) elJug.textContent=jDBVisible.length;
-  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=_scoutListasVisibles().length;
   _scoutPoblarFiltros();
   // Las listas se piden al Sheet solo una vez por sesión — cada cambio
   // posterior ya se sincroniza al momento (_scoutGuardarListaCambios),
@@ -15022,7 +15215,7 @@ async function renderScouting(){
   if(!window._scoutListasCargadasUnaVez && typeof scoutCargarListasSeguimiento==='function'){
     window._scoutListasCargadasUnaVez=true;
     await scoutCargarListasSeguimiento();
-    if(elListas) elListas.textContent=scoutListas.length;
+    if(elListas) elListas.textContent=_scoutListasVisibles().length;
   }
   scoutCambiarSubvista(_scoutSubvista);
 }
@@ -15047,6 +15240,22 @@ function _scoutPoblarFiltros(){
     const posiciones=[...new Set(jDBVisible.map(j=>j.pos).filter(Boolean))].sort((a,b)=>(POS_ORDEN_LISTA[a]??3)-(POS_ORDEN_LISTA[b]??3));
     selPos.innerHTML='<option value="">Todas las posiciones</option>'+posiciones.map(p=>`<option value="${eH(p)}"${p===actual?' selected':''}>${eH(p)}</option>`).join('');
   }
+  _scoutActualizarFiltroPerfil();
+}
+/** Repuebla el filtro "Perfil" del buscador de Scouting: si hay una
+ *  posición concreta elegida en "scout-fil-pos", solo muestra los
+ *  perfiles de esa familia (para no abrumar con los ~17 perfiles de
+ *  golpe); sin ninguna posición elegida, los muestra todos — cada
+ *  etiqueta ya dice por sí sola de qué familia es. Conserva el valor ya
+ *  elegido si sigue siendo válido para la posición actual. */
+function _scoutActualizarFiltroPerfil(){
+  const selPerfil=document.getElementById('scout-fil-perfil');
+  if(!selPerfil) return;
+  const posActual=document.getElementById('scout-fil-pos')?.value||'';
+  const actual=selPerfil.value;
+  const opciones=posActual?(PERFILES_POR_POSICION[posActual]||[]):_todosLosPerfiles();
+  selPerfil.innerHTML='<option value="">Todos los perfiles</option>'+opciones.map(p=>`<option value="${eH(p)}"${p===actual?' selected':''}>${eH(p)}</option>`).join('');
+  if(!opciones.includes(actual)) selPerfil.value='';
 }
 
 /** Cambia entre "🔍 Buscar jugadores" y "📋 Mis listas" (o el detalle de
@@ -15069,20 +15278,44 @@ function scoutCambiarSubvista(v){
 }
 
 // ── Buscador ──────────────────────────────────────────────────────
+// Scouting va acumulando jugadores de TODOS los clubes/ligas visibles
+// (844 y subiendo) — antes el buscador pintaba TODAS las tarjetas que
+// pasaban el filtro de golpe en un solo innerHTML, lo que con una lista
+// así de grande se notaba muy lento (sobre todo en móvil), aunque el
+// filtro dejara solo unos pocos resultados a la vista no filtrada
+// seguía costando generar y pintar todo el HTML. Ahora solo se pintan
+// las primeras SCOUT_BUSCADOR_PAGINA de golpe, con un botón "Cargar
+// más" para el resto — la página se reinicia a la primera tanda en
+// cuanto cambia algún filtro (comparando la "firma" de los filtros
+// actuales con la del render anterior).
+const SCOUT_BUSCADOR_PAGINA=60;
+let _scoutBuscadorLimite=SCOUT_BUSCADOR_PAGINA;
+let _scoutBuscadorUltimaFirma='';
+function _scoutBuscadorCargarMas(){
+  _scoutBuscadorLimite+=SCOUT_BUSCADOR_PAGINA;
+  renderScoutingBuscador();
+}
 function renderScoutingBuscador(){
   const jDBVisible=jDB.filter(j=>!j._bajaPlantilla && usuarioPuedeVerLiga(ligaDeEquipoPorNombre(j.club)));
   const q=(document.getElementById('scout-q')?.value||'').toLowerCase();
   const fEquipo=document.getElementById('scout-fil-equipo')?.value||'';
   const fLiga=document.getElementById('scout-fil-liga')?.value||'';
   const fPos=document.getElementById('scout-fil-pos')?.value||'';
+  const fPerfil=document.getElementById('scout-fil-perfil')?.value||'';
+  const verDescartados=!!document.getElementById('scout-fil-descartados')?.checked;
   const edadMinEl=document.getElementById('scout-fil-edad-min'),edadMaxEl=document.getElementById('scout-fil-edad-max');
   const edadMin=edadMinEl&&edadMinEl.value!==''?parseInt(edadMinEl.value,10):null;
   const edadMax=edadMaxEl&&edadMaxEl.value!==''?parseInt(edadMaxEl.value,10):null;
   let lst=jDBVisible;
+  // Por defecto, los jugadores descartados NO salen en el buscador (es
+  // justo el punto de descartarlos) — "Ver descartados" invierte el
+  // filtro para poder revisarlos y, si hace falta, restaurarlos.
+  lst=lst.filter(j=>_scoutEsDescartado(j.id)===verDescartados);
   if(q) lst=lst.filter(j=>_fuzzyMatch(j.nom+' '+j.ape+' '+j.pos+' '+j.club,q));
   if(fEquipo) lst=lst.filter(j=>(j.club||'').trim()===fEquipo);
   if(fLiga) lst=lst.filter(j=>(ligaDeEquipoPorNombre(j.club)||'').trim()===fLiga);
   if(fPos) lst=lst.filter(j=>j.pos===fPos);
+  if(fPerfil) lst=lst.filter(j=>j.perfil===fPerfil);
   if(edadMin!=null) lst=lst.filter(j=>{const e=_scoutEdadDeJugador(j);return e!=null&&e>=edadMin;});
   if(edadMax!=null) lst=lst.filter(j=>{const e=_scoutEdadDeJugador(j);return e!=null&&e<=edadMax;});
   lst=[...lst].sort((a,b)=>{
@@ -15094,33 +15327,52 @@ function renderScoutingBuscador(){
   });
   const grid=document.getElementById('scout-buscador-grid');
   if(!grid) return;
-  if(!lst.length){ grid.innerHTML=`<div class="empty"><div class="empty-ic">🔭</div><div style="font-size:14px">${jDBVisible.length?'Sin resultados':'Sin jugadores'}</div></div>`; return; }
-  grid.innerHTML=lst.map(j=>_scoutTarjetaBuscadorHTML(j)).join('');
+  if(!lst.length){
+    const vacioMsg=verDescartados?'No tienes ningún jugador descartado':(jDBVisible.length?'Sin resultados':'Sin jugadores');
+    grid.innerHTML=`<div class="empty"><div class="empty-ic">🔭</div><div style="font-size:14px">${vacioMsg}</div></div>`;
+    return;
+  }
+  const firma=JSON.stringify([q,fEquipo,fLiga,fPos,fPerfil,verDescartados,edadMin,edadMax]);
+  if(firma!==_scoutBuscadorUltimaFirma){ _scoutBuscadorUltimaFirma=firma; _scoutBuscadorLimite=SCOUT_BUSCADOR_PAGINA; }
+  const visibles=lst.slice(0,_scoutBuscadorLimite);
+  let html=visibles.map(j=>_scoutTarjetaBuscadorHTML(j,verDescartados)).join('');
+  const restantes=lst.length-visibles.length;
+  if(restantes>0){
+    html+=`<div style="grid-column:1/-1;text-align:center;padding:14px 0">
+      <button type="button" id="scout-cargar-mas-btn" class="btn b-ghost" onclick="_scoutBuscadorCargarMas()">⬇️ Cargar ${Math.min(SCOUT_BUSCADOR_PAGINA,restantes)} más (${restantes} restante${restantes===1?'':'s'})</button>
+    </div>`;
+  }
+  grid.innerHTML=html;
 }
-function _scoutTarjetaBuscadorHTML(j){
+function _scoutTarjetaBuscadorHTML(j,enVistaDescartados){
   const avColorCard=j.avColor||colorDeEquipoPorNombre(j.club)||'var(--azul-dk)';
   const av=j.imgJug?`<div class="card-av" style="border-radius:50%;background:var(--bg3)"><img loading="lazy" src="${eH(j.imgJug)}" onerror="this.parentNode.textContent='${eH(ini(j.nom,j.ape)||'?')}'"></div>`:`<div class="card-av" style="border-radius:50%;background:${eH(avColorCard)}">${eH(ini(j.nom,j.ape)||'?')}</div>`;
   const escudoJCard=escudoDeEquipoPorNombre(j.club);
   const avBadge=escudoJCard?`<div class="card-av-badge"><img loading="lazy" src="${eH(escudoJCard)}"></div>`:'';
   const edad=_scoutEdadDeJugador(j);
   const s=j.stats||{};
-  const selectorListas=scoutListas.length
+  const listasVisibles=_scoutListasVisibles();
+  const selectorListas=listasVisibles.length
     ?`<select onchange="scoutAnadirAListaDesdeBuscador('${eH(j.id)}',this.value);this.value=''">
         <option value="">➕ Añadir a lista...</option>
-        ${scoutListas.map(l=>`<option value="${eH(l.id)}">${eH(l.nombre)}</option>`).join('')}
+        ${listasVisibles.map(l=>`<option value="${eH(l.id)}">${eH(l.nombre)}</option>`).join('')}
       </select>`
     :`<button type="button" class="btn b-ghost b-sm" onclick="scoutCambiarSubvista('listas')">📋 Crea una lista primero</button>`;
+  const botonDescartar=enVistaDescartados
+    ?`<button type="button" class="btn b-verde b-sm" onclick="scoutRestaurarJugador('${eH(j.id)}')">♻️ Restaurar</button>`
+    :`<button type="button" class="btn b-ghost b-sm" onclick="scoutDescartarJugador('${eH(j.id)}')" title="Dejar de verlo en el buscador">🚫 Descartar</button>`;
+  const perfilH=j.perfil?`<div class="card-mt" style="color:var(--azul-cl)">🏷️ ${eH(j.perfil)}</div>`:'';
   return `<div class="card">
     <div class="card-hdr">
       <div class="card-av-wrap">${av}${avBadge}</div>
-      <div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${eH(j.dor||'—')} · ${eH(j.pos||'—')} · ${eH(j.club||'—')}${edad!=null?' · '+edad+' años':''}</div></div>
+      <div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${eH(j.dor||'—')} · ${eH(j.pos||'—')} · ${eH(j.club||'—')}${edad!=null?' · '+edad+' años':''}</div>${perfilH}</div>
     </div>
     <div class="card-kpis" style="grid-template-columns:repeat(3,1fr)">
       <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
       <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
       <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
     </div>
-    <div class="card-act">${selectorListas}</div>
+    <div class="card-act">${selectorListas}${botonDescartar}</div>
   </div>`;
 }
 async function scoutAnadirAListaDesdeBuscador(jugadorId,listaId){
@@ -15153,17 +15405,18 @@ async function scoutCrearLista(){
   await _scoutGuardarListaCambios(lista);
   if(input) input.value='';
   renderScoutingListas();
-  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+  const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=_scoutListasVisibles().length;
   toast('✅ Lista creada: '+nombre);
 }
 function renderScoutingListas(){
   const grid=document.getElementById('scout-listas-grid');
   if(!grid) return;
-  if(!scoutListas.length){
+  const listasVisibles=_scoutListasVisibles();
+  if(!listasVisibles.length){
     grid.innerHTML='<div class="empty"><div class="empty-ic">📋</div><div style="font-size:14px">Aún no tienes ninguna lista de seguimiento</div><div style="font-size:11px;opacity:.7">Ponle un nombre arriba y pulsa "➕ Nueva lista"</div></div>';
     return;
   }
-  const listas=[...scoutListas].sort((a,b)=>(b.fechaActualizacion||'').localeCompare(a.fechaActualizacion||''));
+  const listas=[...listasVisibles].sort((a,b)=>(b.fechaActualizacion||'').localeCompare(a.fechaActualizacion||''));
   grid.innerHTML=listas.map(l=>{
     const n=(l.jugadores||[]).length;
     const fecha=l.fechaActualizacion?new Date(l.fechaActualizacion).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}):'—';
@@ -15182,6 +15435,7 @@ function scoutAbrirLista(id){
   scoutCambiarSubvista('detalle');
 }
 function scoutBorrarLista(id){
+  if(id===_scoutIdListaDescartados()) return; // lista reservada, nunca se borra desde la UI
   const lista=scoutListas.find(l=>l.id===id); if(!lista) return;
   askDel(`¿Borrar la lista "${lista.nombre}"? Esta acción no se puede deshacer.`,async()=>{
     scoutListas=scoutListas.filter(l=>l.id!==id);
@@ -15189,7 +15443,7 @@ function scoutBorrarLista(id){
     if(typeof scoutEliminarListaSeguimientoRemota==='function') await scoutEliminarListaSeguimientoRemota(id);
     if(_scoutListaAbiertaId===id){ _scoutListaAbiertaId=null; scoutCambiarSubvista('listas'); }
     else renderScoutingListas();
-    const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=scoutListas.length;
+    const elListas=document.getElementById('scout-st-listas'); if(elListas) elListas.textContent=_scoutListasVisibles().length;
     toast('🗑 Lista borrada');
   });
 }
@@ -15777,12 +16031,16 @@ async function guardarUsuario() {
 
   let resultado;
   if (editId) {
-    // Editar usuario existente
-    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas, equipo, puedeVerScouting } });
-    // Cambiar contraseña si se proporcionó
-    if (resultado.ok && hashPass) {
-      await _apiAdmin('cambiarPassword', { id: editId, hashPassNuevo: hashPass });
-    }
+    // Editar usuario existente. La contraseña (si se ha escrito una
+    // nueva) va DENTRO de esta misma llamada en vez de en una segunda
+    // petición aparte a 'cambiarPassword' — cada viaje a este backend
+    // (Apps Script) tarda varios segundos solo por serlo, así que antes
+    // "guardar con contraseña nueva" tardaba el doble sin necesidad al
+    // esperar dos peticiones seguidas. Ver editarUsuario_ en Code.gs:
+    // ahora acepta un hashPassNuevo opcional y lo guarda en el mismo
+    // paso. La acción 'cambiarPassword' se deja intacta en el backend
+    // por si algo más la usa, pero esta pantalla ya no la necesita.
+    resultado = await _apiAdmin('editarUsuario', { datos: { id: editId, nombre, rol, activo, ligasPermitidas, equipo, puedeVerScouting, hashPassNuevo: hashPass || undefined } });
   } else {
     // Crear nuevo usuario
     if (!pass) { toast('La contraseña es obligatoria para nuevos usuarios', true); return; }
