@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-06-3">
+<meta name="app-version" content="2026-10-11-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -5866,6 +5866,53 @@ function radarSVG(vals,labels,sz=185){
   return `<svg width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}" style="max-width:100%;height:auto">${rings}${axes}${poly}${dots}${lbls}</svg>`;
 }
 
+/** Desglose, partido a partido, de los PJ/PT/PS/Minutos que muestran los
+ *  KPIs de la ficha — construido con la MISMA fuente de datos que usa
+ *  recalcularStatsDesdePartidos() (Fuente 3: la alineación de cada acta
+ *  importada en "⚽ Partidos", ver _tallyGolesJugadores), para que
+ *  cualquier admin pueda comprobar de un vistazo de qué partido concreto
+ *  sale cada aparición/minuto, en vez de tener que fiarse a ciegas del
+ *  número agregado. Avisa además si la MISMA jornada aparece más de una
+ *  vez — la señal más clara de que esa acta se importó dos veces por
+ *  error (creando dos partidos distintos en la videoteca para el mismo
+ *  partido real), lo que duplicaría el PJ/Minutos de TODOS los que
+ *  jugaron esa jornada, no solo de este jugador. */
+function _fichaPartidosJugadosHTML(jugadorId,tempActual){
+  if(!jugadorId) return '<p style="font-size:10px;color:var(--gris)">Guarda la ficha primero para poder ver aquí el desglose por partido.</p>';
+  const filas=[];
+  pDB.forEach(p=>{
+    if(!p.alineacion) return;
+    if(tempActual && p.temp && p.temp!==tempActual) return;
+    ['local','visitante'].forEach(lado=>{
+      const bloque=p.alineacion[lado]; if(!bloque) return;
+      const rival=lado==='local'?p.visitante:p.local;
+      const titular=(bloque.titulares||[]).find(f=>f.jugadorId===jugadorId);
+      if(titular){
+        const minutos=titular.minutoSalida!=null?titular.minutoSalida:90;
+        filas.push({jornada:p.jornada,fecha:p.fecha,rival,cond:'Titular',minutos});
+      }
+      const suplente=(bloque.suplentes||[]).find(f=>f.jugadorId===jugadorId);
+      if(suplente && suplente.entro){
+        const minutos=suplente.minutoEntrada!=null?(90-suplente.minutoEntrada):0;
+        filas.push({jornada:p.jornada,fecha:p.fecha,rival,cond:'Suplente (entró)',minutos});
+      }
+    });
+  });
+  if(!filas.length) return '<p style="font-size:10px;color:var(--gris)">Sin partidos con acta importada todavía — el PJ/Min de arriba viene solo de lo metido a mano (statsManualBase).</p>';
+  filas.sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'')||(a.jornada||'').localeCompare(b.jornada||'',undefined,{numeric:true}));
+  const porJornada={};
+  filas.forEach(f=>{ const k=(f.jornada||'').trim().toLowerCase(); if(!k) return; porJornada[k]=(porJornada[k]||0)+1; });
+  const jornadasRepetidas=Object.keys(porJornada).filter(k=>porJornada[k]>1);
+  const avisoH=jornadasRepetidas.length
+    ? `<p style="font-size:10px;color:var(--rojo-cl);font-weight:700;margin:0 0 6px">⚠️ La jornada ${jornadasRepetidas.map(eH).join(', ')} aparece más de una vez abajo — revisa en "⚽ Partidos" si esa acta se importó dos veces (dos partidos distintos para el mismo partido real).</p>`
+    : '';
+  return avisoH+`<table class="tgj"><thead><tr><th>Jornada</th><th>Fecha</th><th>Rival</th><th>Condición</th><th>Minutos</th></tr></thead><tbody>
+    ${filas.map(f=>{
+      const esRepetida=jornadasRepetidas.includes((f.jornada||'').trim().toLowerCase());
+      return `<tr${esRepetida?' style="background:rgba(248,81,73,.12)"':''}><td>${eH(f.jornada)||'—'}</td><td style="font-size:9px;color:var(--gris2)">${f.fecha?new Date(f.fecha+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'short'}):'—'}</td><td>${eH(f.rival)||'—'}</td><td style="font-size:9px;color:var(--gris2)">${f.cond}</td><td class="tmin">${f.minutos}'</td></tr>`;
+    }).join('')}
+    </tbody></table>`;
+}
 function renderJ(){
   const nom=(G('jnom')+' '+G('jape')).trim(),dor=G('jdor'),pos=G('jpos'),nac=G('jnac'),temp=G('jtemp'),club=G('jclub'),edad=G('jedad');
   const[kg,ka,kp,kab,kmj,kpt,kps]=[GN('kg'),GN('ka'),GN('kp'),GN('kab'),GN('kmj'),GN('kpt'),GN('kps')];
@@ -5902,6 +5949,15 @@ function renderJ(){
   { const trForm=document.getElementById('j-trayectoria-form'); if(trForm) trForm.innerHTML=_trayectoriaTablaHTML(true); }
   _autoRadarDesdeStats();
   const kga=kg+ka,kgpj=kp>0?(kg/kp).toFixed(1):'0.0',kgrpj=kp>0?(kgr/kp).toFixed(1):'0.0';
+  // G/90 (goles cada 90 minutos jugados): mejor medida de "quién es más
+  // efectivo" que G/PJ cuando hay suplentes que entran pocos minutos — a
+  // diferencia de un ratio goles/minuto en crudo (que saldría un decimal
+  // minúsculo e ilegible), esto se expresa en la unidad estándar del
+  // fútbol (goles por partido completo de 90'). Se pidió explícitamente:
+  // "ratio de goles por minuto en jugadores, para ver quien es mas
+  // efectivo". Solo tiene sentido con jugadores de campo (esGK ya filtra
+  // esto fuera del KPI de porteros más abajo).
+  const kg90=kmj>0?(kg/kmj*90).toFixed(2):'0.00';
   // Origen táctico / Zona y cuerpo / Goles por periodo: si el jugador ya
   // tiene goles registrados gol a gol (jGoles, la misma fuente que
   // alimenta la tabla "Registro Goles" de justo al lado), estas barras se
@@ -6031,10 +6087,23 @@ function renderJ(){
   // distintos a los de un jugador de campo — ver _esPortero() más arriba.
   const kpisH=esGK
     ? `<div class="fkpis" style="grid-template-columns:repeat(5,1fr)"><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kpz}</div><div class="kl">Porterías a cero</div></div><div class="kpi"><div class="kv" style="color:var(--rojo-cl)">${kgr}</div><div class="kl">Goles recibidos</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgrpj}</div><div class="kl">GR/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">🟨 ${kta}</div><div class="kl">Amarillas</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--rojo-cl)">🟥 ${ktr}</div><div class="kl">Rojas</div></div></div>`
-    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">🟨 ${kta}</div><div class="kl">Amarillas</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--rojo-cl)">🟥 ${ktr}</div><div class="kl">Rojas</div></div></div>`;
+    : `<div class="fkpis" style="grid-template-columns:repeat(3,1fr)"><div class="kpi"><div class="kv" style="color:var(--verde)">${kg}</div><div class="kl">Goles</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${ka}</div><div class="kl">Asist.</div></div><div class="kpi"><div class="kv">${kga}</div><div class="kl">G+A</div></div><div class="kpi"><div class="kv">${kp}</div><div class="kl">PJ</div></div><div class="kpi"><div class="kv" style="color:var(--azul-cl)">${kpt}</div><div class="kl">PT</div></div><div class="kpi"><div class="kv" style="color:var(--gris)">${kps}</div><div class="kl">PS</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kgpj}</div><div class="kl">G/PJ</div></div><div class="kpi"><div class="kv" style="color:var(--verde)">${kg90}</div><div class="kl">G/90'</div></div><div class="kpi"><div class="kv" style="color:var(--lila)">${kmj}</div><div class="kl">Min. totales</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">${kf}%</div><div class="kl">% Min. jugados</div></div><div class="kpi"><div class="kv" style="color:var(--naranja-cl)">🟨 ${kta}</div><div class="kl">Amarillas</div></div><div class="kpi" style="background:var(--bg3);border-right:none"><div class="kv" style="color:var(--rojo-cl)">🟥 ${ktr}</div><div class="kl">Rojas</div></div></div>`;
   // Bloque táctico (Origen/Zona/Goles por periodo/Registro de goles) —
   // solo tiene sentido para un jugador de campo, así que no se muestra
   // para porteros.
+  // Desglose partido a partido del PJ/PT/PS/Minutos de los KPIs de arriba
+  // — se pidió tras detectar sospecha de un fallo en esos totales (dos
+  // porteros del mismo equipo con números que no cuadraban a simple
+  // vista). Usa EXACTAMENTE la misma fuente que recalcularStatsDesdePartidos()
+  // (la alineación de cada acta importada en "⚽ Partidos"), así que lo que
+  // se ve aquí es, fila a fila, de dónde sale cada PJ/minuto del KPI de
+  // arriba — en vez de tener que fiarse a ciegas del número agregado. Si
+  // la misma jornada aparece dos veces es casi siempre porque esa acta se
+  // importó dos veces por error (creando dos partidos distintos en la
+  // videoteca para el mismo partido real) — eso duplica el PJ/Minutos de
+  // TODOS los que jugaron ese partido, no solo de este jugador.
+  const partidosJugadosH=_fichaPartidosJugadosHTML(jId,temp);
+  const bloquePartidosJugadosH=`<div class="fg2b"><div class="fblk" style="overflow-x:auto;grid-column:1/-1"><div class="fblkt">📋 Partidos con acta importada · de aquí sale el PJ/PT/PS/Minutos de arriba</div>${partidosJugadosH}</div></div>`;
   const bloqueTacticoH=`<div class="fg2b"><div class="fblk"><div class="fblkt">Origen táctico</div>${barra('Ataque Organizado',oA,oMx,'#2f81f7')}${barra('ABP Ofensiva',oAb,oMx,'#d29922')}${barra('Centro Lateral',oCl,oMx,'#bc8cff')}${barra('Juego Directo',oJd,oMx,'#6e7681')}${barra('Finalización Frontal',oFf,oMx,'#e3b341')}${barra('Transición Ofensiva',oTr,oMx,'#39d3f0')}</div>
     <div class="fblk"><div class="fblkt">Zona y cuerpo</div>${barra('Área Grande',zA,zMx,'#2f81f7')}${barra('Área Pequeña',zAp,zMx,'#3fb950')}<div style="height:8px"></div>${barra('Pie Derecho',cPd,cMx,'#2f81f7')}${barra('Cabeza',cCab,cMx,'#d29922')}${cPi>0?barra('Pie Izquierdo',cPi,cMx,'#bc8cff'):''}</div></div>
     <div class="fg2b"><div class="fblk"><div class="fblkt">Goles por periodo</div><div class="perw"><div class="perc"><div class="perv" style="color:#2f81f7">${p1}</div><div class="perb" style="height:${p1h}px;background:linear-gradient(180deg,#2f81f7,#1f6feb)"></div><div class="perl">1ª parte</div></div><div class="perc"><div class="perv" style="color:#3fb950">${p2}</div><div class="perb" style="height:${p2h}px;background:linear-gradient(180deg,#3fb950,#238636)"></div><div class="perl">2ª parte</div></div></div></div>
@@ -6062,6 +6131,7 @@ function renderJ(){
     <div class="fhdr-r">${escH}<div class="fclub">${eH(club)}</div><div class="fliga">${eH(temp)}</div></div></div>
     ${highlightH}
     ${kpisH}
+    ${bloquePartidosJugadosH}
     ${esGK?bloqueGolesEncH:bloqueTacticoH}
     <div class="fforma"><div class="fblkt">Forma reciente · últimos 10 partidos</div><div class="fchips">${formaH}</div></div>
     ${trayectoriaH}
@@ -14121,6 +14191,29 @@ function _apActaSanearParaGuardar(datos){
   return {local:limpiarLado(datos.local), visitante:limpiarLado(datos.visitante)};
 }
 
+// Busca en pDB un partido YA EXISTENTE (distinto del que se está
+// editando, si lo hay) que parezca ser el MISMO partido real: misma
+// jornada (comparación flexible, sin mayúsculas/espacios de más) y los
+// mismos dos equipos, en cualquier orden, en la misma temporada si ambos
+// la tienen puesta. No compara por id — el objetivo es detectar el caso
+// de pulsar "➕ Añadir Partido" para una jornada que ya se había añadido
+// antes (típicamente importando la misma acta dos veces sin darse
+// cuenta), que deja dos partidos distintos en la videoteca para el mismo
+// partido real y duplica el PJ/Minutos de todos los que lo jugaron (ver
+// recalcularStatsDesdePartidos → Fuente 3).
+function _buscarPartidoDuplicado(partido,editId){
+  const jornada=(partido.jornada||'').trim().toLowerCase();
+  if(!jornada) return null;
+  const equipos=[(partido.local||'').trim().toLowerCase(),(partido.visitante||'').trim().toLowerCase()].sort();
+  if(!equipos[0] && !equipos[1]) return null;
+  return pDB.find(p=>{
+    if(editId && p.id===editId) return false;
+    if((p.jornada||'').trim().toLowerCase()!==jornada) return false;
+    if(partido.temp && p.temp && p.temp!==partido.temp) return false;
+    const eqP=[(p.local||'').trim().toLowerCase(),(p.visitante||'').trim().toLowerCase()].sort();
+    return eqP[0]===equipos[0] && eqP[1]===equipos[1];
+  })||null;
+}
 function guardarPartido(){
   if(!esAdminActual()){toast('Solo los administradores pueden guardar',true);return;}
   const editId=document.getElementById('ap-edit-id').value;
@@ -14156,6 +14249,16 @@ function guardarPartido(){
       g.clip.titulo=_tituloAutoClipGol(partido.jornada,g.jugador,equipoNom,g.origen,g.minuto);
     }
   });
+  const duplicado=_buscarPartidoDuplicado(partido,editId);
+  if(duplicado && typeof askDel==='function'){
+    askDel(`Ya existe un partido guardado para la jornada "${partido.jornada}" entre ${partido.local||'?'} y ${partido.visitante||'?'} (del ${duplicado.fecha||'fecha sin poner'}). Si es el mismo partido real, lo normal es abrir ESE partido y pulsar "Editar" en vez de crear uno nuevo — guardar este como partido aparte duplicará el PJ/Minutos de todos los que lo jugaron. ¿Guardar de todas formas como un partido distinto?`,
+      ()=>{ _guardarPartidoEjecutar(partido,editId); },
+      {titulo:'⚠️ Posible partido duplicado',okTexto:'Guardar de todas formas',okClase:'b-rojo'});
+    return;
+  }
+  _guardarPartidoEjecutar(partido,editId);
+}
+function _guardarPartidoEjecutar(partido,editId){
   if(editId){ const idx=pDB.findIndex(x=>x.id===editId); if(idx>=0) pDB[idx]=partido; }
   else { pDB.unshift(partido); }
   savePDB();
@@ -15362,16 +15465,31 @@ function _scoutTarjetaBuscadorHTML(j,enVistaDescartados){
     ?`<button type="button" class="btn b-verde b-sm" onclick="scoutRestaurarJugador('${eH(j.id)}')">♻️ Restaurar</button>`
     :`<button type="button" class="btn b-ghost b-sm" onclick="scoutDescartarJugador('${eH(j.id)}')" title="Dejar de verlo en el buscador">🚫 Descartar</button>`;
   const perfilH=j.perfil?`<div class="card-mt" style="color:var(--azul-cl)">🏷️ ${eH(j.perfil)}</div>`:'';
+  // G/90 también en la tarjeta del buscador (no solo en la ficha): el
+  // propio objetivo con el que se pidió ("para ver quien es mas efectivo")
+  // es comparar varios jugadores a la vez, y eso se hace aquí, en la
+  // rejilla del buscador, no abriendo fichas una a una. No tiene sentido
+  // para porteros (no se juzgan por goles marcados).
+  const esGkCard=(j.pos||'')==='Portero';
+  const g90Card=(s.min>0)?(((s.g||0)/s.min)*90).toFixed(2):'0.00';
+  const kpisCardH=esGkCard
+    ?`<div class="card-kpis" style="grid-template-columns:repeat(3,1fr)">
+      <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
+      <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
+    </div>`
+    :`<div class="card-kpis" style="grid-template-columns:repeat(4,1fr)">
+      <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
+      <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
+      <div class="ck"><div class="ckv" style="color:var(--verde)">${g90Card}</div><div class="ckl">G/90'</div></div>
+    </div>`;
   return `<div class="card">
     <div class="card-hdr">
       <div class="card-av-wrap">${av}${avBadge}</div>
       <div class="card-hdr-info"><div class="card-nm">${eH((j.nom+' '+j.ape).trim()||'Sin nombre')}</div><div class="card-mt">#${eH(j.dor||'—')} · ${eH(j.pos||'—')} · ${eH(j.club||'—')}${edad!=null?' · '+edad+' años':''}</div>${perfilH}</div>
     </div>
-    <div class="card-kpis" style="grid-template-columns:repeat(3,1fr)">
-      <div class="ck"><div class="ckv" style="color:var(--verde)">${s.g||0}</div><div class="ckl">Goles</div></div>
-      <div class="ck"><div class="ckv" style="color:var(--azul-cl)">${s.a||0}</div><div class="ckl">Asist.</div></div>
-      <div class="ck"><div class="ckv">${s.p||0}</div><div class="ckl">PJ</div></div>
-    </div>
+    ${kpisCardH}
     <div class="card-act">${selectorListas}${botonDescartar}</div>
   </div>`;
 }
