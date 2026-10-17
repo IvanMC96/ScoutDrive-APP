@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-11-1">
+<meta name="app-version" content="2026-10-17-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -4343,6 +4343,51 @@ function _comprimirImagenArchivo(file, opts){
   return (typeof _conTimeout==='function') ? _conTimeout(intento, 20000, null) : intento;
 }
 
+// Descarga de imágenes subidas a una ficha (foto de jugador, escudo de
+// jugador/equipo) — se pidió explícitamente poder bajarse de nuevo las
+// fotos que se suben. Si es una dataURL (el caso normal: toda imagen
+// subida con el selector de archivo se comprime y queda guardada así) la
+// descarga es directa. Si es una URL externa (pegada a mano con "— o
+// URL —", p.ej. un enlace de Drive) se intenta traer como blob para forzar
+// la descarga real; si el origen no lo permite (CORS) se abre en una
+// pestaña nueva como último recurso, avisando de que hay que guardarla a
+// mano desde ahí.
+function _nombreArchivoDescarga(base){
+  const limpio=(base||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'').toLowerCase();
+  return limpio||'imagen';
+}
+function _nombreDescargaImagen(key){
+  if(key==='jfoto'||key==='jesc'){
+    const n=(G('jnom')+' '+G('jape')).trim();
+    return _nombreArchivoDescarga(n||(key==='jfoto'?'foto_jugador':'escudo_jugador'))+(key==='jfoto'?'.jpg':'.png');
+  }
+  if(key==='eesc'){
+    return _nombreArchivoDescarga(G('enom')||'escudo_equipo')+'.png';
+  }
+  return 'imagen.png';
+}
+async function descargarImagenDataURL(src,nombreArchivo){
+  if(!src) return;
+  try{
+    if(src.startsWith('data:')){
+      const a=document.createElement('a');
+      a.href=src; a.download=nombreArchivo||'imagen';
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
+    const resp=await fetch(src,{mode:'cors'});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const blob=await resp.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url; a.download=nombreArchivo||'imagen';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+  }catch(err){
+    window.open(src,'_blank');
+    if(typeof toast==='function') toast('No se pudo descargar directamente esa imagen (el enlace externo no lo permite) — se ha abierto en una pestaña nueva, mantén pulsada la imagen para guardarla',true);
+  }
+}
 async function loadImg(e,key){
   const f=e.target.files[0];if(!f)return;
   // 'jfoto' es una foto de persona (JPEG); 'jesc'/'eesc' son escudos de
@@ -4377,6 +4422,7 @@ function uzZone(key,src){
   if(src){
     const isR=(key==='jfoto');
     w.innerHTML=`<button class="brm" onclick="rmImg('${key}',event)">✕</button>
+      <button class="brm" style="right:25px;background:rgba(47,129,247,.9)" title="Descargar imagen" onclick="event.stopPropagation();descargarImagenDataURL('${src.replace(/'/g,"\\'")}',_nombreDescargaImagen('${key}'))">⬇️</button>
       <img src="${src}" class="uz-img${isR?' uz-r':''}" onerror="this.style.display='none'">`;
     z.classList.add('has');z.onclick=null;
   }else{
@@ -6057,13 +6103,31 @@ function renderJ(){
     <div class="fhighlight-meta"><div class="fhighlight-tit">🌟 ${eH(jHighlight.titulo)||'Vídeo destacado'}</div><div class="fhighlight-sub">${eH(jHighlight.temporada)||'Mejores jugadas'}</div></div>
   </div>`:'';
   const avColor=G('javcolor-hex').trim()||colorDeEquipoPorNombre(club)||'#2f81f7';
-  const avH=imgStore.jfoto?`<div class="fav" style="background:${eH(avColor)}"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
+  const avFotoH=imgStore.jfoto?`<div class="fav" style="background:${eH(avColor)}"><img src="${imgStore.jfoto}" style="border-color:${eH(avColor)}" onerror="this.parentNode.textContent='${eH(ini(G('jnom'),G('jape'))||'?')}'"></div>`:`<div class="fav" style="background:${eH(avColor)}">${eH(ini(G('jnom'),G('jape'))||'?')}</div>`;
+  // Botón de descarga de la foto directamente desde la ficha (no solo en
+  // el formulario de edición) — se pidió poder bajarse de nuevo las fotos
+  // que se suben a los jugadores. Va en un envoltorio aparte (no dentro de
+  // .fav, que tiene overflow:hidden y recortaría el botón).
+  const avH=imgStore.jfoto
+    ? `<div style="position:relative;flex-shrink:0">${avFotoH}<button type="button" title="Descargar foto" onclick="descargarImagenDataURL('${imgStore.jfoto.replace(/'/g,"\\'")}',_nombreDescargaImagen('jfoto'))" style="position:absolute;bottom:-2px;right:-2px;width:22px;height:22px;border-radius:50%;background:rgba(47,129,247,.95);border:2px solid var(--bg2);color:#fff;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0">⬇️</button></div>`
+    : avFotoH;
   // Patrocinio del club: se incrusta dentro de la propia ficha (no solo en
   // la barra de cabecera de la pestaña) para que también salga al
   // exportar el PDF, ya que este es exactamente el HTML que se captura.
   const jAds=_anunciosClubActivos(idDeEquipoPorNombre(club));
   const jSponsorH=_sponsorHTMLMulti(jAds,'ficha-sponsor','Patrocinado por');
-  const escH=imgStore.jesc?`<div class="fesc"><img src="${imgStore.jesc}"></div>`:'';
+  // El escudo de la ficha se resuelve EN VIVO desde el club (misma fuente
+  // que ya usan la tarjeta del buscador y el listado de Jugadores —
+  // escudoDeEquipoPorNombre), no solo del campo guardado imgStore.jesc/
+  // j.imgEsc — ese campo solo se actualiza cuando se interactúa con el
+  // selector de club en "Editar datos" (_autoescudoJugadorDesdeClub), así
+  // que un jugador con el club ya puesto desde antes de que ese equipo
+  // tuviera escudo (o antes de que existiera este auto-copiado) se quedaba
+  // con el club bien asignado pero sin escudo en la ficha, aunque sí
+  // apareciera en el buscador/listado. Si el club no está en la BD de
+  // Equipos (o no tiene escudo) se cae al que se haya subido a mano aquí.
+  const escudoFichaJ=escudoDeEquipoPorNombre(club)||imgStore.jesc;
+  const escH=escudoFichaJ?`<div class="fesc"><img src="${escudoFichaJ}"></div>`:'';
   let clipsH='';
   if(jClips.length>0){
     const cards=jClips.map((cl,i)=>{
@@ -12417,15 +12481,17 @@ function _parsearActaTexto(texto){
   const textoLimpio=(texto||'').replace(/\s*No disponible\b/gi,'');
   const t='\n'+textoLimpio+'\n';
   const idxTitulares=[...t.matchAll(/Titulares/gi)].map(m=>m.index);
-  if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio(),goles:[]};
+  if(idxTitulares.length<2) return {local:_actaBloqueVacio(),visitante:_actaBloqueVacio(),goles:[],cabecera:{fecha:null,grupo:null}};
   // La sección "Goles" (minuto + quién marca) va SIEMPRE antes del bloque
   // del primer equipo, junto a Árbitros/Estadio/Ciudad — no se repite por
   // equipo, así que se extrae de la cabecera común, antes de partir el
   // texto en bloque local/visitante.
-  const goles=_actaExtraerGolesCrudo(t.slice(0,idxTitulares[0]));
+  const textoCabecera=t.slice(0,idxTitulares[0]);
+  const goles=_actaExtraerGolesCrudo(textoCabecera);
+  const cabecera=_actaExtraerCabecera(textoCabecera);
   const bloque1=t.slice(idxTitulares[0],idxTitulares[1]);
   const bloque2=t.slice(idxTitulares[1]);
-  return { local:_parsearBloqueEquipoActa(bloque1), visitante:_parsearBloqueEquipoActa(bloque2), goles };
+  return { local:_parsearBloqueEquipoActa(bloque1), visitante:_parsearBloqueEquipoActa(bloque2), goles, cabecera };
 }
 function _actaBloqueVacio(){ return {titulares:[],suplentes:[],tarjetas:[]}; }
 /** Extrae del texto de cabecera (antes de la primera "Titulares") cada
@@ -12444,6 +12510,62 @@ function _actaExtraerGolesCrudo(texto){
   while((m=re.exec(texto||''))){
     out.push({minuto:+m[1], nombre:m[2].replace(/\s+/g,' ').trim()});
   }
+  return out;
+}
+
+/** Convierte un número romano (I, IV, XIV...) a arábigo. Devuelve null si
+ *  "s" no es un número romano válido (incluido el caso de venir vacío). */
+function _romanoAArabigo(s){
+  const mapa={I:1,V:5,X:10,L:50,C:100,D:500,M:1000};
+  s=(s||'').toUpperCase().trim();
+  if(!s || !/^[IVXLCDM]+$/.test(s)) return null;
+  let total=0;
+  for(let i=0;i<s.length;i++){
+    const actual=mapa[s[i]], siguiente=mapa[s[i+1]];
+    if(siguiente && actual<siguiente) total-=actual; else total+=actual;
+  }
+  return total>0?total:null;
+}
+/** Normaliza cualquier forma de "grupo" (número romano o arábigo, con o
+ *  sin "Grupo"/"G" delante, con o sin guion) al formato corto que usa la
+ *  propia app en "Liga/Competición → Grupo": "G-<nº>" en arábigos. Las
+ *  actas de la federación suelen traer el grupo en números romanos
+ *  (p.ej. "Grupo IV"), y aquí se quiere guardar siempre en arábigos
+ *  (p.ej. "G-4") para que Jugadores/Equipos puedan filtrar por el mismo
+ *  valor sin que un mismo grupo quede partido en dos textos distintos
+ *  solo por el formato del número. Si no reconoce nada, devuelve el
+ *  propio valor de entrada tal cual (no se inventa nada). */
+function _normalizarGrupo(valor){
+  if(!valor) return valor;
+  const limpio=valor.trim();
+  const m=limpio.match(/^(?:Grupo|G)?[\s.\-]*([IVXLCDM]+|\d{1,2})$/i);
+  if(!m) return limpio;
+  const crudo=m[1];
+  const n=/^\d+$/.test(crudo)?parseInt(crudo,10):_romanoAArabigo(crudo);
+  return n?('G-'+n):limpio;
+}
+/** Extrae de la cabecera del acta (todo el texto ANTES del primer
+ *  "Titulares" — el mismo tramo de donde ya se sacan los goles, junto a
+ *  Árbitro/Estadio/Ciudad) la fecha del partido y el grupo de la
+ *  competición, si aparecen con alguna de las formas más habituales en
+ *  las fichas de federación. Es "mejor esfuerzo": si no encuentra nada
+ *  con confianza, deja ese campo en null y no rellena nada — mejor no
+ *  autorrellenar que autorrellenar mal un dato tan sensible. Devuelve
+ *  {fecha:'AAAA-MM-DD'|null, grupo:'G-N'|null}. */
+function _actaExtraerCabecera(textoCabecera){
+  const out={fecha:null,grupo:null};
+  const t=textoCabecera||'';
+  const mFecha=t.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+  if(mFecha){
+    let [,d,mo,y]=mFecha;
+    if(y.length===2) y='20'+y;
+    const dN=+d, moN=+mo;
+    if(dN>=1 && dN<=31 && moN>=1 && moN<=12){
+      out.fecha=`${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;
+    }
+  }
+  const mGrupo=t.match(/Grupo\s*[:\-]?\s*([IVXLCDM]+|\d{1,2})\b/i);
+  if(mGrupo) out.grupo=_normalizarGrupo(mGrupo[1]);
   return out;
 }
 
@@ -13246,7 +13368,7 @@ function _apActaGolFilaHTML(idx,g,nomLocal,nomVisit){
   const opciones=_apActaGolRosterJugador(g);
   const opcionesHTML=opciones.map(j=>`<option value="${eH(j.id)}"${j.id===g.jugadorId?' selected':''}>#${eH(j.dor||'—')} ${eH((j.nom+' '+j.ape).trim())}</option>`).join('');
   return `<tr>
-    <td class="tmin">m.${eH(String(g.minuto??'—'))}</td>
+    <td class="tmin"><input type="number" min="0" max="130" value="${g.minuto??0}" style="width:48px;font-size:10px;padding:2px 4px" onchange="_apActaCambiarMinutoGol(${idx},this.value)"></td>
     <td style="font-size:10px">${eH(g.nombreActa)}</td>
     <td>
       <select onchange="_apActaGolCambiarEquipo(${idx},this.value)" style="font-size:10px;padding:3px 4px">
@@ -13265,18 +13387,65 @@ function _apActaGolFilaHTML(idx,g,nomLocal,nomVisit){
         <input type="checkbox" style="width:auto" ${g.propia?'checked':''} onchange="_apActaGolTogglePropia(${idx},this.checked)"> 🥅 Propia
       </label>
     </td>
+    <td><button type="button" class="brm2" title="Quitar este gol (p.ej. si el acta lo ha detectado mal)" onclick="_apActaQuitarGol(${idx})">✕</button></td>
   </tr>`;
 }
 function _apActaGolesTablaHTML(nomLocal,nomVisit){
   const goles=(_apActaPreviewPendiente&&_apActaPreviewPendiente.goles)||[];
-  if(!goles.length) return '';
+  // El botón de "añadir a mano" sale siempre (igual que con las tarjetas),
+  // aunque no se haya detectado ningún gol todavía — por si el acta no
+  // trae ninguno o se le ha colado alguno por detectar mal el texto.
+  const anadirH=`<button type="button" class="btn b-ghost b-sm" style="font-size:10px;padding:3px 8px;margin-top:6px" onclick="_apActaAnadirGolManual()">➕ Añadir gol a mano</button>`;
+  if(!goles.length){
+    return `<div style="margin-top:10px">
+      <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">⚽ Goles detectados en el acta</p>
+      <p style="font-size:9px;color:var(--gris)">Ninguno detectado — si el partido tuvo goles, añádelos a mano.</p>
+      ${anadirH}
+    </div>`;
+  }
   return `<div style="margin-top:10px">
     <p style="font-size:10px;font-weight:800;color:var(--azul-cl);margin:8px 0 4px">⚽ Goles detectados en el acta</p>
-    <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Al confirmar se añaden a "Goles del partido" (más abajo) con el minuto y el jugador — revisa aquí a quién se le ha emparejado cada uno. Si fue en propia puerta, márcalo con "🥅 Propia": el gol pasará a contar para el equipo contrario y el jugador se elige de la plantilla de quien lo metió, no de quien se beneficia. La forma del gol, la asistencia, si fue de penalti y el vídeo/miniatura se siguen añadiendo a mano, como hasta ahora.</p>
-    <table class="tgj"><thead><tr><th>Min.</th><th>Nombre (acta)</th><th>Equipo</th><th>Jugador</th><th></th><th></th></tr></thead><tbody>
+    <p style="font-size:9px;color:var(--gris2);margin:0 0 6px">Al confirmar se añaden a "Goles del partido" (más abajo) con el minuto y el jugador, Y se usan para calcular el resultado (Goles local/visit.) — revisa aquí a quién se le ha emparejado cada uno, corrige el minuto si hace falta, quita el que esté mal detectado ("✕") o añade uno que falte. Si fue en propia puerta, márcalo con "🥅 Propia": el gol pasará a contar para el equipo contrario y el jugador se elige de la plantilla de quien lo metió, no de quien se beneficia. La forma del gol, la asistencia, si fue de penalti y el vídeo/miniatura se siguen añadiendo a mano, como hasta ahora.</p>
+    <table class="tgj"><thead><tr><th>Min.</th><th>Nombre (acta)</th><th>Equipo</th><th>Jugador</th><th></th><th></th><th></th></tr></thead><tbody>
       ${goles.map((g,i)=>_apActaGolFilaHTML(i,g,nomLocal,nomVisit)).join('')}
     </tbody></table>
+    ${anadirH}
   </div>`;
+}
+function _apActaCambiarMinutoGol(idx,valor){
+  const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
+  g.minuto=Math.max(0,+valor||0);
+}
+/** Quita de la vista previa un gol detectado que esté mal (duplicado,
+ *  confundido con otra cosa del texto, etc.) — igual que
+ *  _apActaQuitarTarjeta pero para goles. No toca "Goles del partido" si
+ *  ya se había confirmado antes; solo afecta a lo que se añadirá/al
+ *  resultado calculado la próxima vez que se pulse "Confirmar y
+ *  rellenar". */
+function _apActaQuitarGol(idx){
+  if(!_apActaPreviewPendiente || !_apActaPreviewPendiente.goles) return;
+  _apActaPreviewPendiente.goles.splice(idx,1);
+  _renderApActaPreview();
+}
+/** Añade un gol "a mano" a la vista previa — para el caso de que el acta
+ *  no recoja un gol (o el texto no se haya interpretado bien). Se añade
+ *  al equipo local sin emparejar, minuto 0, editable igual que los
+ *  detectados automáticamente. */
+function _apActaAnadirGolManual(){
+  if(!_apActaPreviewPendiente) return;
+  if(!Array.isArray(_apActaPreviewPendiente.goles)) _apActaPreviewPendiente.goles=[];
+  _apActaPreviewPendiente.goles.push({
+    minuto:0,
+    nombreActa:'(gol añadido a mano)',
+    equipo:'local',
+    propia:false,
+    jugadorId:null,
+    jugadorNom:null,
+    confianza:'sin_match',
+    _opcionesLocal:_apActaOpcionesDeLado('local'),
+    _opcionesVisit:_apActaOpcionesDeLado('visitante'),
+  });
+  _renderApActaPreview();
 }
 function _apActaGolCambiarEquipo(idx,equipo){
   const g=_apActaPreviewPendiente&&_apActaPreviewPendiente.goles[idx]; if(!g) return;
@@ -13393,8 +13562,41 @@ function _apActaConfirmar(){
     }
   });
   const nGoles=_apActaAnadirGolesDetectados(apActaImportada.goles||[]);
+  // Resultado: se calcula del propio listado de goles YA revisado en la
+  // vista previa (equipo/propia incluidos, ver _apActaGolTogglePropia) en
+  // vez de intentar leer un "Resultado Final" suelto en el texto de la
+  // ficha — es más fiable, porque es justo lo que el admin acaba de
+  // comprobar/corregir arriba (quitando goles mal detectados, añadiendo a
+  // mano los que falten...), así que el marcador que se calcula aquí
+  // siempre coincide con lo que de verdad se va a guardar en "Goles del
+  // partido". Se rellena siempre (incluso 0-0) porque esto es justo la
+  // acción de "aplicar la acta al formulario".
+  let gfAuto=0,gcAuto=0;
+  (apActaImportada.goles||[]).forEach(g=>{ if(g.equipo==='visitante') gcAuto++; else gfAuto++; });
+  { const cGf=document.getElementById('ap-gf'),cGc=document.getElementById('ap-gc');
+    if(cGf) cGf.value=gfAuto; if(cGc) cGc.value=gcAuto; }
+  // Fecha y grupo: se rellenan si se ha podido reconocer algo con
+  // confianza en la cabecera del acta (ver _actaExtraerCabecera).
+  // "Fecha" SIEMPRE se sobrescribe si se detecta una: "Añadir Partido" ya
+  // deja ese campo con la fecha de HOY puesta por defecto en cuanto se
+  // abre el formulario (no vacío), así que un "solo si está vacío" nunca
+  // llegaría a aplicarse — y la fecha real del acta es casi siempre más
+  // fiable que ese valor por defecto. "Grupo" sí respeta lo que ya hubiera
+  // puesto el admin (ese campo SÍ empieza vacío en un partido nuevo).
+  const cabecera=apActaImportada.cabecera||{};
+  let avisoCabecera='';
+  if(cabecera.fecha){
+    const cFecha=document.getElementById('ap-fecha');
+    if(cFecha){ cFecha.value=cabecera.fecha; avisoCabecera+=' Fecha detectada: '+cabecera.fecha+'.'; }
+  }
+  if(cabecera.grupo){
+    const cGrupo=document.getElementById('ap-grupo');
+    if(cGrupo && !cGrupo.value){ cGrupo.value=cabecera.grupo; avisoCabecera+=' Grupo detectado: '+cabecera.grupo+'.'; }
+  }
   document.getElementById('ap-acta-status').textContent='✅ Acta aplicada — se guardará con el partido. '
-    +(nCreados?`Se ${nCreados===1?'ha creado 1 ficha de jugador nueva':`han creado ${nCreados} fichas de jugador nuevas`} a partir del acta (puedes corregir el nombre o borrarlas en Jugadores). `:'')
+    +`Resultado calculado de los goles de arriba: ${gfAuto}-${gcAuto} (revísalo si al acta le falta o le sobra algún gol). `
+    +avisoCabecera
+    +(nCreados?` Se ${nCreados===1?'ha creado 1 ficha de jugador nueva':`han creado ${nCreados} fichas de jugador nuevas`} a partir del acta (puedes corregir el nombre o borrarlas en Jugadores). `:' ')
     +(nGoles?`Se han añadido ${nGoles} gol${nGoles!==1?'es':''} detectados en "Goles del partido" (abajo) — revísalos y completa forma/asistencia/vídeo.`:'Sigue añadiendo los goles abajo, como siempre.');
   toast(nCreados?`📋 Acta importada — ${nCreados} jugador${nCreados!==1?'es':''} nuevo${nCreados!==1?'s':''} creado${nCreados!==1?'s':''} y sincronizado${nCreados!==1?'s':''}`:'📋 Acta importada — revisa porteros/goles y guarda el partido');
   // La vista previa muestra ahora el emparejamiento final (jugadores
