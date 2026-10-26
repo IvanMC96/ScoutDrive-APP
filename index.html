@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-17-1">
+<meta name="app-version" content="2026-10-26-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2464,6 +2464,26 @@ body.solo-lectura .ed-panel-form {
     </div>
   </div>
 
+  <div class="psec solo-admin-block" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
+    <div class="cfg-title" style="padding:14px 16px 0">🧹 Liberar espacio</div>
+    <div class="pbody">
+      <p style="font-size:11px;color:var(--gris);line-height:1.5">
+        Las fotos de jugadores, escudos y miniaturas de clips se guardan en
+        este dispositivo (localStorage), que tiene un límite de espacio
+        bastante pequeño (unos pocos MB, según el navegador) — si da el
+        error "Almacenamiento lleno" al guardar un jugador, un equipo o un
+        partido, es porque ya se ha llenado. Usa esto para ver cuánto se
+        está usando y comprimir más las fotos/escudos ya guardados (sin
+        borrar ninguna) y hacer sitio.
+      </p>
+      <div id="liberar-espacio-info" style="font-size:11px;color:var(--gris2);margin:8px 0;line-height:1.6"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn b-ghost" onclick="_renderLiberarEspacioInfo()">🔄 Calcular uso actual</button>
+        <button class="btn b-naranja" onclick="adminLiberarEspacio()">🧹 Comprimir fotos/escudos guardados</button>
+      </div>
+    </div>
+  </div>
+
   <div class="psec solo-admin-block solo-superadmin-block" style="margin-top:20px;border:1px solid var(--border);border-radius:8px">
     <div class="cfg-title" style="padding:14px 16px 0">🔄 Recalcular estadísticas desde Partidos</div>
     <div class="pbody">
@@ -2947,9 +2967,23 @@ function saveCatLogos(){
 }
 
 function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} try{adsDB=JSON.parse(localStorage.getItem(ADS_KEY)||'[]');}catch(e){adsDB=[];} loadCfg(); loadCatLogos(); }
-function saveJDB(){ try{localStorage.setItem(JDB,JSON.stringify(jDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
-function saveEDB(){ try{localStorage.setItem(EDB,JSON.stringify(eDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
-function saveAds(){ try{localStorage.setItem(ADS_KEY,JSON.stringify(adsDB));}catch(e){toast('Error: almacenamiento lleno',true);} }
+// Guarda en localStorage con un aviso claro y accionable si el navegador
+// deniega la escritura por falta de espacio (QuotaExceededError) — antes
+// cada save* tenía su propio try/catch con el mismo mensaje seco
+// ("Error: almacenamiento lleno") que no decía qué hacer al respecto.
+// Ahora todos pasan por aquí y, si falla, señalan la herramienta
+// "🧹 Liberar espacio" de Config (ver adminLiberarEspacio) en vez de
+// dejar al usuario sin ninguna pista.
+function _setLocalStorageConAviso(key,valor){
+  try{ localStorage.setItem(key,valor); return true; }
+  catch(e){
+    if(typeof toast==='function') toast('❌ Almacenamiento lleno — no se ha podido guardar. Ve a Config → "🧹 Liberar espacio" para comprimir fotos/escudos guardados y hacer sitio, y vuelve a intentarlo.',true);
+    return false;
+  }
+}
+function saveJDB(){ return _setLocalStorageConAviso(JDB,JSON.stringify(jDB)); }
+function saveEDB(){ return _setLocalStorageConAviso(EDB,JSON.stringify(eDB)); }
+function saveAds(){ return _setLocalStorageConAviso(ADS_KEY,JSON.stringify(adsDB)); }
 function loadCfg(){ try{const c=JSON.parse(localStorage.getItem(CFG_KEY)||'null');if(c)cfg=c;}catch(e){} }
 function saveCfg(){ localStorage.setItem(CFG_KEY,JSON.stringify(cfg)); }
 function applyCfg(){
@@ -4341,6 +4375,43 @@ function _comprimirImagenArchivo(file, opts){
   // pudo" para que quien llame pueda avisar con un error claro en vez de
   // quedarse con la rueda girando sin fin.
   return (typeof _conTimeout==='function') ? _conTimeout(intento, 20000, null) : intento;
+}
+
+/** Igual que _comprimirImagenArchivo pero partiendo de una dataURL ya
+ *  guardada (no de un File recién elegido) — se usa para "🧹 Liberar
+ *  espacio" (ver adminLiberarEspacio), que vuelve a comprimir más fuerte
+ *  las imágenes que YA están guardadas en jDB/eDB cuando localStorage se
+ *  ha quedado sin sitio. Devuelve null si no se puede decodificar. */
+function _comprimirDataURL(dataUrl, opts){
+  const {maxDim=640, calidad=0.82, formato='image/jpeg'} = opts||{};
+  const intento = new Promise((resolve)=>{
+    if(!dataUrl || !dataUrl.startsWith('data:')){ resolve(null); return; }
+    const img=new Image();
+    img.onload=()=>{
+      try{
+        let {width,height}=img;
+        if(width>maxDim || height>maxDim){
+          if(width>=height){ height=Math.round(height*maxDim/width); width=maxDim; }
+          else { width=Math.round(width*maxDim/height); height=maxDim; }
+        }
+        const canvas=document.createElement('canvas');
+        canvas.width=width; canvas.height=height;
+        canvas.getContext('2d').drawImage(img,0,0,width,height);
+        resolve(canvas.toDataURL(formato,calidad));
+      }catch(e){ resolve(null); }
+    };
+    img.onerror=()=>resolve(null);
+    img.src=dataUrl;
+  });
+  return (typeof _conTimeout==='function') ? _conTimeout(intento, 20000, null) : intento;
+}
+/** Tamaño en bytes de un string tal cual ocupa en localStorage (UTF-16,
+ *  2 bytes por carácter — más preciso que usar Blob, que cuenta bytes
+ *  UTF-8). */
+function _tamanoStorageBytes(s){ return (s||'').length*2; }
+function _formatoTamano(bytes){
+  if(bytes>=1024*1024) return (bytes/1024/1024).toFixed(2)+' MB';
+  return Math.round(bytes/1024)+' KB';
 }
 
 // Descarga de imágenes subidas a una ficha (foto de jugador, escudo de
@@ -8898,6 +8969,7 @@ function initCfgForm(){
     logoW.classList.remove('has');logoW.onclick=()=>document.getElementById('if-logo').click();
     document.getElementById('btn-quitar-logo').style.display='none';
   }
+  if(typeof _renderLiberarEspacioInfo==='function') _renderLiberarEspacioInfo();
 }
 function cfgPreview(){
   const n=G('cfg-nombre')||'Scoutdrive',s=G('cfg-sub')||'Plataforma de análisis táctico';
@@ -11272,7 +11344,7 @@ const PDB_KEY = 'scout_partidos_v1';
 let pDB = [];
 
 function loadPDB(){ try{ pDB=JSON.parse(localStorage.getItem(PDB_KEY)||'[]'); }catch(e){ pDB=[]; } }
-function savePDB(){ try{ localStorage.setItem(PDB_KEY,JSON.stringify(pDB)); }catch(e){} }
+function savePDB(){ return _setLocalStorageConAviso(PDB_KEY,JSON.stringify(pDB)); }
 
 // OJO: antes había un loadPDB() suelto aquí, que se ejecutaba nada más
 // cargar el script — es decir, ANTES incluso de comprobar sesión, igual
@@ -13966,6 +14038,102 @@ function recalcularStatsDesdePartidos(){
     }
   });
   if(cambiosEq) saveEDB();
+}
+
+// ── Herramienta de mantenimiento (Config › "🧹 Liberar espacio") ──────
+// Todo lo que guarda esta app vive en localStorage del propio navegador,
+// que tiene un límite de solo unos pocos MB (varía por navegador/
+// dispositivo, pero suele rondar 5 MB) — las fotos de jugadores, escudos
+// de equipo y miniaturas de clips se guardan como texto (dataURL en
+// base64) dentro de jDB/eDB, así que con suficientes jugadores/equipos y
+// fotos se puede llegar a llenar, y entonces CUALQUIER guardado (un gol,
+// un partido, un jugador...) falla con "Almacenamiento lleno" aunque lo
+// que se esté guardando en ese momento sea pequeño — el límite es sobre
+// el TOTAL, no sobre cada guardado suelto. Esta herramienta: (1) calcula
+// cuánto ocupa cada parte, para saber qué es lo que más pesa, y (2)
+// vuelve a comprimir MÁS FUERTE todas las fotos/escudos/miniaturas ya
+// guardadas (nunca las borra) para hacer sitio sin perder nada.
+function _tamanosLocalStorage(){
+  const claves={
+    'Jugadores (fotos/escudos incluidos)':JDB,
+    'Equipos (escudos/clips incluidos)':EDB,
+    'Partidos (⚽ Partidos)':(typeof PDB_KEY!=='undefined'?PDB_KEY:'scout_p_v1'),
+    'Publicidad/patrocinios':ADS_KEY,
+  };
+  const filas=Object.entries(claves).map(([etiqueta,key])=>{
+    const crudo=localStorage.getItem(key)||'';
+    return {etiqueta,bytes:_tamanoStorageBytes(crudo)};
+  });
+  // El resto de claves propias de la app (sesión, caché de licencia,
+  // preferencias...) pesan poco, pero se suman igual para que el total
+  // cuadre con lo que de verdad cuenta el navegador contra la cuota.
+  let totalTodasLasClaves=0;
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    totalTodasLasClaves+=_tamanoStorageBytes(k)+_tamanoStorageBytes(localStorage.getItem(k));
+  }
+  return {filas:filas.sort((a,b)=>b.bytes-a.bytes), totalBytes:totalTodasLasClaves};
+}
+function _renderLiberarEspacioInfo(){
+  const cont=document.getElementById('liberar-espacio-info'); if(!cont) return;
+  const {filas,totalBytes}=_tamanosLocalStorage();
+  // No hay forma de leer la cuota real del navegador de forma síncrona y
+  // fiable (storage.estimate() es async y además es un límite del ORIGEN
+  // entero, no solo de esta app) — se muestra el total usado y una
+  // referencia aproximada (la mayoría de navegadores dan entre 5 y 10 MB
+  // a localStorage), dejando claro que es orientativo.
+  const refMB=5;
+  const pct=Math.min(999,Math.round(totalBytes/1024/1024/refMB*100));
+  cont.innerHTML=`<p style="margin:0 0 4px"><strong>${_formatoTamano(totalBytes)}</strong> usados en total (orientativo: la mayoría de navegadores dan unos ${refMB}-10 MB a cada app — vas por ~${pct}% de ${refMB} MB).</p>`
+    +filas.map(f=>`<div style="display:flex;justify-content:space-between;max-width:360px"><span>${eH(f.etiqueta)}</span><strong>${_formatoTamano(f.bytes)}</strong></div>`).join('');
+}
+/** Vuelve a comprimir, más fuerte, todas las imágenes YA guardadas
+ *  (fotos de jugador, escudos de jugador/equipo, portadas de clips y del
+ *  vídeo destacado) para hacer sitio — nunca borra ninguna, solo reduce
+ *  su tamaño en disco. Solo toca una imagen si está por encima de un
+ *  umbral razonable (para no degradar de más algo que ya pesa poco) y
+ *  solo si la recompresión REALMENTE reduce su tamaño (si por lo que sea
+ *  sale igual o más grande, se deja la original tal cual). */
+async function adminLiberarEspacio(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden hacer esto',true); return; }
+  askDel(
+    '¿Comprimir más fuerte todas las fotos de jugadores, escudos y miniaturas de clips ya guardadas, para liberar espacio? No se borra ninguna imagen, solo se reduce su tamaño — puede tardar un poco si tienes muchos jugadores/equipos con fotos.',
+    async ()=>{
+      toast('⏳ Comprimiendo imágenes guardadas...');
+      const {totalBytes:antesBytes}=_tamanosLocalStorage();
+      let nTocadas=0;
+      const UMBRAL=25*1024; // no merece la pena tocar una imagen ya pequeña
+      const recomprimirCampo=async(obj,campo,opts)=>{
+        const actual=obj&&obj[campo];
+        if(!actual || typeof actual!=='string' || !actual.startsWith('data:')) return;
+        if(_tamanoStorageBytes(actual)<UMBRAL) return;
+        const nueva=await _comprimirDataURL(actual,opts);
+        if(nueva && nueva.length<actual.length){ obj[campo]=nueva; nTocadas++; }
+      };
+      for(const j of jDB){
+        await recomprimirCampo(j,'imgJug',{maxDim:480,calidad:0.72,formato:'image/jpeg'});
+        await recomprimirCampo(j,'imgEsc',{maxDim:360,formato:'image/png'});
+        for(const c of (j.clips||[])) await recomprimirCampo(c,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
+        for(const c of (j.clipsGC||[])) await recomprimirCampo(c,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
+        if(j.highlight) await recomprimirCampo(j.highlight,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
+      }
+      for(const eq of eDB){
+        await recomprimirCampo(eq,'imgEsc',{maxDim:360,formato:'image/png'});
+        for(const c of (eq.clips||[])) await recomprimirCampo(c,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
+        for(const c of (eq.clipsGC||[])) await recomprimirCampo(c,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
+      }
+      const okJ=saveJDB(), okE=saveEDB();
+      const {totalBytes:despuesBytes}=_tamanosLocalStorage();
+      _renderLiberarEspacioInfo();
+      if(okJ && okE){
+        const liberado=Math.max(0,antesBytes-despuesBytes);
+        toast(nTocadas?`✅ ${nTocadas} imagen${nTocadas===1?'':'es'} comprimida${nTocadas===1?'':'s'} — ${_formatoTamano(liberado)} liberados`:'No había imágenes grandes que comprimir más');
+      } else {
+        toast('⚠️ Se han comprimido las imágenes en memoria pero el guardado ha vuelto a fallar por falta de espacio — borra alguna foto/escudo/clip a mano para liberar más sitio',true);
+      }
+    },
+    {titulo:'🧹 Liberar espacio',okTexto:'Comprimir ahora',okClase:'b-naranja'}
+  );
 }
 
 // Herramienta de mantenimiento (Config › "🔄 Recalcular estadísticas desde
