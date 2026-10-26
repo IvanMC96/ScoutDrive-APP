@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-26-1">
+<meta name="app-version" content="2026-10-26-2">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2967,6 +2967,252 @@ function saveCatLogos(){
 }
 
 function loadAll(){ try{jDB=JSON.parse(localStorage.getItem(JDB)||'[]');}catch(e){jDB=[];} try{eDB=JSON.parse(localStorage.getItem(EDB)||'[]');}catch(e){eDB=[];} try{adsDB=JSON.parse(localStorage.getItem(ADS_KEY)||'[]');}catch(e){adsDB=[];} loadCfg(); loadCatLogos(); }
+
+// ══════════════════════════════════════════════════════════════════
+// FOTOS/ESCUDOS/MINIATURAS EN INDEXEDDB (no en localStorage)
+// ══════════════════════════════════════════════════════════════════
+// localStorage tiene un límite muy pequeño por navegador (unos 5 MB,
+// según dispositivo) y TODO lo que guarda esta app (jugadores, equipos,
+// partidos, anuncios) vivía ahí como un único JSON gigante por clave,
+// fotos/escudos/miniaturas incluidos como texto base64 — con pocos
+// jugadores con foto, unos cuantos escudos y miniaturas de clips/goles,
+// ese límite se llena, y entonces CUALQUIER guardado falla con
+// "Almacenamiento lleno" (ver _setLocalStorageConAviso más abajo), por
+// pequeño que sea lo que se intente guardar en ese momento — el límite es
+// sobre el TOTAL acumulado, no sobre cada guardado suelto.
+//
+// La solución: las imágenes "pesadas" (fotos de jugador, escudos,
+// portadas de clips/goles, miniaturas de partido) se guardan aparte, en
+// IndexedDB — un almacén del navegador con muchísimo más margen (cientos
+// de MB, a veces más, según espacio libre del dispositivo) — y en su
+// lugar, dentro del JSON que sí va a localStorage, solo queda un
+// marcador corto ('__idb__'). Los objetos en MEMORIA (jDB/eDB/pDB/adsDB,
+// que es de donde lee todo el resto de la app para pintar la pantalla)
+// NUNCA se tocan — siguen teniendo la imagen completa en todo momento,
+// así que ninguna otra parte del código (fichas, tarjetas, PDF...) tiene
+// que cambiar ni una línea. Al volver a abrir la app, esas imágenes se
+// "rehidratan" (se recuperan de IndexedDB y se vuelven a poner en el
+// campo que les toca) ANTES de pintar nada — ver
+// _rehidratarImagenesGuardadas(), llamada desde _scoutCargarDatosYAbrirApp().
+const _IDB_NOMBRE='scoutdrive_img_v1', _IDB_STORE='imagenes';
+let _idbAperturaPromesa=null;
+function _idbAbrir(){
+  if(_idbAperturaPromesa) return _idbAperturaPromesa;
+  _idbAperturaPromesa=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){ reject(new Error('Este navegador no tiene IndexedDB')); return; }
+    const req=indexedDB.open(_IDB_NOMBRE,1);
+    req.onupgradeneeded=()=>{ if(!req.result.objectStoreNames.contains(_IDB_STORE)) req.result.createObjectStore(_IDB_STORE); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+  return _idbAperturaPromesa;
+}
+/** Guarda varios pares {clave,dataUrl} en IndexedDB de una vez. No
+ *  lanza — si falla (navegador sin IndexedDB, modo privado que lo
+ *  bloquea, etc.) se avisa una vez por consola y ya, para no bloquear
+ *  nunca el guardado "de verdad" (el de localStorage, que es el que
+ *  importa para que la app siga funcionando). */
+// Las save*() lanzan _idbGuardarImagenes() "a lo loco" (sin esperarla) para
+// no retrasar el guardado normal — pero a veces SÍ hace falta saber que ya
+// ha terminado de verdad (p.ej. para medir cuánto se ha liberado justo
+// después de recomprimir imágenes en adminLiberarEspacio). Por eso cada
+// llamada se apunta aquí, y _idbEsperarGuardadosPendientes() las espera
+// todas y se vacía.
+let _idbPromesasPendientes=[];
+async function _idbEsperarGuardadosPendientes(){
+  const ps=_idbPromesasPendientes; _idbPromesasPendientes=[];
+  if(ps.length) await Promise.allSettled(ps);
+}
+// Llamado desde cada save*() en vez de _idbGuardarImagenes() directamente,
+// solo para poder esperarlo luego si hace falta (ver arriba).
+function _idbGuardarImagenesSeguimiento(extraidas){
+  _idbPromesasPendientes.push(_idbGuardarImagenes(extraidas));
+}
+// Igual que la anterior pero para limpiar claves huérfanas (ver
+// _externalizarImagenesDeLista / _idbBorrarImagenes).
+function _idbBorrarImagenesSeguimiento(claves){
+  _idbPromesasPendientes.push(_idbBorrarImagenes(claves));
+}
+async function _idbGuardarImagenes(pares){
+  if(!pares || !pares.length) return;
+  try{
+    const db=await _idbAbrir();
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(_IDB_STORE,'readwrite');
+      const store=tx.objectStore(_IDB_STORE);
+      pares.forEach(({clave,dataUrl})=>store.put(dataUrl,clave));
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('No se han podido guardar en IndexedDB algunas imágenes (fotos/escudos/miniaturas) — seguirán sin aparecer tras recargar hasta volver a guardarlas:',e); }
+}
+/** Borra, si existen, las claves dadas de IndexedDB — se usa cuando un
+ *  campo que ANTES se guardaba aparte (p.ej. tras comprimirlo más fuerte
+ *  con "🧹 Liberar espacio" baja del umbral y vuelve a caber directo en
+ *  localStorage, o se borra la imagen/el jugador/el equipo) para no dejar
+ *  una copia vieja huérfana ocupando sitio para siempre. Nunca lanza. */
+async function _idbBorrarImagenes(claves){
+  if(!claves || !claves.length) return;
+  try{
+    const db=await _idbAbrir();
+    await new Promise((resolve,reject)=>{
+      const tx=db.transaction(_IDB_STORE,'readwrite');
+      const store=tx.objectStore(_IDB_STORE);
+      claves.forEach(clave=>store.delete(clave));
+      tx.oncomplete=()=>resolve();
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('No se han podido borrar de IndexedDB algunas claves huérfanas (no es grave, solo ocupan algo de sitio de más):',e); }
+}
+/** Lee TODAS las imágenes guardadas en IndexedDB de una vez, como
+ *  Map<clave,dataUrl> — se usa para "rehidratar" jDB/eDB/pDB/adsDB justo
+ *  después de cargarlos de localStorage (ver _rehidratarImagenesGuardadas).
+ *  Si IndexedDB no está disponible, devuelve un Map vacío (la app sigue
+ *  funcionando, simplemente esas imágenes no aparecen hasta que se
+ *  vuelvan a subir). */
+async function _idbLeerTodasLasImagenes(){
+  try{
+    const db=await _idbAbrir();
+    return await new Promise((resolve,reject)=>{
+      const tx=db.transaction(_IDB_STORE,'readonly');
+      const store=tx.objectStore(_IDB_STORE);
+      const reqClaves=store.getAllKeys(), reqValores=store.getAll();
+      let pendientes=2; let claves=[],valores=[];
+      const listo=()=>{ if(--pendientes===0){ const mapa=new Map(); claves.forEach((k,i)=>mapa.set(k,valores[i])); resolve(mapa); } };
+      reqClaves.onsuccess=()=>{ claves=reqClaves.result; listo(); };
+      reqValores.onsuccess=()=>{ valores=reqValores.result; listo(); };
+      tx.onerror=()=>reject(tx.error);
+    });
+  }catch(e){ console.warn('No se han podido leer las imágenes guardadas en IndexedDB:',e); return new Map(); }
+}
+/** Tamaño total aproximado (bytes) de lo guardado en IndexedDB — para el
+ *  panel de diagnóstico de "🧹 Liberar espacio" (ver _renderLiberarEspacioInfo). */
+async function _idbTamanoTotalBytes(){
+  const mapa=await _idbLeerTodasLasImagenes();
+  let total=0;
+  mapa.forEach(v=>{ total+=_tamanoStorageBytes(v); });
+  return total;
+}
+
+// Umbral por debajo del cual NO merece la pena sacar una imagen de
+// localStorage (el "overhead" de una clave aparte en IndexedDB no
+// compensa para algo ya pequeño, p.ej. un escudo diminuto).
+const _EXTERNALIZAR_IMG_UMBRAL=2000;
+const _IDB_MARCADOR='__idb__';
+// Dónde está cada imagen "pesada" dentro de un jugador/equipo/partido/
+// anuncio — una lista declarativa en un solo sitio, para que guardar y
+// rehidratar usen EXACTAMENTE los mismos campos/claves sin duplicar la
+// lógica. La clave se basa siempre en el id de la entidad (estable),
+// nunca en su posición dentro del array (que puede cambiar si se borra/
+// reordena algo).
+function _imagenesPesadasDeJugador(j){
+  const campos=[
+    {obj:j, campo:'imgJug', clave:'j:'+j.id+':imgJug'},
+    {obj:j, campo:'imgEsc', clave:'j:'+j.id+':imgEsc'},
+  ];
+  if(j.highlight) campos.push({obj:j.highlight, campo:'portada', clave:'j:'+j.id+':highlight'});
+  (j.clips||[]).forEach(c=>{ if(c) campos.push({obj:c, campo:'portada', clave:'j:'+j.id+':clip:'+c.id}); });
+  (j.clipsGC||[]).forEach(c=>{ if(c) campos.push({obj:c, campo:'portada', clave:'j:'+j.id+':clipgc:'+c.id}); });
+  return campos;
+}
+function _imagenesPesadasDeEquipo(eq){
+  const campos=[{obj:eq, campo:'imgEsc', clave:'e:'+eq.id+':imgEsc'}];
+  (eq.clips||[]).forEach(c=>{ if(c) campos.push({obj:c, campo:'portada', clave:'e:'+eq.id+':clip:'+c.id}); });
+  (eq.clipsGC||[]).forEach(c=>{ if(c) campos.push({obj:c, campo:'portada', clave:'e:'+eq.id+':clipgc:'+c.id}); });
+  return campos;
+}
+function _imagenesPesadasDePartido(p){
+  const campos=[{obj:p, campo:'thumb', clave:'p:'+p.id+':thumb'}];
+  (p.goles||[]).forEach((g,i)=>{ if(g && g.clip) campos.push({obj:g.clip, campo:'portada', clave:'p:'+p.id+':gol:'+i}); });
+  return campos;
+}
+function _imagenesPesadasDeAnuncio(a){
+  return [{obj:a, campo:'img', clave:'a:'+a.id+':img'}];
+}
+/** Clona profundamente una lista de entidades y, en la copia, sustituye
+ *  cada imagen "pesada" (según fnCampos) por el marcador '__idb__',
+ *  acumulando {clave,dataUrl} en `extraidas` para guardarlas aparte en
+ *  IndexedDB. Los objetos ORIGINALES (jDB/eDB/pDB/adsDB en memoria) no se
+ *  tocan — de ahí siguen leyendo, sin cambios, todas las fichas/tarjetas/
+ *  exportaciones a PDF/etc.
+ *  `clavesABorrar` (opcional) acumula las claves de cualquier campo que
+ *  EN MEMORIA tenga ya una imagen real (no el marcador) pero que esta vez
+ *  no haga falta externalizar (porque se ha borrado la imagen, o porque
+ *  "🧹 Liberar espacio" la ha recomprimido tanto que ya cabe directa en
+ *  localStorage) — para poder borrar después la copia vieja de
+ *  IndexedDB y que no quede huérfana ocupando sitio para siempre. */
+function _externalizarImagenesDeLista(lista,fnCampos,extraidas,clavesABorrar){
+  return (lista||[]).map(ent=>{
+    if(!ent) return ent;
+    let clon;
+    try{ clon=JSON.parse(JSON.stringify(ent)); }catch(e){ return ent; }
+    fnCampos(clon).forEach(({obj,campo,clave})=>{
+      const valor=obj?obj[campo]:null;
+      if(typeof valor==='string' && valor.startsWith('data:image/') && valor.length>_EXTERNALIZAR_IMG_UMBRAL){
+        extraidas.push({clave,dataUrl:valor});
+        obj[campo]=_IDB_MARCADOR;
+      }else if(clavesABorrar && valor!==_IDB_MARCADOR){
+        // No se externaliza esta vez (es null, se ha borrado, o es una
+        // imagen real que ya cabe pequeña) — si antes SÍ se había
+        // guardado algo en IndexedDB bajo esta clave, ya no vale, así que
+        // se marca para borrar (borrar una clave que nunca existió no
+        // hace nada, así que es seguro marcarla siempre que no sea ya el
+        // marcador, que es la única señal de "la real sigue en IndexedDB").
+        clavesABorrar.push(clave);
+      }
+    });
+    return clon;
+  });
+}
+/** Justo al revés: recorre jDB/eDB/pDB/adsDB EN MEMORIA (los mismos
+ *  objetos que ya está usando el render) y, donde encuentre el marcador
+ *  '__idb__' puesto por una carga anterior desde localStorage, lo
+ *  sustituye por la imagen real si está en el `cache` (Map ya leído de
+ *  IndexedDB). Se llama una vez al arrancar, antes de pintar nada — ver
+ *  _rehidratarImagenesGuardadas(). */
+function _rehidratarImagenesDeLista(lista,fnCampos,cache){
+  let huboCambios=false;
+  (lista||[]).forEach(ent=>{
+    if(!ent) return;
+    fnCampos(ent).forEach(({obj,campo,clave})=>{
+      if(obj && obj[campo]===_IDB_MARCADOR){
+        if(cache.has(clave)){ obj[campo]=cache.get(clave); huboCambios=true; }
+        else obj[campo]=null; // no se encontró (p.ej. se borró IndexedDB a mano) — mejor null que dejar el marcador crudo como si fuera una URL de imagen
+      }
+    });
+  });
+  return huboCambios;
+}
+/** Se llama UNA VEZ al arrancar (_scoutCargarDatosYAbrirApp), justo
+ *  después de loadAll()/loadPDB() y ANTES de cualquier render — así la
+ *  primera pantalla que ve el usuario ya sale con todas las fotos/
+ *  escudos/miniaturas puestos, sin ningún "parpadeo" de imagen rota
+ *  mientras IndexedDB responde (la lectura es local y normalmente tarda
+ *  muy poco, pero por eso se espera aquí antes de pintar). */
+async function _rehidratarImagenesGuardadas(){
+  const cache=await _idbLeerTodasLasImagenes();
+  if(!cache.size) return false;
+  const c1=_rehidratarImagenesDeLista(jDB,_imagenesPesadasDeJugador,cache);
+  const c2=_rehidratarImagenesDeLista(eDB,_imagenesPesadasDeEquipo,cache);
+  const c3=_rehidratarImagenesDeLista(pDB,_imagenesPesadasDePartido,cache);
+  const c4=_rehidratarImagenesDeLista(adsDB,_imagenesPesadasDeAnuncio,cache);
+  return c1||c2||c3||c4;
+}
+/** Migración de un solo uso por dispositivo: la primera vez que arranca
+ *  con esta versión, fuerza un re-guardado de jDB/eDB/pDB/adsDB para que
+ *  las imágenes que ya hubiera (metidas en localStorage a la vieja
+ *  usanza, antes de este cambio) se saquen a IndexedDB de inmediato — así
+ *  el espacio se libera nada más actualizar, sin que el usuario tenga que
+ *  tocar nada ni esperar a que cada jugador/equipo se vuelva a guardar
+ *  por su cuenta. */
+function _migrarExternalizarImagenesPesadas(){
+  const FLAG='scout_migrada_externalizar_imagenes_v1';
+  if(localStorage.getItem(FLAG)) return;
+  localStorage.setItem(FLAG,'1');
+  saveJDB(); saveEDB(); saveAds();
+  if(typeof savePDB==='function') savePDB();
+}
+
 // Guarda en localStorage con un aviso claro y accionable si el navegador
 // deniega la escritura por falta de espacio (QuotaExceededError) — antes
 // cada save* tenía su propio try/catch con el mismo mensaje seco
@@ -2981,9 +3227,37 @@ function _setLocalStorageConAviso(key,valor){
     return false;
   }
 }
-function saveJDB(){ return _setLocalStorageConAviso(JDB,JSON.stringify(jDB)); }
-function saveEDB(){ return _setLocalStorageConAviso(EDB,JSON.stringify(eDB)); }
-function saveAds(){ return _setLocalStorageConAviso(ADS_KEY,JSON.stringify(adsDB)); }
+// Las 4 save*() siguen devolviendo lo mismo que antes (true/false según si
+// localStorage.setItem tuvo éxito) y jDB/eDB/pDB/adsDB EN MEMORIA no se
+// tocan para nada — solo se les saca una "copia ligera" (sin las imágenes
+// pesadas, sustituidas por el marcador _IDB_MARCADOR) para guardar en
+// localStorage, mientras las imágenes de verdad se mandan aparte a
+// IndexedDB (fire-and-forget: no bloquea el guardado "de verdad" ni hace
+// falta esperarlas para que la función devuelva algo).
+function saveJDB(){
+  const extraidas=[],clavesABorrar=[];
+  const slim=_externalizarImagenesDeLista(jDB,_imagenesPesadasDeJugador,extraidas,clavesABorrar);
+  const ok=_setLocalStorageConAviso(JDB,JSON.stringify(slim));
+  if(extraidas.length) _idbGuardarImagenesSeguimiento(extraidas);
+  if(clavesABorrar.length) _idbBorrarImagenesSeguimiento(clavesABorrar);
+  return ok;
+}
+function saveEDB(){
+  const extraidas=[],clavesABorrar=[];
+  const slim=_externalizarImagenesDeLista(eDB,_imagenesPesadasDeEquipo,extraidas,clavesABorrar);
+  const ok=_setLocalStorageConAviso(EDB,JSON.stringify(slim));
+  if(extraidas.length) _idbGuardarImagenesSeguimiento(extraidas);
+  if(clavesABorrar.length) _idbBorrarImagenesSeguimiento(clavesABorrar);
+  return ok;
+}
+function saveAds(){
+  const extraidas=[],clavesABorrar=[];
+  const slim=_externalizarImagenesDeLista(adsDB,_imagenesPesadasDeAnuncio,extraidas,clavesABorrar);
+  const ok=_setLocalStorageConAviso(ADS_KEY,JSON.stringify(slim));
+  if(extraidas.length) _idbGuardarImagenesSeguimiento(extraidas);
+  if(clavesABorrar.length) _idbBorrarImagenesSeguimiento(clavesABorrar);
+  return ok;
+}
 function loadCfg(){ try{const c=JSON.parse(localStorage.getItem(CFG_KEY)||'null');if(c)cfg=c;}catch(e){} }
 function saveCfg(){ localStorage.setItem(CFG_KEY,JSON.stringify(cfg)); }
 function applyCfg(){
@@ -9323,8 +9597,18 @@ function _migrarResincronizarJugadoresDeActas(){
 }
 
 // Se ejecuta SOLO después de un login correcto.
-function _scoutCargarDatosYAbrirApp(){
-  loadAll();loadPDB();recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
+async function _scoutCargarDatosYAbrirApp(){
+  loadAll();loadPDB();
+  // Antes de pintar nada: trae de IndexedDB las fotos/escudos/miniaturas
+  // "pesadas" que las save*() hayan sacado de localStorage y las vuelve a
+  // poner en jDB/eDB/pDB/adsDB (en memoria) donde estaba cada una — así la
+  // primera pantalla ya sale completa, sin huecos de imagen rota. Si es la
+  // primera vez que arranca con esta versión, además fuerza un
+  // re-guardado para sacar de localStorage, ya mismo, lo que hubiera
+  // quedado guardado "a la vieja usanza" antes de este cambio.
+  await _rehidratarImagenesGuardadas();
+  _migrarExternalizarImagenesPesadas();
+  recalcularStatsDesdePartidos();sincronizarTacticaDesdePartidos();renderInicio();renderJDB();renderBannerAdsGlobal();
   // Listas de seguimiento (Scouting) cacheadas en ESTE dispositivo para
   // este usuario — se leen ya en el arranque (antes de que termine
   // cualquier sync con la nube) para poder verlas incluso sin conexión;
@@ -11132,7 +11416,7 @@ function guardarEConFeedback(){
     boton.textContent = 'Comprobando…';
     errorDiv.style.display = 'none';
 
-    const _abrirApp = (sesion) => {
+    const _abrirApp = async (sesion) => {
       window._scoutSession = sesion;
       // Los permisos (admin / ligas permitidas) se fijan ANTES de cargar
       // y pintar los datos reales, para que el primer renderizado ya
@@ -11141,7 +11425,7 @@ function guardarEConFeedback(){
       // Aquí, y solo aquí (tras un login correcto), se cargan y pintan
       // los datos reales del club — ver comentario junto a
       // _scoutPrepararLogin/_scoutCargarDatosYAbrirApp más arriba.
-      _scoutCargarDatosYAbrirApp();
+      await _scoutCargarDatosYAbrirApp();
       const overlay = document.getElementById('login-overlay');
       overlay.style.transition = 'opacity .3s ease';
       overlay.style.opacity = '0';
@@ -11183,7 +11467,7 @@ function guardarEConFeedback(){
       const data = await res.json();
       if (data.ok && data.resultado && data.resultado.ok) {
         _loginLockLimpiar(email);
-        _abrirApp(data.resultado.usuario);
+        await _abrirApp(data.resultado.usuario);
       } else {
         _loginLockRegistrarFallo(email);
         const motivo = (data.resultado && data.resultado.motivo) || '';
@@ -11199,7 +11483,7 @@ function guardarEConFeedback(){
       const passHashFallback = u ? await sha256Browser(pass) : null;
       if (u && passHashFallback === u.passHash) {
         _loginLockLimpiar(email);
-        _abrirApp({ email, rol: u.rol, nombre: u.nombre, _fallback: true });
+        await _abrirApp({ email, rol: u.rol, nombre: u.nombre, _fallback: true });
       } else {
         _loginLockRegistrarFallo(email);
         _mostrarError('Sin conexión con el servidor. Verifica tu internet e inténtalo de nuevo.');
@@ -11344,7 +11628,14 @@ const PDB_KEY = 'scout_partidos_v1';
 let pDB = [];
 
 function loadPDB(){ try{ pDB=JSON.parse(localStorage.getItem(PDB_KEY)||'[]'); }catch(e){ pDB=[]; } }
-function savePDB(){ return _setLocalStorageConAviso(PDB_KEY,JSON.stringify(pDB)); }
+function savePDB(){
+  const extraidas=[],clavesABorrar=[];
+  const slim=_externalizarImagenesDeLista(pDB,_imagenesPesadasDePartido,extraidas,clavesABorrar);
+  const ok=_setLocalStorageConAviso(PDB_KEY,JSON.stringify(slim));
+  if(extraidas.length) _idbGuardarImagenesSeguimiento(extraidas);
+  if(clavesABorrar.length) _idbBorrarImagenesSeguimiento(clavesABorrar);
+  return ok;
+}
 
 // OJO: antes había un loadPDB() suelto aquí, que se ejecutaba nada más
 // cargar el script — es decir, ANTES incluso de comprobar sesión, igual
@@ -14074,9 +14365,16 @@ function _tamanosLocalStorage(){
   }
   return {filas:filas.sort((a,b)=>b.bytes-a.bytes), totalBytes:totalTodasLasClaves};
 }
-function _renderLiberarEspacioInfo(){
+async function _renderLiberarEspacioInfo(){
   const cont=document.getElementById('liberar-espacio-info'); if(!cont) return;
+  cont.innerHTML='<p style="margin:0">Calculando…</p>';
   const {filas,totalBytes}=_tamanosLocalStorage();
+  // Desde que las fotos/escudos/miniaturas "pesadas" se guardan en
+  // IndexedDB (cuota mucho más alta que localStorage, normalmente cientos
+  // de MB o más) en vez de en localStorage, el total de localStorage por
+  // sí solo ya no refleja cuánto pesa realmente el club en este
+  // dispositivo — así que se muestran los dos por separado y claros.
+  const idbBytes=await _idbTamanoTotalBytes();
   // No hay forma de leer la cuota real del navegador de forma síncrona y
   // fiable (storage.estimate() es async y además es un límite del ORIGEN
   // entero, no solo de esta app) — se muestra el total usado y una
@@ -14084,8 +14382,9 @@ function _renderLiberarEspacioInfo(){
   // a localStorage), dejando claro que es orientativo.
   const refMB=5;
   const pct=Math.min(999,Math.round(totalBytes/1024/1024/refMB*100));
-  cont.innerHTML=`<p style="margin:0 0 4px"><strong>${_formatoTamano(totalBytes)}</strong> usados en total (orientativo: la mayoría de navegadores dan unos ${refMB}-10 MB a cada app — vas por ~${pct}% de ${refMB} MB).</p>`
-    +filas.map(f=>`<div style="display:flex;justify-content:space-between;max-width:360px"><span>${eH(f.etiqueta)}</span><strong>${_formatoTamano(f.bytes)}</strong></div>`).join('');
+  cont.innerHTML=`<p style="margin:0 0 4px"><strong>${_formatoTamano(totalBytes)}</strong> en datos de la app (orientativo: la mayoría de navegadores dan unos ${refMB}-10 MB a esto — vas por ~${pct}% de ${refMB} MB).</p>`
+    +filas.map(f=>`<div style="display:flex;justify-content:space-between;max-width:360px"><span>${eH(f.etiqueta)}</span><strong>${_formatoTamano(f.bytes)}</strong></div>`).join('')
+    +`<p style="margin:10px 0 2px"><strong>${_formatoTamano(idbBytes)}</strong> en fotos/escudos/miniaturas (guardados aparte, en un espacio mucho más amplio — esto ya casi no puede llenarse).</p>`;
 }
 /** Vuelve a comprimir, más fuerte, todas las imágenes YA guardadas
  *  (fotos de jugador, escudos de jugador/equipo, portadas de clips y del
@@ -14100,7 +14399,11 @@ async function adminLiberarEspacio(){
     '¿Comprimir más fuerte todas las fotos de jugadores, escudos y miniaturas de clips ya guardadas, para liberar espacio? No se borra ninguna imagen, solo se reduce su tamaño — puede tardar un poco si tienes muchos jugadores/equipos con fotos.',
     async ()=>{
       toast('⏳ Comprimiendo imágenes guardadas...');
-      const {totalBytes:antesBytes}=_tamanosLocalStorage();
+      // Desde la migración a IndexedDB, lo que de verdad pesa (fotos/
+      // escudos/clips) ya no vive en localStorage, así que el "antes/
+      // después" tiene que contar las dos cosas para que los bytes
+      // liberados mostrados sean reales y no salgan siempre ~0.
+      const antesBytes=_tamanosLocalStorage().totalBytes+await _idbTamanoTotalBytes();
       let nTocadas=0;
       const UMBRAL=25*1024; // no merece la pena tocar una imagen ya pequeña
       const recomprimirCampo=async(obj,campo,opts)=>{
@@ -14123,8 +14426,13 @@ async function adminLiberarEspacio(){
         for(const c of (eq.clipsGC||[])) await recomprimirCampo(c,'portada',{maxDim:360,calidad:0.65,formato:'image/jpeg'});
       }
       const okJ=saveJDB(), okE=saveEDB();
-      const {totalBytes:despuesBytes}=_tamanosLocalStorage();
-      _renderLiberarEspacioInfo();
+      // Esperar a que las imágenes recomprimidas terminen de escribirse en
+      // IndexedDB antes de medir "después" — si no, se mide mientras ese
+      // guardado (lanzado sin esperar desde saveJDB/saveEDB) todavía está
+      // en marcha y los bytes liberados saldrían mal.
+      await _idbEsperarGuardadosPendientes();
+      const despuesBytes=_tamanosLocalStorage().totalBytes+await _idbTamanoTotalBytes();
+      await _renderLiberarEspacioInfo();
       if(okJ && okE){
         const liberado=Math.max(0,antesBytes-despuesBytes);
         toast(nTocadas?`✅ ${nTocadas} imagen${nTocadas===1?'':'es'} comprimida${nTocadas===1?'':'s'} — ${_formatoTamano(liberado)} liberados`:'No había imágenes grandes que comprimir más');
