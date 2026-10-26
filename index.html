@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-26-3">
+<meta name="app-version" content="2026-10-26-4">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2468,13 +2468,16 @@ body.solo-lectura .ed-panel-form {
     <div class="cfg-title" style="padding:14px 16px 0">🧹 Liberar espacio</div>
     <div class="pbody">
       <p style="font-size:11px;color:var(--gris);line-height:1.5">
-        Las fotos de jugadores, escudos y miniaturas de clips se guardan en
-        este dispositivo (localStorage), que tiene un límite de espacio
-        bastante pequeño (unos pocos MB, según el navegador) — si da el
-        error "Almacenamiento lleno" al guardar un jugador, un equipo o un
-        partido, es porque ya se ha llenado. Usa esto para ver cuánto se
-        está usando y comprimir más las fotos/escudos ya guardados (sin
-        borrar ninguna) y hacer sitio.
+        Este dispositivo (localStorage) tiene un límite de espacio bastante
+        pequeño (unos pocos MB, según el navegador) — si da el error
+        "Almacenamiento lleno" al guardar un jugador, un equipo o un
+        partido, es porque ya se ha llenado. Lo que más pesa suele ser
+        fotos/escudos/miniaturas de clips, o en clubes con muchos partidos
+        registrados, el propio histórico de alineaciones — todo eso se va
+        sacando automáticamente a un espacio mucho más amplio según se
+        guarda, sin que tengas que hacer nada. Usa esto para ver cuánto se
+        está usando, el desglose de qué pesa más, y comprimir más las
+        fotos/escudos ya guardados (sin borrar nada) para hacer sitio.
       </p>
       <div id="liberar-espacio-info" style="font-size:11px;color:var(--gris2);margin:8px 0;line-height:1.6"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -3124,7 +3127,16 @@ function _imagenesPesadasDeEquipo(eq){
   return campos;
 }
 function _imagenesPesadasDePartido(p){
-  const campos=[{obj:p, campo:'thumb', clave:'p:'+p.id+':thumb'}];
+  const campos=[
+    {obj:p, campo:'thumb', clave:'p:'+p.id+':thumb'},
+    // "alineacion" no es una imagen, es un objeto (titulares/suplentes/
+    // tarjetas de los dos equipos) — pero en clubes con muchos partidos
+    // registrados es, con diferencia, lo que más pesa de todo Partidos
+    // (confirmado con el desglose detallado: 2+ MB solo en este campo en
+    // un club real). tipo:'dato' hace que se externalice por tamaño en
+    // vez de por ser una imagen base64 — ver _externalizarImagenesDeLista.
+    {obj:p, campo:'alineacion', clave:'p:'+p.id+':alineacion', tipo:'dato'},
+  ];
   (p.goles||[]).forEach((g,i)=>{ if(g && g.clip) campos.push({obj:g.clip, campo:'portada', clave:'p:'+p.id+':gol:'+i}); });
   return campos;
 }
@@ -3132,34 +3144,41 @@ function _imagenesPesadasDeAnuncio(a){
   return [{obj:a, campo:'img', clave:'a:'+a.id+':img'}];
 }
 /** Clona profundamente una lista de entidades y, en la copia, sustituye
- *  cada imagen "pesada" (según fnCampos) por el marcador '__idb__',
+ *  cada campo "pesado" (según fnCampos) por el marcador '__idb__',
  *  acumulando {clave,dataUrl} en `extraidas` para guardarlas aparte en
  *  IndexedDB. Los objetos ORIGINALES (jDB/eDB/pDB/adsDB en memoria) no se
  *  tocan — de ahí siguen leyendo, sin cambios, todas las fichas/tarjetas/
  *  exportaciones a PDF/etc.
+ *  Cada campo puede ser tipo:'imagen' (por defecto — un dataURL base64;
+ *  se externaliza si supera el umbral) o tipo:'dato' (cualquier objeto/
+ *  array JSON — p.ej. la alineación de un partido; se externaliza por
+ *  tamaño serializado, igual que una imagen, sin exigir que sea un
+ *  dataURL). La propia IndexedDB guarda el valor tal cual (string u
+ *  objeto), sin pasar por JSON.stringify.
  *  `clavesABorrar` (opcional) acumula las claves de cualquier campo que
- *  EN MEMORIA tenga ya una imagen real (no el marcador) pero que esta vez
- *  no haga falta externalizar (porque se ha borrado la imagen, o porque
- *  "🧹 Liberar espacio" la ha recomprimido tanto que ya cabe directa en
- *  localStorage) — para poder borrar después la copia vieja de
- *  IndexedDB y que no quede huérfana ocupando sitio para siempre. */
+ *  EN MEMORIA tenga ya un valor real (no el marcador) pero que esta vez
+ *  no haga falta externalizar (porque se ha borrado/encogido) — para
+ *  poder borrar después la copia vieja de IndexedDB y que no quede
+ *  huérfana ocupando sitio para siempre. */
 function _externalizarImagenesDeLista(lista,fnCampos,extraidas,clavesABorrar){
   return (lista||[]).map(ent=>{
     if(!ent) return ent;
     let clon;
     try{ clon=JSON.parse(JSON.stringify(ent)); }catch(e){ return ent; }
-    fnCampos(clon).forEach(({obj,campo,clave})=>{
+    fnCampos(clon).forEach(({obj,campo,clave,tipo})=>{
       const valor=obj?obj[campo]:null;
-      if(typeof valor==='string' && valor.startsWith('data:image/') && valor.length>_EXTERNALIZAR_IMG_UMBRAL){
+      const calificaComoImagen=tipo!=='dato' && typeof valor==='string' && valor.startsWith('data:image/') && valor.length>_EXTERNALIZAR_IMG_UMBRAL;
+      const calificaComoDato=tipo==='dato' && valor!=null && valor!==_IDB_MARCADOR && _tamanoStorageBytes(valor)>_EXTERNALIZAR_IMG_UMBRAL;
+      if(calificaComoImagen || calificaComoDato){
         extraidas.push({clave,dataUrl:valor});
         obj[campo]=_IDB_MARCADOR;
       }else if(clavesABorrar && valor!==_IDB_MARCADOR){
-        // No se externaliza esta vez (es null, se ha borrado, o es una
-        // imagen real que ya cabe pequeña) — si antes SÍ se había
-        // guardado algo en IndexedDB bajo esta clave, ya no vale, así que
-        // se marca para borrar (borrar una clave que nunca existió no
-        // hace nada, así que es seguro marcarla siempre que no sea ya el
-        // marcador, que es la única señal de "la real sigue en IndexedDB").
+        // No se externaliza esta vez (es null, se ha borrado, o ya cabe
+        // pequeño) — si antes SÍ se había guardado algo en IndexedDB bajo
+        // esta clave, ya no vale, así que se marca para borrar (borrar
+        // una clave que nunca existió no hace nada, así que es seguro
+        // marcarla siempre que no sea ya el marcador, que es la única
+        // señal de "el valor real sigue en IndexedDB").
         clavesABorrar.push(clave);
       }
     });
@@ -4684,7 +4703,15 @@ function _comprimirDataURL(dataUrl, opts){
 /** Tamaño en bytes de un string tal cual ocupa en localStorage (UTF-16,
  *  2 bytes por carácter — más preciso que usar Blob, que cuenta bytes
  *  UTF-8). */
-function _tamanoStorageBytes(s){ return (s||'').length*2; }
+function _tamanoStorageBytes(s){
+  // Antes esto solo medía strings (JSON ya serializado). Ahora también se
+  // usa para medir valores que pueden ser objetos/arrays directamente
+  // (p.ej. el campo "alineacion" de un partido, guardado tal cual en
+  // IndexedDB sin pasar por JSON.stringify) — así que si no es ya un
+  // string, se serializa primero solo para poder medirlo.
+  if(typeof s!=='string'){ try{ s=JSON.stringify(s)||''; }catch(e){ s=''; } }
+  return (s||'').length*2;
+}
 function _formatoTamano(bytes){
   if(bytes>=1024*1024) return (bytes/1024/1024).toFixed(2)+' MB';
   return Math.round(bytes/1024)+' KB';
