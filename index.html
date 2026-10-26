@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-26-2">
+<meta name="app-version" content="2026-10-26-3">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2480,7 +2480,9 @@ body.solo-lectura .ed-panel-form {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn b-ghost" onclick="_renderLiberarEspacioInfo()">🔄 Calcular uso actual</button>
         <button class="btn b-naranja" onclick="adminLiberarEspacio()">🧹 Comprimir fotos/escudos guardados</button>
+        <button class="btn b-ghost" onclick="_renderDesgloseDetallado()">🔍 Ver desglose detallado</button>
       </div>
+      <div id="liberar-espacio-detalle" style="font-size:11px;color:var(--gris2);margin:10px 0 0;line-height:1.6"></div>
     </div>
   </div>
 
@@ -4452,8 +4454,8 @@ function navTo(sec,_esVolver){
   if(sec==='jugadores-db') renderJDB();
   if(sec==='equipos-db') renderEDB();
   if(sec==='config') initCfgForm();
-  if(sec==='partidos'){ loadPDB(); setTimeout(renderPartidos, 50); }
-  if(sec==='goles'){ loadPDB(); setTimeout(initGolesView, 50); }
+  if(sec==='partidos'){ _recargarPDBConImagenes().then(()=>setTimeout(renderPartidos, 50)); }
+  if(sec==='goles'){ _recargarPDBConImagenes().then(()=>setTimeout(initGolesView, 50)); }
   if(sec==='scouting'){ renderScouting(); }
   if(sec==='admin'){ cargarUsuariosAdmin(); cargarAlmacenamientoAdmin(); }
   // Las barras de comparar (jugadores/equipos) viven fuera de sus vistas
@@ -11628,6 +11630,19 @@ const PDB_KEY = 'scout_partidos_v1';
 let pDB = [];
 
 function loadPDB(){ try{ pDB=JSON.parse(localStorage.getItem(PDB_KEY)||'[]'); }catch(e){ pDB=[]; } }
+/** loadPDB() solo, a secas, deja las miniaturas/portadas de pDB con el
+ *  marcador '__idb__' (lo que haya quedado en localStorage) en vez de la
+ *  imagen real — por eso, fuera del arranque (donde ya se rehidrata todo
+ *  junto, ver _scoutCargarDatosYAbrirApp), cualquier sitio que necesite
+ *  releer pDB de disco y PINTARLO después (p.ej. al entrar en "⚽
+ *  Partidos"/"⚽ Goles" desde el menú) debe pasar por aquí en vez de
+ *  llamar a loadPDB() suelto, o las miniaturas saldrían rotas hasta la
+ *  próxima recarga completa de la app. */
+async function _recargarPDBConImagenes(){
+  loadPDB();
+  const cache=await _idbLeerTodasLasImagenes();
+  _rehidratarImagenesDeLista(pDB,_imagenesPesadasDePartido,cache);
+}
 function savePDB(){
   const extraidas=[],clavesABorrar=[];
   const slim=_externalizarImagenesDeLista(pDB,_imagenesPesadasDePartido,extraidas,clavesABorrar);
@@ -14385,6 +14400,40 @@ async function _renderLiberarEspacioInfo(){
   cont.innerHTML=`<p style="margin:0 0 4px"><strong>${_formatoTamano(totalBytes)}</strong> en datos de la app (orientativo: la mayoría de navegadores dan unos ${refMB}-10 MB a esto — vas por ~${pct}% de ${refMB} MB).</p>`
     +filas.map(f=>`<div style="display:flex;justify-content:space-between;max-width:360px"><span>${eH(f.etiqueta)}</span><strong>${_formatoTamano(f.bytes)}</strong></div>`).join('')
     +`<p style="margin:10px 0 2px"><strong>${_formatoTamano(idbBytes)}</strong> en fotos/escudos/miniaturas (guardados aparte, en un espacio mucho más amplio — esto ya casi no puede llenarse).</p>`;
+}
+/** Suma, por cada campo de nivel superior (nom, stats, goles,
+ *  alineacion...), cuánto pesa ese campo sumado en TODAS las entradas de
+ *  la lista — para saber, dentro de Jugadores/Partidos/Equipos, qué es
+ *  exactamente lo que más espacio ocupa (no siempre son las fotos: en
+ *  clubes con muchas temporadas/partidos registrados puede pesar más el
+ *  propio histórico de alineaciones/estadísticas que las imágenes). */
+function _desglosePorCampo(lista){
+  const totales={};
+  (lista||[]).forEach(ent=>{
+    if(!ent) return;
+    Object.keys(ent).forEach(campo=>{
+      let tam=0;
+      try{ tam=_tamanoStorageBytes(JSON.stringify(ent[campo])); }catch(e){}
+      totales[campo]=(totales[campo]||0)+tam;
+    });
+  });
+  return Object.entries(totales).map(([campo,bytes])=>({campo,bytes})).sort((a,b)=>b.bytes-a.bytes);
+}
+async function _renderDesgloseDetallado(){
+  const cont=document.getElementById('liberar-espacio-detalle'); if(!cont) return;
+  cont.innerHTML='<p style="margin:0">Calculando desglose…</p>';
+  // Un respiro de un tick para que "Calculando…" llegue a pintarse antes
+  // de ponerse a recorrer (puede tardar un poco si hay muchos jugadores/
+  // partidos guardados).
+  await new Promise(r=>setTimeout(r,0));
+  const tabla=(titulo,lista)=>{
+    const campos=_desglosePorCampo(lista).filter(f=>f.bytes>512).slice(0,8);
+    if(!campos.length) return '';
+    return `<p style="margin:10px 0 2px"><strong>${eH(titulo)}</strong> (${(lista||[]).length}) — campos que más pesan:</p>`
+      +campos.map(f=>`<div style="display:flex;justify-content:space-between;max-width:360px"><span>${eH(f.campo)}</span><strong>${_formatoTamano(f.bytes)}</strong></div>`).join('');
+  };
+  const html=tabla('Jugadores',jDB)+tabla('Partidos',pDB)+tabla('Equipos',eDB);
+  cont.innerHTML=html||'<p style="margin:0">No hay datos que desglosar.</p>';
 }
 /** Vuelve a comprimir, más fuerte, todas las imágenes YA guardadas
  *  (fotos de jugador, escudos de jugador/equipo, portadas de clips y del
