@@ -129,9 +129,22 @@ async function scoutApiPostAuth(accion, datos) {
 // ════════════════════════════════════════════════════════════════
 function scoutEncolar(accion, datos) {
   const cola = _scoutCargarCola();
-  cola.push({ accion, datos, intentos: 0, encolado: new Date().toISOString() });
-  _scoutGuardarCola(cola);
-  _scoutActualizarBadge(cola.length);
+  // Antes esto apilaba una copia COMPLETA (fotos/escudos/alineación
+  // incluidos, sin comprimir) cada vez que fallaba un intento de
+  // sincronización — y como guardar un partido sincroniza automáticamente
+  // a TODOS sus jugadores y equipos uno a uno, un rato sin conexión podía
+  // ir acumulando muchas copias duplicadas del MISMO jugador/equipo/
+  // partido sin límite, llenando el almacenamiento local de ese
+  // dispositivo aunque el resto de la app estuviera muy por debajo del
+  // límite (causa real confirmada en un dispositivo de un club real).
+  // Ahora, antes de añadir una entrada nueva, se quita cualquier intento
+  // anterior pendiente para ese MISMO accion+id — solo hace falta
+  // reintentar con los datos más recientes, nunca con copias viejas.
+  const idDatos = datos && datos.id != null ? String(datos.id) : '';
+  const sinDuplicados = cola.filter(item => !(item.accion === accion && (item.datos && item.datos.id != null ? String(item.datos.id) : '') === idDatos));
+  sinDuplicados.push({ accion, datos, intentos: 0, encolado: new Date().toISOString() });
+  _scoutGuardarCola(sinDuplicados);
+  _scoutActualizarBadge(sinDuplicados.length);
 }
 
 async function scoutProcesarCola() {
