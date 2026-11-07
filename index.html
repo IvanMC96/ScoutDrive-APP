@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-10-26-4">
+<meta name="app-version" content="2026-11-03-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -2484,7 +2484,17 @@ body.solo-lectura .ed-panel-form {
         <button class="btn b-ghost" onclick="_renderLiberarEspacioInfo()">🔄 Calcular uso actual</button>
         <button class="btn b-naranja" onclick="adminLiberarEspacio()">🧹 Comprimir fotos/escudos guardados</button>
         <button class="btn b-ghost" onclick="_renderDesgloseDetallado()">🔍 Ver desglose detallado</button>
+        <button class="btn b-rojo" onclick="adminVaciarColaSincronizacion()">☁️🗑️ Vaciar cola de sincronización atascada</button>
       </div>
+      <p style="font-size:10px;color:var(--gris2);margin:6px 0 0;line-height:1.4">
+        Solo usa el botón rojo si llevas tiempo viendo el aviso "☁️ X
+        pendientes" arriba sin que baje nunca, incluso con buena conexión
+        — significa que esos cambios llevan atascados sin poder subirse a
+        Google Sheets. Vaciarla NO borra nada de este dispositivo ni de la
+        nube, pero sí descarta en este dispositivo el intento de volver a
+        subir esos cambios concretos — vuelve a abrir y guardar esas
+        fichas/partidos después para que se intente de nuevo desde cero.
+      </p>
       <div id="liberar-espacio-detalle" style="font-size:11px;color:var(--gris2);margin:10px 0 0;line-height:1.6"></div>
     </div>
   </div>
@@ -14392,6 +14402,14 @@ function _tamanosLocalStorage(){
     'Equipos (escudos/clips incluidos)':EDB,
     'Partidos (⚽ Partidos)':(typeof PDB_KEY!=='undefined'?PDB_KEY:'scout_p_v1'),
     'Publicidad/patrocinios':ADS_KEY,
+    // Cola de reintento de sincronización (sync-bridge.js) — copias SIN
+    // comprimir de jugadores/equipos/partidos que no se han podido subir
+    // a Google Sheets todavía (por falta de red en su momento). Si se
+    // queda atascada (p.ej. el backend rechaza repetidamente un envío
+    // grande) puede crecer bastante — por eso se muestra aparte, en vez
+    // de quedar escondida dentro del total general sin que se note de
+    // dónde viene.
+    '☁️ Cola de sincronización pendiente':'scout_cola_offline_v1',
   };
   const filas=Object.entries(claves).map(([etiqueta,key])=>{
     const crudo=localStorage.getItem(key)||'';
@@ -14517,6 +14535,36 @@ async function adminLiberarEspacio(){
       }
     },
     {titulo:'🧹 Liberar espacio',okTexto:'Comprimir ahora',okClase:'b-naranja'}
+  );
+}
+/** La cola de reintento de sincronización (sync-bridge.js) guarda, sin
+ *  comprimir, una copia completa de cada jugador/equipo/partido que no se
+ *  ha podido subir a Google Sheets por falta de red en su momento — y se
+ *  reintenta sola cada minuto y al recuperar conexión. Normalmente se
+ *  vacía solita en cuanto hay red de verdad. Pero si el propio envío
+ *  sigue fallando una y otra vez (p.ej. el backend corta peticiones muy
+ *  grandes), se queda atascada creciendo sin parar — confirmado como la
+ *  causa real de un "almacenamiento lleno" en un dispositivo que, por lo
+ *  demás, iba sobrado de espacio. Este botón la vacía a mano: no borra
+ *  nada en Google Sheets ni en el resto de dispositivos, solo descarta EN
+ *  ESTE dispositivo el intento pendiente de volver a subir esos cambios
+ *  concretos (quien los guardó puede simplemente volver a abrir y guardar
+ *  esas fichas/partidos para que se intente de nuevo desde cero). */
+async function adminVaciarColaSincronizacion(){
+  if(!esAdminActual()){ toast('Solo los administradores pueden hacer esto',true); return; }
+  if(typeof _scoutCargarCola!=='function'){ toast('La sincronización con Google Sheets no está activa en este dispositivo',true); return; }
+  const cola=_scoutCargarCola();
+  if(!cola.length){ toast('No hay nada pendiente de sincronizar en este dispositivo'); return; }
+  const bytes=_tamanoStorageBytes(JSON.stringify(cola));
+  askDel(
+    `Hay ${cola.length} cambio${cola.length===1?'':'s'} pendiente${cola.length===1?'':'s'} de subir a Google Sheets desde este dispositivo (${_formatoTamano(bytes)}). Vaciar la cola NO borra nada ya guardado ni en este dispositivo ni en la nube — solo descarta el intento de volver a subir esos cambios concretos. Si alguno de ellos de verdad no llegó nunca a Google Sheets, tendrás que volver a abrir y guardar esa ficha/partido para que se intente de nuevo. ¿Vaciar de todas formas?`,
+    ()=>{
+      _scoutGuardarCola([]);
+      if(typeof _scoutActualizarBadge==='function') _scoutActualizarBadge(0);
+      _renderLiberarEspacioInfo();
+      toast(`🗑️ Cola de sincronización vaciada — ${_formatoTamano(bytes)} liberados en este dispositivo`);
+    },
+    {titulo:'☁️🗑️ Vaciar cola de sincronización',okTexto:'Vaciar ahora',okClase:'b-rojo'}
   );
 }
 
