@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Scoutdrive</title>
-<meta name="app-version" content="2026-11-03-1">
+<meta name="app-version" content="2026-11-07-1">
 
 <!-- ── AUTO-ACTUALIZACIÓN — comprueba si hay una versión más reciente
      publicada (al abrir la app y cada vez que se vuelve a ella tras
@@ -7853,6 +7853,16 @@ function _campogramaAlineacionPorJornada(eq,jornada){
   return (eq.alineaciones||[]).find(a=>a.jornada===jornada) || null;
 }
 
+/** Número de jornada para poder ordenar "J1, J2, ... J9, J10, J11" en vez
+ *  de alfabético ("J1, J10, J2, J3..."). parseInt("J1") por sí solo da
+ *  NaN (no se salta la "J" inicial), así que antes esto caía siempre al
+ *  desempate alfabético — se extrae la primera racha de dígitos de la
+ *  cadena, venga con "J" delante, con espacios, o lo que sea. Sin ningún
+ *  dígito, va al final (Infinity), no al principio. */
+function _numeroJornada(j){
+  const m=String(j||'').match(/\d+/);
+  return m?parseInt(m[0],10):Infinity;
+}
 /** Todas las jornadas "disponibles" para el selector: las que ya
  *  tienen un partido registrado en Partidos para este equipo (aunque
  *  aún no tengan alineación guardada) y las que solo tienen una
@@ -7871,7 +7881,7 @@ function _campogramaJornadasDisponibles(eq){
     mapa[a.jornada].alineacion=a;
   });
   return Object.values(mapa).sort((a,b)=>{
-    const na=parseInt(a.jornada)||999,nb=parseInt(b.jornada)||999;
+    const na=_numeroJornada(a.jornada),nb=_numeroJornada(b.jornada);
     if(na!==nb) return na-nb;
     return (a.jornada||'').localeCompare(b.jornada||'');
   });
@@ -11749,7 +11759,7 @@ function renderPartidos(){
   });
 
   lista.sort((a,b) => {
-    const na = parseInt(a.jornada)||999, nb = parseInt(b.jornada)||999;
+    const na = _numeroJornada(a.jornada), nb = _numeroJornada(b.jornada);
     if(na !== nb) return na - nb;
     return (a.jornada||'').localeCompare(b.jornada||'');
   });
@@ -11778,7 +11788,7 @@ function renderPartidos(){
 
   let html = '';
   Object.keys(grupos).sort((a,b)=>{
-    const na=parseInt(a)||999, nb=parseInt(b)||999;
+    const na=_numeroJornada(a), nb=_numeroJornada(b);
     if(na!==nb) return na-nb;
     return a.localeCompare(b);
   }).forEach(jornada => {
@@ -11863,7 +11873,7 @@ function _actualizarFiltrosPartidos(){
   if(!selJ) return;
   const curJ=selJ.value, curE=selE.value;
   const jornadas=[...new Set(pDB.map(p=>p.jornada).filter(Boolean))].sort((a,b)=>{
-    const na=parseInt(a)||999,nb=parseInt(b)||999;
+    const na=_numeroJornada(a),nb=_numeroJornada(b);
     return na!==nb?na-nb:a.localeCompare(b);
   });
   const equipos=[...new Set([...pDB.map(p=>p.local),...pDB.map(p=>p.visitante)].filter(Boolean))].sort();
